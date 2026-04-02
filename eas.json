@@ -1,0 +1,30 @@
+{
+  "cli": {
+    "version": ">= 16.32.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+      }
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+  "autoIncrement": true,
+  "env": {
+    "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+  }
+}
+  },
+  "submit": {
+    "production": {}
+  }
+ }

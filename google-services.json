@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "255074447978",
+    "project_id": "trucktap-4c419",
+    "storage_bucket": "trucktap-4c419.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:255074447978:android:70bbc82155aaee62e8d013",
+        "android_client_info": {
+          "package_name": "app.rork.trucktap_food_truck_finder_cqgko70"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDfE_ph-Jevfl2YkCp9OB7cieG_4trPIE4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
