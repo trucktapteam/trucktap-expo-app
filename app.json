@@ -51,11 +51,11 @@
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_MEDIA_AUDIO"
       ],
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyBrypvMT0Q615u2xdVT0SaklZRlQ7-YUIk"
-        }
-      }
+     "config": {
+  "googleMaps": {
+    "apiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
+  }
+} 
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
