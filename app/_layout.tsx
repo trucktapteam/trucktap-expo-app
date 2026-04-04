@@ -13,6 +13,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import * as Linking from 'expo-linking';
 import { trpc, trpcClient } from "@/lib/trpc";
 import { DEBUG } from "@/constants/debug";
+import { supabase } from '@/lib/supabase';
 
 void SplashScreen.preventAutoHideAsync().catch((e) => {
   console.log('[RootLayout] SplashScreen.preventAutoHideAsync error:', e);
@@ -58,30 +59,49 @@ export default function RootLayout() {
       return;
     }
 
-    const handleDeepLink = (event: { url: string }) => {
-      try {
-        if (DEBUG) console.log('Deep link received:', event.url);
-        const { path } = Linking.parse(event.url);
-        
-        if (path) {
-          if (path.startsWith('truck/')) {
-            const truckId = path.replace('truck/', '');
-            if (truckId) {
-              if (DEBUG) console.log('Navigating to truck:', truckId);
-              router.push(`/truck/${truckId}` as any);
-            }
-          } else if (path.startsWith('public/')) {
-            const truckId = path.replace('public/', '');
-            if (truckId) {
-              if (DEBUG) console.log('Navigating to public truck:', truckId);
-              router.push(`/public/${truckId}` as any);
-            }
-          }
-        }
-      } catch (error) {
-        console.log('Error handling deep link:', error);
+    const handleDeepLink = async (event: { url: string }) => {
+  try {
+    if (DEBUG) console.log('Deep link received:', event.url);
+
+    // Let Supabase process auth links first
+    if (
+      event.url.includes('access_token=') ||
+      event.url.includes('refresh_token=') ||
+      event.url.includes('type=signup') ||
+      event.url.includes('type=magiclink') ||
+      event.url.includes('type=recovery')
+    ) {
+      const { error } = await supabase.auth.exchangeCodeForSession(event.url);
+      if (error) {
+        console.log('Error exchanging auth code for session:', error);
+      } else {
+        if (DEBUG) console.log('Auth session established from deep link');
+        router.replace('/(customer)' as any);
       }
-    };
+      return;
+    }
+
+    const { path } = Linking.parse(event.url);
+
+    if (path) {
+      if (path.startsWith('truck/')) {
+        const truckId = path.replace('truck/', '');
+        if (truckId) {
+          if (DEBUG) console.log('Navigating to truck:', truckId);
+          router.push(`/truck/${truckId}` as any);
+        }
+      } else if (path.startsWith('public/')) {
+        const truckId = path.replace('public/', '');
+        if (truckId) {
+          if (DEBUG) console.log('Navigating to public truck:', truckId);
+          router.push(`/public/${truckId}` as any);
+        }
+      }
+    }
+  } catch (error) {
+    console.log('Error handling deep link:', error);
+  }
+};
 
     Linking.getInitialURL().then((url) => {
       if (url) {
