@@ -409,6 +409,17 @@ export const [AppProvider, useApp] = createContextHook(() => {
               .eq('id', authUser.id)
               .single();
 
+              let supabaseFavorites = storedFavorites;
+
+const { data: favoriteRows, error: favoritesError } = await supabase
+  .from('favorites')
+  .select('truck_id')
+  .eq('user_id', authUser.id);
+
+if (!favoritesError && favoriteRows) {
+  supabaseFavorites = favoriteRows.map(row => row.truck_id);
+}
+
             if (!error && profileData) {
               if (DEBUG) console.log('[AppContext] Loaded customer profile from Supabase');
               const newProfile: User = {
@@ -416,7 +427,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
                 name: profileData.display_name || authUser.name,
                 profile_photo: profileData.profile_photo,
                 role: 'customer' as const,
-                favorites: storedFavorites,
+                favorites: supabaseFavorites,
               };
               setUserProfile(newProfile);
               await AsyncStorage.setItem('userProfile', JSON.stringify(newProfile));
@@ -722,22 +733,26 @@ if (error) {
     );
   }, []);
 
-  const updateTruckDetails = useCallback(async (truckId: string, updates: Partial<FoodTruck>) => {
-    if (!isAuthenticated || !authUser) {
-  if (DEBUG) console.log('[AppContext] blocked - not authenticated');
-  throw new Error('Not authenticated');
-}
-if (!userOwnsTruck(truckId)) {
-  if (DEBUG) console.log('[AppContext] blocked - user does not own truck:', truckId);
-  throw new Error(`User does not own truck ${truckId}`);
-}
-    if (DEBUG) console.log('[AppContext] updateTruckDetails for:', truckId, 'keys:', Object.keys(updates));
+   const updateTruckDetails = useCallback(async (truckId: string, updates: Partial<FoodTruck>) => {
+  if (!isAuthenticated || !authUser) {
+    if (DEBUG) console.log('[AppContext] blocked - not authenticated');
+    throw new Error('Not authenticated');
+  }
 
-    setFoodTrucks(prev =>
-      prev.map(truck =>
-        truck.id === truckId ? { ...truck, ...updates } : truck
-      )
-    );
+  if (!userOwnsTruck(truckId)) {
+    if (DEBUG) console.log('[AppContext] blocked - user does not own truck:', truckId);
+    throw new Error(`User does not own truck ${truckId}`);
+  }
+
+  
+
+  if (DEBUG) console.log('[AppContext] updateTruckDetails for:', truckId, 'keys:', Object.keys(updates));
+
+  setFoodTrucks(prev =>
+    prev.map(truck =>
+      truck.id === truckId ? { ...truck, ...updates } : truck
+    )
+  );
     setSupabaseOwnedTrucks(prev =>
       prev.map(truck =>
         truck.id === truckId ? { ...truck, ...updates } : truck
@@ -806,6 +821,7 @@ if (!userOwnsTruck(truckId)) {
 
     if (refreshedRow) {
       const hydrated = mapSupabaseTruckToLocal(refreshedRow);
+      
 
 
       setFoodTrucks(prev =>

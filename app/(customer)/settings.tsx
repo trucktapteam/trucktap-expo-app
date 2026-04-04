@@ -38,6 +38,55 @@ export default function SettingsScreen() {
     }
   };
 
+  const sendTestNotification = async () => {
+  try {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !userData?.user) {
+      Alert.alert('Error', 'No logged-in user found.');
+      return;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('push_token')
+      .eq('id', userData.user.id)
+      .single();
+
+    if (profileError || !profile?.push_token) {
+      Alert.alert('Error', 'No push token found for this user.');
+      return;
+    }
+
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: profile.push_token,
+        sound: 'default',
+        title: 'TruckTap Test',
+        body: 'If you see this, push notifications are working.',
+        data: { type: 'manual_test' },
+      }),
+    });
+
+    const result = await response.json();
+    console.log('[Test Notification] Expo status:', response.status);
+    console.log('[Test Notification] Expo response:', result);
+
+    if (response.ok) {
+      Alert.alert('Sent', 'Test notification was sent. Check your phone.');
+    } else {
+      Alert.alert('Error', 'Expo did not accept the test notification.');
+    }
+  } catch (error) {
+    console.log('[Test Notification] Error:', error);
+    Alert.alert('Error', 'Something went wrong sending the test notification.');
+  }
+};
+
 
 
   const handleLocationPermission = async () => {
@@ -395,6 +444,10 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        <TouchableOpacity style={styles.testButton} onPress={sendTestNotification}>
+  <Text style={styles.testButtonText}>Send test notification</Text>
+</TouchableOpacity>
+
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Location</Text>
 
@@ -457,7 +510,7 @@ export default function SettingsScreen() {
 
             <View style={styles.aboutRow}>
               <Text style={[styles.aboutLabel, { color: colors.text }]}>Version</Text>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>1.0.0</Text>
+              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>1.0.15</Text>
             </View>
 
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -502,6 +555,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  testButton: {
+  marginTop: 16,
+  paddingVertical: 14,
+  paddingHorizontal: 16,
+  borderRadius: 10,
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: '#222',
+},
+
+testButtonText: {
+  color: '#fff',
+  fontSize: 16,
+  fontWeight: '600',
+},
   header: {
     flexDirection: 'row',
     alignItems: 'center',

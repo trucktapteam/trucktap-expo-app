@@ -15,16 +15,21 @@
       }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+      },
+      "environment": "preview"
+    
     },
     "production": {
-  "autoIncrement": true,
-  "env": {
-    "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
-  }
-}
-  },
-  "submit": {
-    "production": {}
+      "autoIncrement": true,
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+      }
+    }
   }
  }
