@@ -30,13 +30,19 @@
       }
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "package": "app.rork.trucktap_food_truck_finder_cqgko70",
-      "googleServicesFile": "./google-services.json",
-      "versionCode": 15,
+  "adaptiveIcon": {
+    "foregroundImage": "./assets/images/adaptive-icon.png",
+    "backgroundColor": "#ffffff"
+  },
+
+  "notification": {
+    "icon": "./assets/images/notification-icon.png",
+    "color": "#FF6600"
+  },
+
+  "package": "app.rork.trucktap_food_truck_finder_cqgko70",
+  "googleServicesFile": "./google-services.json",
+  "versionCode": 25,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
