@@ -16,6 +16,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [authAction, setAuthAction] = useState<string>('');
+ 
 
   const styles = createStyles(colors);
 
@@ -33,11 +34,17 @@ export default function ProfileScreen() {
   };
 
   const handleSignIn = () => {
-  router.push('/customer-login' as any);
+  router.push({
+    pathname: '/customer-login',
+    params: { mode: 'signin' },
+  } as any);
 };
 
 const handleCreateAccount = () => {
-  router.push('/customer-login' as any);
+  router.push({
+    pathname: '/customer-login',
+    params: { mode: 'signup' },
+  } as any);
 };
 
   const handleTrucksEnterHere = () => {

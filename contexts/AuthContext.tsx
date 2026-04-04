@@ -5,7 +5,6 @@ import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { DEBUG } from '@/constants/debug';
 
-
 type AuthUser = {
   id: string;
   email: string;
@@ -16,91 +15,169 @@ type AuthUser = {
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const { user: supabaseUser, isLoading, isAuthenticated } = useSupabaseAuth();
 
-  const user: AuthUser | null = useMemo(() => supabaseUser
-    ? {
-        id: supabaseUser?.id,
-        email: supabaseUser.email ?? '',
-        name:
-          supabaseUser.user_metadata?.full_name ??
-          supabaseUser.user_metadata?.name ??
-          supabaseUser.email?.split('@')[0] ??
-          'User',
-        provider: (supabaseUser.app_metadata?.provider === 'google'
-          ? 'google'
-          : 'email') as 'email' | 'google',
-      }
-    : null, [supabaseUser]);
+  const user: AuthUser | null = useMemo(
+    () =>
+      supabaseUser
+        ? {
+            id: supabaseUser.id,
+            email: supabaseUser.email ?? '',
+            name:
+              supabaseUser.user_metadata?.full_name ??
+              supabaseUser.user_metadata?.name ??
+              supabaseUser.email?.split('@')[0] ??
+              'User',
+            provider:
+              supabaseUser.app_metadata?.provider === 'google' ? 'google' : 'email',
+          }
+        : null,
+    [supabaseUser]
+  );
 
   useEffect(() => {
-    if (DEBUG) console.log('[Auth] user:', user?.id, 'authenticated:', isAuthenticated);
-  }, [supabaseUser?.id, user?.id, isAuthenticated]);
+    if (DEBUG) {
+      console.log('[Auth] user:', user?.id, 'authenticated:', isAuthenticated);
+    }
+  }, [user?.id, isAuthenticated]);
 
-    const signInWithEmail = useCallback(async (email: string, password?: string) => {
+  const signInWithEmail = useCallback(async (email: string, password?: string) => {
     if (!isSupabaseConfigured) {
       Alert.alert('Error', 'Authentication is not configured. Please set up Supabase.');
-      return;
+      return false;
     }
 
     const trimmedEmail = email.trim().toLowerCase();
 
     if (!trimmedEmail) {
-  Alert.alert('Error', 'Please enter your email address.');
-  return;
-}
+      Alert.alert('Error', 'Please enter your email address.');
+      return false;
+    }
 
-if (password !== undefined && password === '') {
-  Alert.alert('Error', 'Please enter your password.');
-  return;
-}
+    if (password !== undefined && password === '') {
+      Alert.alert('Error', 'Please enter your password.');
+      return false;
+    }
 
     if (password) {
       if (DEBUG) console.log('[Auth] Signing in with email+password');
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+
+      const { error } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
         password,
       });
 
-      if (signInError) {
-        if (signInError.message.includes('Invalid login credentials')) {
-          if (DEBUG) console.log('[Auth] Invalid credentials, attempting sign up');
-          const { error: signUpError } = await supabase.auth.signUp({
-  email: trimmedEmail,
-  password,
-  options: {
-    emailRedirectTo: 'rork-app://',
-  },
-});
-
-          if (signUpError) {
-            console.log('[Auth] Sign up error:', signUpError.message);
-            Alert.alert('Error', signUpError.message);
-            throw signUpError;
-          }
-
-          Alert.alert('Account Created', 'Check your email to confirm your account, then sign in.');
-          return;
-        }
-
-        console.log('[Auth] Sign in error:', signInError.message);
-        Alert.alert('Error', signInError.message);
-        throw signInError;
-      }
-
-      if (DEBUG) console.log('[Auth] Signed in with email+password');
-    } else {
-      if (DEBUG) console.log('[Auth] Sending magic link');
-      const { error } = await supabase.auth.signInWithOtp({
-        email: trimmedEmail,
-      });
-
       if (error) {
-        console.log('[Auth] OTP error:', error.message);
-        Alert.alert('Error', error.message);
+        console.log('[Auth] Sign in error:', error.message);
+        Alert.alert('Sign In Failed', error.message);
         throw error;
       }
 
-      Alert.alert('Check Your Email', 'We sent you a magic link. Tap it to sign in.');
+      if (DEBUG) console.log('[Auth] Signed in with email+password');
+      return true;
     }
+
+    if (DEBUG) console.log('[Auth] Sending magic link');
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: trimmedEmail,
+      options: {
+        emailRedirectTo: 'rork-app://',
+      },
+    });
+
+    if (error) {
+      console.log('[Auth] OTP error:', error.message);
+      Alert.alert('Error', error.message);
+      throw error;
+    }
+
+    Alert.alert('Check Your Email', 'We sent you a magic link. Tap it to sign in.');
+    return true;
+  }, []);
+
+  const signUpWithEmail = useCallback(async (email: string, password: string) => {
+    if (!isSupabaseConfigured) {
+      Alert.alert('Error', 'Authentication is not configured. Please set up Supabase.');
+      return false;
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedEmail) {
+      Alert.alert('Error', 'Please enter your email address.');
+      return false;
+    }
+
+    if (!password || password.trim() === '') {
+      Alert.alert('Error', 'Please enter a password.');
+      return false;
+    }
+
+    if (DEBUG) console.log('[Auth] Signing up with email+password');
+
+    const { data, error } = await supabase.auth.signUp({
+      email: trimmedEmail,
+      password,
+      options: {
+        emailRedirectTo: 'rork-app://',
+      },
+    });
+
+    if (error) {
+      console.log('[Auth] Sign up error:', error.message);
+      Alert.alert('Sign Up Failed', error.message);
+      throw error;
+    }
+
+    if (DEBUG) {
+      console.log('[Auth] Sign up response:', {
+        userId: data.user?.id,
+        hasSession: !!data.session,
+      });
+    }
+
+    Alert.alert(
+      'Account Created',
+      'Check your email to confirm your account before signing in.'
+    );
+
+    return true;
+  }, []);
+
+  const resendConfirmationEmail = useCallback(async (email: string) => {
+    if (!isSupabaseConfigured) {
+      Alert.alert('Error', 'Authentication is not configured. Please set up Supabase.');
+      return false;
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedEmail) {
+      Alert.alert('Error', 'Missing email address.');
+      return false;
+    }
+
+    if (DEBUG) console.log('[Auth] Resending confirmation email to:', trimmedEmail);
+
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: trimmedEmail,
+      options: {
+        emailRedirectTo: 'rork-app://',
+      },
+    });
+
+    if (error) {
+      console.log('[Auth] Resend confirmation error:', error.message);
+      Alert.alert('Resend Failed', error.message);
+      return false;
+    }
+
+    Alert.alert(
+      'Email Sent',
+      'We sent you another confirmation email. Check your inbox and spam folder.'
+    );
+
+    return true;
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
@@ -111,7 +188,7 @@ if (password !== undefined && password === '') {
 
     Alert.alert(
       'Google Sign In',
-      'Google sign in is not available yet. Please use email and password to sign in.',
+      'Google sign in is not available yet. Please use email and password to sign in.'
     );
   }, []);
 
@@ -122,12 +199,13 @@ if (password !== undefined && password === '') {
     }
 
     if (DEBUG) console.log('[Auth] Signing out');
+
     const { error } = await supabase.auth.signOut();
+
     if (error) {
       console.log('[Auth] Sign out error:', error.message);
       throw error;
     }
-
   }, []);
 
   const requireAuth = useCallback(
@@ -136,6 +214,7 @@ if (password !== undefined && password === '') {
         if (DEBUG) console.log('[Auth] requireAuth blocked - loading');
         return false;
       }
+
       if (isAuthenticated && user) {
         callback();
         return true;
@@ -143,16 +222,31 @@ if (password !== undefined && password === '') {
 
       return false;
     },
-    [isAuthenticated, user, isLoading],
+    [isAuthenticated, user, isLoading]
   );
 
-  return useMemo(() => ({
-    user,
-    isLoading,
-    isAuthenticated,
-    signInWithEmail,
-    signInWithGoogle,
-    signOut,
-    requireAuth,
-  }), [user, isLoading, isAuthenticated, signInWithEmail, signInWithGoogle, signOut, requireAuth]);
-});
+  return useMemo(
+    () => ({
+      user,
+      isLoading,
+      isAuthenticated,
+      signInWithEmail,
+      signUpWithEmail,
+      resendConfirmationEmail,
+      signInWithGoogle,
+      signOut,
+      requireAuth,
+    }),
+    [
+      user,
+      isLoading,
+      isAuthenticated,
+      signInWithEmail,
+      signUpWithEmail,
+      resendConfirmationEmail,
+      signInWithGoogle,
+      signOut,
+      requireAuth,
+    ]
+  );
+   });

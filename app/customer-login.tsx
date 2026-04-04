@@ -18,17 +18,20 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams } from 'expo-router';
 
 export default function CustomerLoginScreen() {
   const router = useRouter();
   const { completeOnboarding, consumePendingRedirect } = useApp();
-  const { signInWithEmail, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { signInWithEmail, signUpWithEmail, isAuthenticated, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
+  const { mode } = useLocalSearchParams();
+  const isSignUp = mode === 'signup';
 
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
@@ -44,30 +47,42 @@ export default function CustomerLoginScreen() {
   }, [isAuthenticated, authLoading]);
 
   const handleEmailLogin = async () => {
-    setEmailTouched(true);
-    setPasswordTouched(true);
-    setError(null);
+  setEmailTouched(true);
+  setPasswordTouched(true);
+  setError(null);
 
-    if (!email.trim()) {
-      setError('Please enter your email address.');
-      return;
-    }
-    if (!password.trim()) {
-      setError('Please enter your password.');
-      return;
-    }
+  if (!email.trim()) {
+    setError('Please enter your email address.');
+    return;
+  }
 
-    try {
-      setIsSubmitting(true);
+  if (!password.trim()) {
+    setError('Please enter your password.');
+    return;
+  }
+
+  try {
+    setIsSubmitting(true);
+
+    if (isSignUp) {
+      const success = await signUpWithEmail(email, password);
+
+      if (success) {
+        router.push({
+          pathname: '/auth/check-email',
+          params: { email },
+        } as any);
+      }
+    } else {
       await signInWithEmail(email, password);
-    } catch (err: any) {
-      const message = err?.message || 'Sign in failed. Please try again.';
-      console.log('[CustomerLogin] Email login error:', message);
-      setError(message);
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+  } catch (error: any) {
+    console.log('[CustomerLogin] Email auth error:', error);
+    setError(error?.message || 'Something went wrong. Please try again.');
+  } finally {
+    setIsSubmitting(false);
+  }
+};
    // Google login temporarily hidden for MVP
 // const handleGoogleLogin = async () => {
 //   try {

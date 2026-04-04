@@ -65,20 +65,30 @@ export default function RootLayout() {
 
     // Let Supabase process auth links first
     if (
-      event.url.includes('access_token=') ||
-      event.url.includes('refresh_token=') ||
-      event.url.includes('type=signup') ||
-      event.url.includes('type=magiclink') ||
-      event.url.includes('type=recovery')
-    ) {
+  event.url.includes('code=') ||
+  event.url.includes('access_token=') ||
+  event.url.includes('refresh_token=') ||
+  event.url.includes('type=signup') ||
+  event.url.includes('type=magiclink') ||
+  event.url.includes('type=recovery')
+) {
       const { error } = await supabase.auth.exchangeCodeForSession(event.url);
-      if (error) {
-        console.log('Error exchanging auth code for session:', error);
-      } else {
-        if (DEBUG) console.log('Auth session established from deep link');
-        router.replace('/(customer)' as any);
-      }
-      return;
+
+if (error) {
+  console.log('Error exchanging auth code for session:', error);
+
+  router.replace({
+    pathname: '/auth/check-email',
+    params: {
+      error: 'verification_failed',
+    },
+  } as any);
+} else {
+  if (DEBUG) console.log('Auth session established from deep link');
+  router.replace('/auth/verified' as any);
+}
+
+return;
     }
 
     const { path } = Linking.parse(event.url);
