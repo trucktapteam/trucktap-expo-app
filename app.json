@@ -2,7 +2,7 @@
   "expo": {
     "name": "TruckTap Food Truck Finder",
     "slug": "trucktap-food-truck-finder-cqgko70",
-    "version": "1.0.15",
+    "version": "1.0.17",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rork-app",
@@ -53,7 +53,7 @@
       ],
      "config": {
   "googleMaps": {
-    "apiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
+    "apiKey": "AIzaSyBrypvMT0Q615u2xdVT0SaklZRlQ7-YUIk"
   }
 } 
     },
