@@ -64,9 +64,12 @@ if (password !== undefined && password === '') {
         if (signInError.message.includes('Invalid login credentials')) {
           if (DEBUG) console.log('[Auth] Invalid credentials, attempting sign up');
           const { error: signUpError } = await supabase.auth.signUp({
-            email: trimmedEmail,
-            password,
-          });
+  email: trimmedEmail,
+  password,
+  options: {
+    emailRedirectTo: 'rork-app://',
+  },
+});
 
           if (signUpError) {
             console.log('[Auth] Sign up error:', signUpError.message);
