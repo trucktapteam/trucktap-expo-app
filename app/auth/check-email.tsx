@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Mail } from 'lucide-react-native';
@@ -12,16 +12,33 @@ export default function CheckEmailScreen() {
   const { resendConfirmationEmail } = useAuth();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [enteredEmail, setEnteredEmail] = useState(typeof email === 'string' ? email : '');
+  const [message, setMessage] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const emailValue = typeof email === 'string' ? email : '';
+  const emailValue = enteredEmail.trim();
   const hasVerificationError = error === 'verification_failed';
 
   const handleResend = async () => {
-    if (!emailValue) return;
+    if (!emailValue) {
+      setLocalError('Enter your email address so we can resend the verification link.');
+      setMessage(null);
+      return;
+    }
 
     try {
       setIsSubmitting(true);
-      await resendConfirmationEmail(emailValue);
+      setLocalError(null);
+      setMessage(null);
+
+      const success = await resendConfirmationEmail(emailValue);
+
+      if (success) {
+        setMessage('Verification email sent. Check your inbox and spam folder.');
+      }
+    } catch (err: any) {
+      console.log('[CheckEmail] Resend error:', err);
+      setLocalError(err?.message || 'Unable to resend verification email right now.');
     } finally {
       setIsSubmitting(false);
     }
@@ -39,20 +56,42 @@ export default function CheckEmailScreen() {
         </View>
 
         <Text style={styles.title}>
-  {hasVerificationError ? 'Verification link issue' : 'Check your email'}
-</Text>
-
-        <Text style={styles.subtitle}>
-          We sent a confirmation link to:
+          {hasVerificationError ? 'Verification link issue' : 'Check your email'}
         </Text>
 
-        <Text style={styles.email}>{emailValue || 'your email address'}</Text>
+        <Text style={styles.subtitle}>
+          {hasVerificationError
+            ? 'Use your account email to request a fresh verification link:'
+            : 'We sent a confirmation link to:'}
+        </Text>
+
+        {hasVerificationError ? (
+          <TextInput
+            style={styles.input}
+            placeholder="your@email.com"
+            placeholderTextColor={Colors.gray}
+            value={enteredEmail}
+            onChangeText={(value) => {
+              setEnteredEmail(value);
+              setLocalError(null);
+              setMessage(null);
+            }}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+          />
+        ) : (
+          <Text style={styles.email}>{emailValue || 'your email address'}</Text>
+        )}
 
         <Text style={styles.helperText}>
-  {hasVerificationError
-    ? 'That verification link may have expired, already been used, or is invalid. You can request a new verification email below.'
-    : 'Open the email, tap the confirmation link, and return to TruckTap. If you don’t see it, check your spam folder.'}
-</Text>
+          {hasVerificationError
+            ? 'That verification link may have expired, already been used, or is invalid. You can request a new verification email below.'
+            : 'Open the email, tap the confirmation link, and return to TruckTap. If you do not see it, check your spam folder.'}
+        </Text>
+
+        {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
+        {message ? <Text style={styles.successText}>{message}</Text> : null}
 
         <TouchableOpacity
           style={[styles.button, isSubmitting && styles.buttonDisabled]}
@@ -114,12 +153,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  input: {
+    backgroundColor: Colors.lightGray,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: Colors.dark,
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
+    marginBottom: 16,
+  },
   helperText: {
     fontSize: 15,
     lineHeight: 22,
     color: '#666',
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 20,
   },
   button: {
     backgroundColor: Colors.primary,
@@ -135,6 +185,18 @@ const styles = StyleSheet.create({
     color: Colors.light,
     fontSize: 16,
     fontWeight: '600',
+  },
+  errorText: {
+    color: '#DC2626',
+    textAlign: 'center',
+    marginBottom: 12,
+    fontSize: 14,
+  },
+  successText: {
+    color: '#15803D',
+    textAlign: 'center',
+    marginBottom: 12,
+    fontSize: 14,
   },
   linkText: {
     color: Colors.primary,

@@ -180,6 +180,64 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return true;
   }, []);
 
+  const resetPasswordForEmail = useCallback(async (email: string) => {
+    if (!isSupabaseConfigured) {
+      Alert.alert('Error', 'Authentication is not configured. Please set up Supabase.');
+      return false;
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedEmail) {
+      Alert.alert('Error', 'Please enter your email address.');
+      return false;
+    }
+
+    if (DEBUG) console.log('[Auth] Sending password reset email to:', trimmedEmail);
+
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+      redirectTo: 'rork-app://',
+    });
+
+    if (error) {
+      console.log('[Auth] Password reset error:', error.message);
+      Alert.alert('Reset Failed', error.message);
+      throw error;
+    }
+
+    Alert.alert(
+      'Check Your Email',
+      'We sent a password reset link. Open the email and follow the instructions to continue.'
+    );
+
+    return true;
+  }, []);
+
+  const updatePassword = useCallback(async (password: string) => {
+    if (!isSupabaseConfigured) {
+      Alert.alert('Error', 'Authentication is not configured. Please set up Supabase.');
+      return false;
+    }
+
+    if (!password || password.trim() === '') {
+      Alert.alert('Error', 'Please enter a new password.');
+      return false;
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      password,
+    });
+
+    if (error) {
+      console.log('[Auth] Update password error:', error.message);
+      Alert.alert('Password Update Failed', error.message);
+      throw error;
+    }
+
+    Alert.alert('Password Updated', 'Your password has been updated successfully.');
+    return true;
+  }, []);
+
   const signInWithGoogle = useCallback(async () => {
     if (!isSupabaseConfigured) {
       Alert.alert('Error', 'Authentication is not configured. Please set up Supabase.');
@@ -233,6 +291,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       signInWithEmail,
       signUpWithEmail,
       resendConfirmationEmail,
+      resetPasswordForEmail,
+      updatePassword,
       signInWithGoogle,
       signOut,
       requireAuth,
@@ -244,6 +304,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       signInWithEmail,
       signUpWithEmail,
       resendConfirmationEmail,
+      resetPasswordForEmail,
+      updatePassword,
       signInWithGoogle,
       signOut,
       requireAuth,

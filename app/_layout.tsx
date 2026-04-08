@@ -21,6 +21,21 @@ void SplashScreen.preventAutoHideAsync().catch((e) => {
 
 const queryClient = new QueryClient();
 
+const getAuthLinkParams = (url: string) => {
+  const [baseUrl, hash = ''] = url.split('#');
+  const queryString = baseUrl.includes('?') ? baseUrl.split('?')[1] : '';
+  const queryParams = new URLSearchParams(queryString);
+  const hashParams = new URLSearchParams(hash);
+
+  return {
+    code: queryParams.get('code') ?? hashParams.get('code'),
+    accessToken: queryParams.get('access_token') ?? hashParams.get('access_token'),
+    refreshToken: queryParams.get('refresh_token') ?? hashParams.get('refresh_token'),
+    type: queryParams.get('type') ?? hashParams.get('type'),
+    email: queryParams.get('email') ?? hashParams.get('email') ?? undefined,
+  };
+};
+
 function RootLayoutNav() {
   const { colors } = useTheme();
   
@@ -37,6 +52,9 @@ function RootLayoutNav() {
       <Stack.Screen name="truck-setup" options={{ title: 'Create Truck' }} />
       <Stack.Screen name="truck-login" options={{ title: 'Truck Owner Login' }} />
       <Stack.Screen name="customer-login" options={{ headerShown: false, presentation: 'transparentModal' }} />
+      <Stack.Screen name="auth/check-email" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/verified" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/reset-password" options={{ headerShown: false }} />
       <Stack.Screen name="(customer)" options={{ headerShown: false }} />
       <Stack.Screen name="(truck)" options={{ headerShown: false }} />
       <Stack.Screen name="truck/[id]" options={{ headerShown: false }} />
@@ -63,29 +81,52 @@ export default function RootLayout() {
   try {
     if (DEBUG) console.log('Deep link received:', event.url);
 
+    const { code, accessToken, refreshToken, type, email } = getAuthLinkParams(event.url);
+    const isAuthLink = !!(code || accessToken || refreshToken || type);
+
     // Let Supabase process auth links first
-    if (
-  event.url.includes('code=') ||
-  event.url.includes('access_token=') ||
-  event.url.includes('refresh_token=') ||
-  event.url.includes('type=signup') ||
-  event.url.includes('type=magiclink') ||
-  event.url.includes('type=recovery')
-) {
-      const { error } = await supabase.auth.exchangeCodeForSession(event.url);
+    if (isAuthLink) {
+      let authError: unknown = null;
 
-if (error) {
-  console.log('Error exchanging auth code for session:', error);
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        authError = error;
+      } else if (accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        authError = error;
+      } else {
+        authError = new Error('Missing auth credentials in deep link.');
+      }
 
-  router.replace({
-    pathname: '/auth/check-email',
-    params: {
-      error: 'verification_failed',
-    },
-  } as any);
+if (authError) {
+  console.log('Error handling auth deep link:', authError);
+
+  if (type === 'recovery') {
+    router.replace({
+      pathname: '/auth/reset-password',
+      params: {
+        error: 'recovery_failed',
+      },
+    } as any);
+  } else {
+    router.replace({
+      pathname: '/auth/check-email',
+      params: {
+        error: 'verification_failed',
+        email,
+      },
+    } as any);
+  }
 } else {
   if (DEBUG) console.log('Auth session established from deep link');
-  router.replace('/auth/verified' as any);
+  if (type === 'recovery') {
+    router.replace('/auth/reset-password' as any);
+  } else {
+    router.replace('/auth/verified' as any);
+  }
 }
 
 return;

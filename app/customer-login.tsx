@@ -23,11 +23,18 @@ import { useLocalSearchParams } from 'expo-router';
 export default function CustomerLoginScreen() {
   const router = useRouter();
   const { completeOnboarding, consumePendingRedirect } = useApp();
-  const { signInWithEmail, signUpWithEmail, isAuthenticated, isLoading: authLoading } = useAuth();
+  const {
+    signInWithEmail,
+    signUpWithEmail,
+    resetPasswordForEmail,
+    isAuthenticated,
+    isLoading: authLoading,
+  } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
   const { mode } = useLocalSearchParams();
@@ -50,6 +57,7 @@ export default function CustomerLoginScreen() {
   setEmailTouched(true);
   setPasswordTouched(true);
   setError(null);
+  setSuccessMessage(null);
 
   if (!email.trim()) {
     setError('Please enter your email address.');
@@ -83,6 +91,31 @@ export default function CustomerLoginScreen() {
     setIsSubmitting(false);
   }
 };
+
+  const handleForgotPassword = async () => {
+    setEmailTouched(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    if (!email.trim()) {
+      setError('Enter your email address first so we can send the reset link.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const success = await resetPasswordForEmail(email);
+
+      if (success) {
+        setSuccessMessage('Password reset email sent. Check your inbox and spam folder.');
+      }
+    } catch (error: any) {
+      console.log('[CustomerLogin] Forgot password error:', error);
+      setError(error?.message || 'Unable to send reset email right now. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
    // Google login temporarily hidden for MVP
 // const handleGoogleLogin = async () => {
 //   try {
@@ -133,6 +166,11 @@ export default function CustomerLoginScreen() {
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
+            {successMessage ? (
+              <View style={styles.successBanner}>
+                <Text style={styles.successText}>{successMessage}</Text>
+              </View>
+            ) : null}
            {/* Google login temporarily hidden for MVP
 <TouchableOpacity
   style={styles.googleButton}
@@ -166,7 +204,7 @@ export default function CustomerLoginScreen() {
                 placeholder="your@email.com"
                 placeholderTextColor={Colors.gray}
                 value={email}
-                onChangeText={(t) => { setEmail(t); setError(null); }}
+                onChangeText={(t) => { setEmail(t); setError(null); setSuccessMessage(null); }}
                 onBlur={() => setEmailTouched(true)}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -184,7 +222,7 @@ export default function CustomerLoginScreen() {
                 placeholder="Enter your password"
                 placeholderTextColor={Colors.gray}
                 value={password}
-                onChangeText={(t) => { setPassword(t); setError(null); }}
+                onChangeText={(t) => { setPassword(t); setError(null); setSuccessMessage(null); }}
                 onBlur={() => setPasswordTouched(true)}
                 secureTextEntry
                 autoCapitalize="none"
@@ -195,7 +233,11 @@ export default function CustomerLoginScreen() {
               ) : null}
             </View>
 
-            <TouchableOpacity style={styles.forgotPassword}>
+            <TouchableOpacity
+              style={[styles.forgotPassword, isSubmitting && styles.forgotPasswordDisabled]}
+              onPress={handleForgotPassword}
+              disabled={isSubmitting}
+            >
               <Text style={styles.forgotPasswordText}>Forgot password?</Text>
             </TouchableOpacity>
 
@@ -442,6 +484,19 @@ elevation: 5,
     fontWeight: '500' as const,
     textAlign: 'center' as const,
   },
+  successBanner: {
+    backgroundColor: '#DCFCE7',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  successText: {
+    color: '#15803D',
+    fontSize: 14,
+    fontWeight: '500' as const,
+    textAlign: 'center' as const,
+  },
   inputError: {
     borderColor: '#EF4444',
   },
@@ -449,5 +504,8 @@ elevation: 5,
     color: '#EF4444',
     fontSize: 12,
     marginTop: 2,
+  },
+  forgotPasswordDisabled: {
+    opacity: 0.6,
   },
 });

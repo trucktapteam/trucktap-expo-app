@@ -33,7 +33,7 @@ export default function TruckSettings() {
     }
   };
 
-  const handleLocationPermission = async () => {
+  const openLocationSettings = async () => {
     if (Platform.OS === 'web') {
       Alert.alert(
         'Location Settings',
@@ -44,21 +44,10 @@ export default function TruckSettings() {
     }
 
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      setLocationStatus(status === 'granted' ? 'granted' : 'denied');
-      
-      if (status === 'denied') {
-        Alert.alert(
-          'Location Permission',
-          'Location access is required to update your truck location and show nearby customers. Please enable it in your device settings.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => Linking.openSettings() }
-          ]
-        );
-      }
+      await Linking.openSettings();
     } catch (error) {
-      console.log('Error requesting location permission:', error);
+      console.log('Error opening location settings:', error);
+      Alert.alert('Error', 'Unable to open your device settings right now.');
     }
   };
 
@@ -260,7 +249,7 @@ setCurrentUser(customerUser);
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Location</Text>
 
           <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-            <View style={styles.infoRow}>
+            <TouchableOpacity style={styles.infoRow} onPress={openLocationSettings}>
               <View style={styles.infoLeft}>
                 <MapPin size={20} color={colors.secondaryText} />
                 <Text style={[styles.infoLabel, { color: colors.text }]}>Permission Status</Text>
@@ -272,10 +261,10 @@ setCurrentUser(customerUser);
               ]}>
                 {locationStatus === 'granted' ? 'Enabled' : locationStatus === 'denied' ? 'Disabled' : 'Unknown'}
               </Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.cardBackground, borderColor: colors.border }]} onPress={handleLocationPermission}>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.cardBackground, borderColor: colors.border }]} onPress={openLocationSettings}>
             <MapPin size={20} color={colors.primary} />
             <Text style={[styles.actionButtonText, { color: colors.primary }]}>Change Location Permission</Text>
             <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
