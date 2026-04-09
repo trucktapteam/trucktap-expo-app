@@ -1,35 +1,33 @@
 import React from 'react';
-import { Platform } from 'react-native';
+import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useApp } from '@/contexts/AppContext';
-import TruckProfile from '@/components/TruckProfile';
+import { useTheme } from '@/contexts/ThemeContext';
 
-export default function TruckProfileScreen() {
+export default function LegacyTruckProfileRoute() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { incrementQrScan, currentUser, setPendingRedirect, foodTrucks } = useApp();
-  
+  const { colors } = useTheme();
+
   React.useEffect(() => {
-    if (!currentUser && id && typeof id === 'string') {
-      const truckExists = foodTrucks.find(t => t.id === id);
-      if (truckExists) {
-        console.log('[TruckProfile] User not logged in, storing redirect and navigating to login');
-        setPendingRedirect(`/truck/${id}`);
-        router.replace('/customer-login' as any);
-      } else {
-        console.log('[TruckProfile] Truck not found, redirecting to home');
-        router.replace('/(customer)/(tabs)/discover' as any);
-      }
+    if (typeof id !== 'string' || !id) {
+      router.replace('/(customer)/(tabs)/discover' as any);
       return;
     }
 
-    if (id && typeof id === 'string') {
-      const platform = Platform.OS === 'ios' ? 'iOS' : 
-                      Platform.OS === 'android' ? 'Android' : 
-                      'Web';
-      incrementQrScan(id, platform);
-    }
-  }, [id, incrementQrScan, currentUser, setPendingRedirect, router, foodTrucks]);
-  
-  return <TruckProfile truckId={id as string} mode="owner" />;
+    router.replace(`/public/${id}` as any);
+  }, [id, router]);
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <ActivityIndicator size="large" color={colors.primary} />
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

@@ -50,15 +50,16 @@ export default function TruckLoginScreen() {
   const selectTruck = (truck: FoodTruck) => {
     if (!authUser) return;
 
-   setCurrentUser({
-  ...(currentUser || {
-    id: authUser.id,
-    name: authUser.name,
-    role: 'customer' as const,
-    favorites: [],
-  }),
-  truck_id: truck.id,
-}); 
+    setCurrentUser({
+      ...(currentUser || {
+        id: authUser.id,
+        name: authUser.name,
+        email: authUser.email,
+        favorites: [],
+      }),
+      role: 'truck',
+      truck_id: truck.id,
+    });
     completeOnboarding();
     if (DEBUG) console.log('[TruckLogin] Navigating to dashboard for truck:', truck.id);
     router.replace('/(truck)/(tabs)/dashboard' as any);

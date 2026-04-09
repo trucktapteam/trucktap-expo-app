@@ -21,6 +21,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import PosterRenderer from '@/components/posters/PosterRenderer';
 import type { PosterTemplate, PosterConfig } from '@/types/poster';
+import { buildTruckPublicUrl } from '@/lib/truckShare';
 
 const TEMPLATES: { id: PosterTemplate; label: string; description: string }[] = [
   { id: 'simple', label: 'Simple', description: 'Clean white background, centered QR' },
@@ -59,7 +60,7 @@ export default function PosterMaker() {
     const generateQR = async () => {
       try {
         setIsGeneratingQR(true);
-        const url = `https://trucktap.app/truck/${truck.id}`;
+        const url = buildTruckPublicUrl(truck.id);
         const dataUrl = await QRCode.toDataURL(url, {
           width: 800,
           margin: 2,
@@ -139,10 +140,10 @@ export default function PosterMaker() {
           await navigator.share({
             title: `${truck.name} Poster`,
             text: `Check out ${truck.name} on TruckTap!`,
-            url: `https://trucktap.app/truck/${truck.id}`,
+            url: buildTruckPublicUrl(truck.id),
           });
         } else {
-          await navigator.clipboard.writeText(`https://trucktap.app/truck/${truck.id}`);
+          await navigator.clipboard.writeText(buildTruckPublicUrl(truck.id));
           Alert.alert('Link Copied', 'Profile link copied to clipboard!');
         }
         return;

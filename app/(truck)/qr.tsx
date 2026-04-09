@@ -17,22 +17,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { DEBUG } from '@/constants/debug';
 import QRCodeSVG from 'react-native-qrcode-svg';
-
-
-const FALLBACK_BASE_URL = 'https://trucktap.app';
-
-function getBaseUrl(): string {
-  if (Platform.OS === 'web') {
-    if (typeof window !== 'undefined') {
-      const host = window.location.host;
-      if (host.includes('localhost') || host.includes('127.0.0.1') || host.includes('192.168')) {
-        return FALLBACK_BASE_URL;
-      }
-      return `${window.location.protocol}//${host}`;
-    }
-  }
-  return FALLBACK_BASE_URL;
-}
+import { buildTruckPublicUrl } from '@/lib/truckShare';
 
 export default function QRCodeScreen() {
   const { getUserTruck, isProfileComplete, markQrShared } = useApp();
@@ -47,9 +32,7 @@ export default function QRCodeScreen() {
       console.warn('⚠️ No truckId available for QR generation');
       return '';
     }
-    
-    const baseUrl = getBaseUrl();
-    const webUrl = `https://luxury-horse-2960dd.netlify.app/public/${truckId}`;
+    const webUrl = buildTruckPublicUrl(truckId);
     
     if (DEBUG) console.log('QR URL generated:', webUrl, 'truckId:', truckId);
     

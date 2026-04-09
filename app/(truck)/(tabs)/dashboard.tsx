@@ -10,6 +10,7 @@ import StatsRow from '@/components/StatsRow';
 import DashboardCard from '@/components/DashboardCard';
 import Toast from '@/components/Toast';
 import { DEBUG } from '@/constants/debug';
+import { buildTruckPublicUrl } from '@/lib/truckShare';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -85,7 +86,7 @@ export default function TruckDashboard() {
   };
 
   const profileComplete = truck ? isProfileComplete(truck.id) : false;
-  const profileUrl = `https://trucktap.app/truck/${truck?.id}`;
+  const profileUrl = buildTruckPublicUrl(truck?.id);
 
   const isArchived = truck ? (truck.archived === true || !!truck.archivedAt) : false;
 

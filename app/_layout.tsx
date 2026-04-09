@@ -20,6 +20,8 @@ void SplashScreen.preventAutoHideAsync().catch((e) => {
 });
 
 const queryClient = new QueryClient();
+const VERIFICATION_LINK_TYPES = new Set(['signup', 'invite', 'magiclink', 'email', 'email_change']);
+const RECOVERY_LINK_TYPE = 'recovery';
 
 const getAuthLinkParams = (url: string) => {
   const [baseUrl, hash = ''] = url.split('#');
@@ -29,6 +31,7 @@ const getAuthLinkParams = (url: string) => {
 
   return {
     code: queryParams.get('code') ?? hashParams.get('code'),
+    tokenHash: queryParams.get('token_hash') ?? hashParams.get('token_hash'),
     accessToken: queryParams.get('access_token') ?? hashParams.get('access_token'),
     refreshToken: queryParams.get('refresh_token') ?? hashParams.get('refresh_token'),
     type: queryParams.get('type') ?? hashParams.get('type'),
@@ -78,81 +81,122 @@ export default function RootLayout() {
     }
 
     const handleDeepLink = async (event: { url: string }) => {
-  try {
-    if (DEBUG) console.log('Deep link received:', event.url);
+      try {
+        console.log('[RootLayout] Deep link received:', event.url);
 
-    const { code, accessToken, refreshToken, type, email } = getAuthLinkParams(event.url);
-    const isAuthLink = !!(code || accessToken || refreshToken || type);
+        const { path } = Linking.parse(event.url);
+        const { code, tokenHash, accessToken, refreshToken, type, email } = getAuthLinkParams(event.url);
+        const isRecoveryLink = type === RECOVERY_LINK_TYPE;
+        const isVerificationLink = !!type && VERIFICATION_LINK_TYPES.has(type);
+        const isAuthLink = !!(code || tokenHash || accessToken || refreshToken || type);
 
-    // Let Supabase process auth links first
-    if (isAuthLink) {
-      let authError: unknown = null;
-
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        authError = error;
-      } else if (accessToken && refreshToken) {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
+        console.log('[RootLayout] Deep link parsed:', {
+          path,
+          type: type ?? null,
+          email: email ?? null,
+          hasCode: !!code,
+          hasTokenHash: !!tokenHash,
+          hasAccessToken: !!accessToken,
+          hasRefreshToken: !!refreshToken,
+          isAuthLink,
+          isRecoveryLink,
+          isVerificationLink,
         });
-        authError = error;
-      } else {
-        authError = new Error('Missing auth credentials in deep link.');
-      }
 
-if (authError) {
-  console.log('Error handling auth deep link:', authError);
+        if (isAuthLink) {
+          let authError: unknown = null;
+          let authAction = 'none';
 
-  if (type === 'recovery') {
-    router.replace({
-      pathname: '/auth/reset-password',
-      params: {
-        error: 'recovery_failed',
-      },
-    } as any);
-  } else {
-    router.replace({
-      pathname: '/auth/check-email',
-      params: {
-        error: 'verification_failed',
-        email,
-      },
-    } as any);
-  }
-} else {
-  if (DEBUG) console.log('Auth session established from deep link');
-  if (type === 'recovery') {
-    router.replace('/auth/reset-password' as any);
-  } else {
-    router.replace('/auth/verified' as any);
-  }
-}
+          if (code) {
+            authAction = 'exchangeCodeForSession';
+            console.log('[RootLayout] Attempting exchangeCodeForSession');
+            const { error } = await supabase.auth.exchangeCodeForSession(code);
+            authError = error;
+          } else if (tokenHash && type) {
+            authAction = 'verifyOtp';
+            console.log('[RootLayout] Attempting verifyOtp for deep link');
+            const { error } = await supabase.auth.verifyOtp({
+              token_hash: tokenHash,
+              type: type as any,
+            });
+            authError = error;
+          } else if (accessToken && refreshToken) {
+            authAction = 'setSession';
+            console.log('[RootLayout] Attempting setSession from deep link tokens');
+            const { error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            authError = error;
+          } else if (isVerificationLink) {
+            console.log('[RootLayout] Verification link missing exchange credentials; treating as invalid or expired');
+            authError = new Error('Missing verification credentials in deep link.');
+          } else if (isRecoveryLink) {
+            console.log('[RootLayout] Recovery link missing exchange credentials; treating as invalid or expired');
+            authError = new Error('Missing recovery credentials in deep link.');
+          } else {
+            console.log('[RootLayout] Auth-like deep link without exchange credentials; leaving auth state unchanged');
+          }
 
-return;
-    }
+          if (authError) {
+            console.log('[RootLayout] Auth deep link failed:', {
+              action: authAction,
+              error: authError,
+              type: type ?? null,
+            });
 
-    const { path } = Linking.parse(event.url);
+            if (isRecoveryLink) {
+              console.log('[RootLayout] Routing to recovery failure screen');
+              router.replace({
+                pathname: '/auth/reset-password',
+                params: {
+                  error: 'recovery_failed',
+                },
+              } as any);
+            } else {
+              console.log('[RootLayout] Routing to verification failure screen');
+              router.replace({
+                pathname: '/auth/check-email',
+                params: {
+                  error: 'verification_failed',
+                  email,
+                },
+              } as any);
+            }
+          } else if (isRecoveryLink) {
+            console.log('[RootLayout] Recovery deep link succeeded; routing to reset password');
+            router.replace('/auth/reset-password' as any);
+          } else if (isVerificationLink || code || accessToken || refreshToken || tokenHash) {
+            console.log('[RootLayout] Verification/auth deep link succeeded; routing to verified');
+            router.replace('/auth/verified' as any);
+          } else {
+            console.log('[RootLayout] Auth-like deep link required no route change');
+          }
 
-    if (path) {
-      if (path.startsWith('truck/')) {
-        const truckId = path.replace('truck/', '');
-        if (truckId) {
-          if (DEBUG) console.log('Navigating to truck:', truckId);
-          router.push(`/truck/${truckId}` as any);
+          return;
         }
-      } else if (path.startsWith('public/')) {
-        const truckId = path.replace('public/', '');
-        if (truckId) {
-          if (DEBUG) console.log('Navigating to public truck:', truckId);
-          router.push(`/public/${truckId}` as any);
+
+        if (path) {
+          if (path.startsWith('truck/')) {
+            const truckId = path.replace('truck/', '');
+            if (truckId) {
+              if (DEBUG) console.log('Navigating to truck:', truckId);
+              console.log('[RootLayout] Routing to truck screen from deep link');
+              router.push(`/truck/${truckId}` as any);
+            }
+          } else if (path.startsWith('public/')) {
+            const truckId = path.replace('public/', '');
+            if (truckId) {
+              if (DEBUG) console.log('Navigating to public truck:', truckId);
+              console.log('[RootLayout] Routing to public truck screen from deep link');
+              router.push(`/public/${truckId}` as any);
+            }
+          }
         }
+      } catch (error) {
+        console.log('[RootLayout] Error handling deep link:', error);
       }
-    }
-  } catch (error) {
-    console.log('Error handling deep link:', error);
-  }
-};
+    };
 
     Linking.getInitialURL().then((url) => {
       if (url) {

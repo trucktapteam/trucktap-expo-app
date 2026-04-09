@@ -12,6 +12,7 @@ import TruckSectionCard from '@/components/TruckSectionCard';
 import ReviewerAvatar from '@/components/ReviewerAvatar';
 import ExpandableText from '@/components/ExpandableText';
 import AuthPromptModal from '@/components/AuthPromptModal';
+import { buildTruckPublicUrl } from '@/lib/truckShare';
 import { MenuItem } from '@/types';
 
 interface TruckProfileProps {
@@ -74,17 +75,6 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     }
   }, [fadeAnim, truckId, incrementView, mode]);
 
-  if (!truck) {
-    const styles = createStyles(colors);
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Truck not found</Text>
-      </View>
-    );
-  }
-
-  const hasValidPhone = !!truck.phone && truck.phone.length === 10;
-
   const handleOwnerAction = useCallback((action: string) => {
     if (!isAuthenticated || !authUser) {
       Alert.alert('Owner Access Required', 'You must be logged in as the truck owner to perform this action.');
@@ -116,6 +106,17 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     }
   }, [isAuthenticated, authUser, isOwnerOfTruck, router]);
 
+  if (!truck) {
+    const styles = createStyles(colors);
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>Truck not found</Text>
+      </View>
+    );
+  }
+
+  const hasValidPhone = !!truck.phone && truck.phone.length === 10;
+
   const handleNavigate = () => {
     incrementNavigation(truck.id);
     const { latitude, longitude } = truck.location;
@@ -142,7 +143,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Check out ${truck.name} on TruckTap! https://gettrucktap.com/truck/${truck.id}`,
+        message: `Check out ${truck.name} on TruckTap! ${buildTruckPublicUrl(truck.id)}`,
         title: truck.name,
       });
     } catch (error) {

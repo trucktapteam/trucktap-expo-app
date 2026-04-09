@@ -168,7 +168,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       location: {
         latitude: row.latitude ?? 0,
         longitude: row.longitude ?? 0,
-        address: row.address ?? '',
+        address: row.address ?? row.label ?? '',
       },
       hours: 'Not set',
       bio: row.bio ?? row.description ?? '',
@@ -181,6 +181,35 @@ export const [AppProvider, useApp] = createContextHook(() => {
       analytics: undefined,
       archived: false,
     };
+  }, []);
+
+  const mergeTruckLocations = useCallback((trucks: FoodTruck[], locationRows: any[] | null | undefined): FoodTruck[] => {
+    if (!locationRows || locationRows.length === 0) {
+      return trucks;
+    }
+
+    const locationsByTruckId = new Map<string, any>();
+    for (const row of locationRows) {
+      if (row?.truck_id) {
+        locationsByTruckId.set(row.truck_id.toString(), row);
+      }
+    }
+
+    return trucks.map((truck) => {
+      const locationRow = locationsByTruckId.get(truck.id);
+      if (!locationRow) {
+        return truck;
+      }
+
+      return {
+        ...truck,
+        location: {
+          latitude: locationRow.latitude ?? truck.location.latitude,
+          longitude: locationRow.longitude ?? truck.location.longitude,
+          address: locationRow.label ?? truck.location.address,
+        },
+      };
+    });
   }, []);
   
   const fetchReviewsFromSupabase = useCallback(async () => {
@@ -279,8 +308,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
         setFoodTrucks([]);
       } else {
         const mapped = (data ?? []).map(mapSupabaseTruckToLocal);
-        if (DEBUG) console.log('[AppContext] Fetched', mapped.length, 'trucks from Supabase');
-        setFoodTrucks(mapped);
+        const truckIds = mapped.map((truck) => truck.id).filter(Boolean);
+        let merged = mapped;
+
+        if (truckIds.length > 0) {
+          const { data: locationRows, error: locationsError } = await supabase
+            .from('locations')
+            .select('truck_id, latitude, longitude, label')
+            .in('truck_id', truckIds);
+
+          if (locationsError) {
+            console.log('[AppContext] Supabase fetch locations error:', locationsError.message);
+          } else {
+            merged = mergeTruckLocations(mapped, locationRows);
+          }
+        }
+
+        if (DEBUG) console.log('[AppContext] Fetched', merged.length, 'trucks from Supabase');
+        setFoodTrucks(merged);
 
         const extractedMenuItems: MenuItem[] = [];
         const extractedAnnouncements: Announcement[] = [];
@@ -325,7 +370,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     } finally {
       setAllTrucksLoading(false);
     }
-  }, [mapSupabaseTruckToLocal]);
+  }, [mapSupabaseTruckToLocal, mergeTruckLocations]);
 
   const fetchOwnedTrucksFromSupabase = useCallback(async () => {
     if (!isAuthenticated || !authUser || !isSupabaseConfigured) {
@@ -348,8 +393,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
         setSupabaseOwnedTrucks([]);
       } else {
         const mapped = (data ?? []).map(mapSupabaseTruckToLocal);
-        if (DEBUG) console.log('[AppContext] Fetched', mapped.length, 'owned trucks');
-        setSupabaseOwnedTrucks(mapped);
+        const truckIds = mapped.map((truck) => truck.id).filter(Boolean);
+        let merged = mapped;
+
+        if (truckIds.length > 0) {
+          const { data: locationRows, error: locationsError } = await supabase
+            .from('locations')
+            .select('truck_id, latitude, longitude, label')
+            .in('truck_id', truckIds);
+
+          if (locationsError) {
+            console.log('[AppContext] Supabase fetch owned truck locations error:', locationsError.message);
+          } else {
+            merged = mergeTruckLocations(mapped, locationRows);
+          }
+        }
+
+        if (DEBUG) console.log('[AppContext] Fetched', merged.length, 'owned trucks');
+        setSupabaseOwnedTrucks(merged);
       }
     } catch (err: any) {
       console.log('[AppContext] Unexpected error fetching owned trucks:', err?.message);
@@ -357,7 +418,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     } finally {
       setIsOwnerLoading(false);
     }
-  }, [isAuthenticated, authUser, mapSupabaseTruckToLocal]);
+  }, [isAuthenticated, authUser, mapSupabaseTruckToLocal, mergeTruckLocations]);
 
   const refreshOwnedTrucks = useCallback(async () => {
     await fetchOwnedTrucksFromSupabase();
@@ -385,16 +446,30 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
       if (isAuthenticated && authUser) {
         if (DEBUG) console.log('[AppContext] Hydrating customer profile from Supabase');
-        
+        let storedFavorites: string[] = [];
+        let storedRole: User['role'] = 'customer';
+        let storedTruckId: string | undefined;
+        let storedProfilePhoto: string | undefined;
+
         try {
           // Load stored favorites if available (for immediate UI availability)
-          let storedFavorites: string[] = [];
           const storedProfile = await AsyncStorage.getItem('userProfile');
           if (storedProfile) {
             try {
               const cached = JSON.parse(storedProfile);
-              if (cached.id === authUser.id && Array.isArray(cached.favorites)) {
-                storedFavorites = cached.favorites;
+              if (cached.id === authUser.id) {
+                if (Array.isArray(cached.favorites)) {
+                  storedFavorites = cached.favorites;
+                }
+                if (cached.role === 'truck' || cached.role === 'customer') {
+                  storedRole = cached.role;
+                }
+                if (typeof cached.truck_id === 'string' && cached.truck_id.length > 0) {
+                  storedTruckId = cached.truck_id;
+                }
+                if (typeof cached.profile_photo === 'string' && cached.profile_photo.length > 0) {
+                  storedProfilePhoto = cached.profile_photo;
+                }
               }
             } catch (e) {
               // Ignore parse errors
@@ -405,11 +480,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
           if (isSupabaseConfigured) {
             const { data: profileData, error } = await supabase
               .from('profiles')
-              .select('display_name, profile_photo')
+              .select('display_name, profile_photo, role, truck_id')
               .eq('id', authUser.id)
               .single();
 
-              let supabaseFavorites = storedFavorites;
+            console.log('[AppContext] Raw profile data from Supabase:', profileData);
+
+            let supabaseFavorites = storedFavorites;
 
 const { data: favoriteRows, error: favoritesError } = await supabase
   .from('favorites')
@@ -425,8 +502,10 @@ if (!favoritesError && favoriteRows) {
               const newProfile: User = {
                 id: authUser.id,
                 name: profileData.display_name || authUser.name,
-                profile_photo: profileData.profile_photo,
-                role: 'customer' as const,
+                email: authUser.email,
+                profile_photo: profileData.profile_photo || storedProfilePhoto,
+                role: profileData.role === 'truck' ? 'truck' : 'customer',
+                truck_id: profileData.truck_id || storedTruckId,
                 favorites: supabaseFavorites,
               };
               setUserProfile(newProfile);
@@ -442,7 +521,10 @@ if (!favoritesError && favoriteRows) {
           const newProfile: User = {
             id: authUser.id,
             name: authUser.name,
-            role: 'customer' as const,
+            email: authUser.email,
+            profile_photo: storedProfilePhoto,
+            role: storedRole,
+            truck_id: storedTruckId,
             favorites: storedFavorites,
           };
           setUserProfile(newProfile);
@@ -453,8 +535,11 @@ if (!favoritesError && favoriteRows) {
           const newProfile: User = {
             id: authUser.id,
             name: authUser.name,
-            role: 'customer' as const,
-            favorites: [],
+            email: authUser.email,
+            profile_photo: storedProfilePhoto,
+            role: storedRole,
+            truck_id: storedTruckId,
+            favorites: storedFavorites,
           };
           setUserProfile(newProfile);
           await AsyncStorage.setItem('userProfile', JSON.stringify(newProfile));
@@ -543,17 +628,21 @@ if (!favoritesError && favoriteRows) {
       if (isSupabaseConfigured) {
         const { data: profileData, error } = await supabase
           .from('profiles')
-          .select('display_name, profile_photo')
+          .select('display_name, profile_photo, role, truck_id')
           .eq('id', authUser.id)
           .single();
+
+        console.log('[AppContext] Raw refreshed profile data from Supabase:', profileData);
 
         if (!error && profileData) {
           if (DEBUG) console.log('[AppContext] Refreshed customer profile from Supabase');
           const refreshedProfile: User = {
             id: authUser.id,
             name: profileData.display_name || authUser.name,
-            profile_photo: profileData.profile_photo,
-            role: 'customer' as const,
+            email: authUser.email,
+            profile_photo: profileData.profile_photo || userProfile?.profile_photo,
+            role: profileData.role === 'truck' ? 'truck' : 'customer',
+            truck_id: profileData.truck_id || userProfile?.truck_id,
             favorites: currentFavorites,
           };
           setUserProfile(refreshedProfile);
@@ -569,7 +658,10 @@ if (!favoritesError && favoriteRows) {
       const fallbackProfile: User = {
         id: authUser.id,
         name: authUser.name,
-        role: 'customer' as const,
+        email: authUser.email,
+        profile_photo: userProfile?.profile_photo,
+        role: userProfile?.role === 'truck' ? 'truck' : 'customer',
+        truck_id: userProfile?.truck_id,
         favorites: currentFavorites,
       };
       setUserProfile(fallbackProfile);
@@ -795,7 +887,7 @@ if (error) {
             truck_id: truckId,
             latitude: updates.location.latitude,
             longitude: updates.location.longitude,
-            address: updates.location.address,
+            label: updates.location.address,
           },
           { onConflict: 'truck_id' }
         );
@@ -820,7 +912,19 @@ if (error) {
     }
 
     if (refreshedRow) {
-      const hydrated = mapSupabaseTruckToLocal(refreshedRow);
+      let hydrated = mapSupabaseTruckToLocal(refreshedRow);
+
+      const { data: locationRow, error: locationFetchError } = await supabase
+        .from('locations')
+        .select('truck_id, latitude, longitude, label')
+        .eq('truck_id', truckId)
+        .maybeSingle();
+
+      if (locationFetchError) {
+        console.log('[AppContext] Post-save location fetch error:', locationFetchError.message);
+      } else if (locationRow) {
+        hydrated = mergeTruckLocations([hydrated], [locationRow])[0];
+      }
       
 
 
@@ -836,7 +940,7 @@ if (error) {
       );
 
     }
-  }, [isAuthenticated, authUser, userOwnsTruck, mapSupabaseTruckToLocal]);
+  }, [isAuthenticated, authUser, userOwnsTruck, mapSupabaseTruckToLocal, mergeTruckLocations]);
 
   const addGalleryImage = useCallback((truckId: string, imageUrl: string) => {
     if (!isAuthenticated || !authUser) {

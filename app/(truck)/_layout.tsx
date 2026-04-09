@@ -58,7 +58,6 @@ export default function TruckLayout() {
       <Stack.Screen name="reviews" options={{ title: 'Reviews' }} />
       <Stack.Screen name="analytics" options={{ title: 'Analytics' }} />
       <Stack.Screen name="announcements" options={{ title: 'Announcements' }} />
-      <Stack.Screen name="qr" options={{ title: 'QR Code' }} />
       <Stack.Screen name="verification" options={{ title: 'Verification' }} />
       <Stack.Screen name="poster-maker" options={{ title: 'Poster Maker' }} />
       <Stack.Screen name="poster" options={{ title: 'Poster' }} />

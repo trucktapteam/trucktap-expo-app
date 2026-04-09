@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator
 } from 'react-native';
@@ -69,45 +69,85 @@ export default function TruckSetupScreen() {
     console.log('[TruckSetup] Creating truck in Supabase:', truckName.trim(), 'owner_id:', authUser.id);
 
     try {
+      const insertPayload = {
+        owner_id: authUser.id,
+        name: truckName.trim(),
+        hero_image: 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=800',
+        logo: 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=200',
+        cuisine_type: 'Unspecified',
+        bio: '',
+        is_open: false,
+        phone: '',
+        is_verified: false,
+      };
+
       const { data, error } = await supabase
         .from('trucks')
-        .insert({
-          owner_id: authUser.id,
-          name: truckName.trim(),
-          hero_image: 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=800',
-          logo: 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=200',
-          cuisine_type: 'Unspecified',
-          bio: '',
-          is_open: false,
-          phone: '',
-          is_verified: false,
-        })
-        .select()
+        .insert(insertPayload)
+        .select('id, name, owner_id')
         .single();
 
-      if (error) {
-        console.log('[TruckSetup] Supabase insert error:', error.message);
-        setToast({ visible: true, message: error.message, type: 'error' });
+      if (error || !data?.id) {
+        const errorMessage = error
+          ? [error.message, error.details, error.hint].filter(Boolean).join(' ')
+          : 'Truck creation did not return a new truck record.';
+
+        console.log('[TruckSetup] Supabase insert error:', {
+          message: error?.message,
+          details: error?.details,
+          hint: error?.hint,
+          code: error?.code,
+          insertPayload,
+        });
+        setToast({ visible: true, message: errorMessage, type: 'error' });
         setIsSubmitting(false);
         return;
       }
 
-      // 🔔 Trigger new truck notification
-try {
-  await supabase.functions.invoke('notify-new-truck', {
-    body: {
-      truckId: data.id,
-      truckName: data.name,
-    },
-  });
+      const { data: verifiedTruck, error: verifyError } = await supabase
+        .from('trucks')
+        .select('id')
+        .eq('id', data.id)
+        .eq('owner_id', authUser.id)
+        .maybeSingle();
 
-  console.log('[TruckSetup] New truck notification invoked');
-} catch (err) {
-  console.log('[TruckSetup] Error invoking new truck notification:', err);
-}
+      if (verifyError || !verifiedTruck?.id) {
+        console.log('[TruckSetup] Post-insert verification failed:', {
+          truckId: data.id,
+          message: verifyError?.message,
+          details: verifyError?.details,
+          hint: verifyError?.hint,
+          code: verifyError?.code,
+        });
+        setToast({
+          visible: true,
+          message: 'Truck creation could not be verified. Please check your Supabase trucks policies and try again.',
+          type: 'error',
+        });
+        setIsSubmitting(false);
+        return;
+      }
 
-      console.log('[TruckSetup] Truck created in Supabase:', data?.id);
+      console.log('[TruckSetup] Truck created in Supabase:', data.id);
       await refreshOwnedTrucks();
+
+      try {
+        const { error: fnError } = await supabase.functions.invoke('notify-new-truck', {
+          body: {
+            truckId: data.id,
+            truckName: data.name,
+          },
+        });
+
+        if (fnError) {
+          console.log('[TruckSetup] Error invoking new truck notification:', fnError.message);
+        } else {
+          console.log('[TruckSetup] New truck notification invoked');
+        }
+      } catch (err) {
+        console.log('[TruckSetup] Unexpected error invoking new truck notification:', err);
+      }
+
       completeOnboarding();
       console.log('[TruckSetup] Navigating to dashboard');
       router.replace('/(truck)/(tabs)/dashboard' as any);
@@ -120,7 +160,7 @@ try {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
