@@ -19,3 +19,5 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/notify-new-truck/deno.json"
 entrypoint = "./functions/notify-new-truck/index.ts"
+[functions.account-delete]
+verify_jwt = false

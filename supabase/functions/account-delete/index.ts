@@ -1,160 +1,135 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Content-Type': 'application/json',
-};
+function decodeJwtPayload(token: string) {
+  const parts = token.split(".");
+  if (parts.length < 2) throw new Error("JWT does not have 3 parts");
 
-const jsonResponse = (status: number, body: Record<string, unknown>) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: corsHeaders,
-  });
+  const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+  return JSON.parse(atob(padded));
+}
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  const authHeader = req.headers.get('Authorization');
-
-  if (!authHeader?.startsWith('Bearer ')) {
-    console.log('[account-delete] Missing bearer token');
-    return jsonResponse(401, { success: false, error: 'Missing bearer token.' });
-  }
-
-  const serviceRoleClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  );
-
-  const accessToken = authHeader.replace('Bearer ', '').trim();
-
+serve(async (req) => {
   try {
-    console.log('[account-delete] Validating user token');
-    const {
-      data: { user },
-      error: userError,
-    } = await serviceRoleClient.auth.getUser(accessToken);
+    console.log("Account delete function called");
 
-    if (userError || !user) {
-      console.log('[account-delete] Unable to resolve user from token:', userError?.message);
-      return jsonResponse(401, {
-        success: false,
-        error: userError?.message || 'Could not authenticate user.',
-      });
+    const authHeader = req.headers.get("Authorization");
+
+    if (!authHeader) {
+      console.log("Missing Authorization header");
+      return new Response(
+        JSON.stringify({ success: false, error: "Missing Authorization header" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
     }
 
-    const userId = user.id;
-    console.log('[account-delete] Starting cleanup for user:', userId);
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    console.log("Token received (first 50 chars):", token.substring(0, 50));
 
-    const { data: ownedTruckRows, error: ownedTruckError } = await serviceRoleClient
-      .from('trucks')
-      .select('id')
-      .eq('owner_id', userId);
+    const payload = decodeJwtPayload(token);
+    const userId = payload?.sub;
 
-    if (ownedTruckError) {
-      console.log('[account-delete] Failed to fetch owned trucks:', ownedTruckError.message);
-      return jsonResponse(500, { success: false, error: ownedTruckError.message });
+    console.log("Decoded userId:", userId);
+
+    if (!userId) {
+      console.log("Could not determine user id from token");
+      return new Response(
+        JSON.stringify({ success: false, error: "Could not determine user id from token" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
     }
 
-    const ownedTruckIds = (ownedTruckRows ?? [])
-      .map((row: { id: string | number | null }) => row.id?.toString())
-      .filter((id): id is string => !!id);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    console.log('[account-delete] Owned trucks found:', ownedTruckIds);
-
-    if (ownedTruckIds.length > 0) {
-      const { error: truckFavoritesError } = await serviceRoleClient
-        .from('favorites')
-        .delete()
-        .in('truck_id', ownedTruckIds);
-
-      if (truckFavoritesError) {
-        console.log('[account-delete] Failed deleting favorites for owned trucks:', truckFavoritesError.message);
-        return jsonResponse(500, { success: false, error: truckFavoritesError.message });
-      }
-
-      const { error: truckReviewsError } = await serviceRoleClient
-        .from('reviews')
-        .delete()
-        .in('truck_id', ownedTruckIds);
-
-      if (truckReviewsError) {
-        console.log('[account-delete] Failed deleting reviews for owned trucks:', truckReviewsError.message);
-        return jsonResponse(500, { success: false, error: truckReviewsError.message });
-      }
-
-      const { error: truckLocationsError } = await serviceRoleClient
-        .from('locations')
-        .delete()
-        .in('truck_id', ownedTruckIds);
-
-      if (truckLocationsError) {
-        console.log('[account-delete] Failed deleting locations for owned trucks:', truckLocationsError.message);
-        return jsonResponse(500, { success: false, error: truckLocationsError.message });
-      }
-
-      const { error: trucksError } = await serviceRoleClient
-        .from('trucks')
-        .delete()
-        .eq('owner_id', userId);
-
-      if (trucksError) {
-        console.log('[account-delete] Failed deleting owned trucks:', trucksError.message);
-        return jsonResponse(500, { success: false, error: trucksError.message });
-      }
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.log("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
     }
 
-    const { error: favoritesError } = await serviceRoleClient
-      .from('favorites')
+    const admin = createClient(supabaseUrl, serviceRoleKey);
+    console.log("Admin client created");
+
+    // Delete favorites
+    console.log("Deleting favorites for userId:", userId);
+    const { error: favoritesError } = await admin
+      .from("favorites")
       .delete()
-      .eq('user_id', userId);
+      .eq("user_id", userId);
 
     if (favoritesError) {
-      console.log('[account-delete] Failed deleting user favorites:', favoritesError.message);
-      return jsonResponse(500, { success: false, error: favoritesError.message });
+      console.log("Favorites deletion error:", favoritesError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          step: "favorites",
+          error: favoritesError.message,
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
     }
+    console.log("Favorites deleted successfully");
 
-    const { error: reviewsError } = await serviceRoleClient
-      .from('reviews')
+    // Delete profile
+    console.log("Deleting profile for userId:", userId);
+    const { error: profileError } = await admin
+      .from("profiles")
       .delete()
-      .eq('user_id', userId);
-
-    if (reviewsError) {
-      console.log('[account-delete] Failed deleting user reviews:', reviewsError.message);
-      return jsonResponse(500, { success: false, error: reviewsError.message });
-    }
-
-    const { error: profileError } = await serviceRoleClient
-      .from('profiles')
-      .delete()
-      .eq('id', userId);
+      .eq("id", userId);
 
     if (profileError) {
-      console.log('[account-delete] Failed deleting profile:', profileError.message);
-      return jsonResponse(500, { success: false, error: profileError.message });
+      console.log("Profile deletion error:", profileError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          step: "profiles",
+          error: profileError.message,
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
     }
+    console.log("Profile deleted successfully");
 
-    const { error: authDeleteError } = await serviceRoleClient.auth.admin.deleteUser(userId);
+    // Delete auth user
+    console.log("Deleting auth user:", userId);
+    const { error: authDeleteError } = await admin.auth.admin.deleteUser(userId);
 
     if (authDeleteError) {
-      console.log('[account-delete] Failed deleting auth user:', authDeleteError.message);
-      return jsonResponse(500, { success: false, error: authDeleteError.message });
+      console.log("Auth delete error:", authDeleteError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          step: "auth",
+          error: authDeleteError.message,
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
     }
+    console.log("Auth user deleted successfully");
 
-    console.log('[account-delete] Account deletion completed for user:', userId);
-    return jsonResponse(200, {
-      success: true,
-      userId,
-      deletedTruckIds: ownedTruckIds,
-    });
-  } catch (error: any) {
-    console.log('[account-delete] Unexpected error:', error?.message || error);
-    return jsonResponse(500, {
-      success: false,
-      error: error?.message || 'Unexpected account-delete error.',
-    });
+    console.log("Account deletion completed successfully for userId:", userId);
+    return new Response(
+      JSON.stringify({
+        success: true,
+        userId,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.log("Unexpected error:", error);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 });

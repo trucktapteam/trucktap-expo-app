@@ -135,10 +135,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       });
     }
 
-    Alert.alert(
-      'Account Created',
-      'Check your email to confirm your account before signing in.'
-    );
+   Alert.alert(
+  'Account Created',
+  'Your account was created successfully. You can sign in now.'
+);
 
     return true;
   }, []);

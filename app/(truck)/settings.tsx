@@ -241,7 +241,7 @@ setCurrentUser(customerUser);
 
             <View style={styles.aboutRow}>
               <Text style={[styles.aboutLabel, { color: colors.text }]}>Version</Text>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>1.0.26</Text>
+              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>1.0.31</Text>
             </View>
 
             <View style={[styles.divider, { backgroundColor: colors.border }]} />

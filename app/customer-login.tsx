@@ -38,7 +38,7 @@ export default function CustomerLoginScreen() {
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
   const { mode } = useLocalSearchParams();
-  const isSignUp = mode === 'signup';
+ const [isSignUp, setIsSignUp] = useState(mode === 'signup');
 
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
@@ -75,12 +75,11 @@ export default function CustomerLoginScreen() {
     if (isSignUp) {
       const success = await signUpWithEmail(email, password);
 
-      if (success) {
-        router.push({
-          pathname: '/auth/check-email',
-          params: { email },
-        } as any);
-      }
+    if (success) {
+  setSuccessMessage('Account created successfully. Please sign in with your new email and password.');
+  setIsSignUp(false);
+  setPassword('');
+}
     } else {
       await signInWithEmail(email, password);
     }
@@ -154,10 +153,14 @@ export default function CustomerLoginScreen() {
     resizeMode="contain"
   />
 </View>
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>
-              Find amazing food trucks near you!
-            </Text>
+           <Text style={styles.title}>
+  {isSignUp ? 'Create Account' : 'Welcome Back'}
+</Text>
+           <Text style={styles.subtitle}>
+  {isSignUp
+    ? 'Create your account to review trucks and save favorites.'
+    : 'Find amazing food trucks near you!'}
+</Text>
           </View>
 
           <View style={styles.form}>
@@ -251,15 +254,34 @@ export default function CustomerLoginScreen() {
               ) : (
                 <Mail size={20} color={Colors.light} style={styles.buttonIcon} />
               )}
-              <Text style={styles.loginButtonText}>{isSubmitting ? 'Signing in...' : 'Sign in with Email'}</Text>
+             <Text style={styles.loginButtonText}>
+  {isSubmitting
+    ? isSignUp
+      ? 'Creating Account...'
+      : 'Signing in...'
+    : isSignUp
+      ? 'Create Account'
+      : 'Sign in with Email'}
+</Text>
             </TouchableOpacity>
 
-            <View style={styles.signupContainer}>
-              <Text style={styles.signupText}>Don&apos;t have an account? </Text>
-              <TouchableOpacity onPress={handleEmailLogin}>
-                <Text style={styles.signupLink}>Sign up</Text>
-              </TouchableOpacity>
-            </View>
+          <View style={styles.signupContainer}>
+  <Text style={styles.signupText}>
+    {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+  </Text>
+
+  <TouchableOpacity
+    onPress={() => {
+      setError(null);
+      setSuccessMessage(null);
+      setIsSignUp(!isSignUp);
+    }}
+  >
+    <Text style={styles.signupLink}>
+      {isSignUp ? 'Sign in' : 'Sign up'}
+    </Text>
+  </TouchableOpacity>
+</View>
           </View>
 
           <View style={styles.authInfo}>
