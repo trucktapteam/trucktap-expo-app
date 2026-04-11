@@ -10,7 +10,8 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AuthPromptModal from '@/components/AuthPromptModal';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { useAccountDeletion } from '@/hooks/useAccountDeletion';
 
 export default function SettingsScreen() {
   const { currentUser, logout } = useApp();
@@ -22,7 +23,13 @@ export default function SettingsScreen() {
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [authAction, setAuthAction] = useState<string>('');
-  const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
+  const { isDeletingAccount, confirmDeleteAccount } = useAccountDeletion({
+    source: 'customer-settings',
+    onRequireAuth: () => {
+      setAuthAction('delete account');
+      setShowAuthModal(true);
+    },
+  });
 
   useEffect(() => {
     checkLocationPermission();
@@ -128,82 +135,6 @@ export default function SettingsScreen() {
         }
       ]
     );
-  };
-
-  const handleDeleteAccount = () => {
-    if (!isAuthenticated) {
-      setAuthAction('delete account');
-      setShowAuthModal(true);
-      return;
-    }
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Continue',
-          style: 'destructive',
-          onPress: () => showDeleteConfirmation()
-        }
-      ]
-    );
-  };
-
-  const performAccountDeletion = async () => {
-    if (!isAuthenticated || !authUser) return;
-    setIsDeletingAccount(true);
-    try {
-      if (isSupabaseConfigured) {
-        const { error } = await supabase.rpc('delete_user');
-        if (error) {
-          console.log('[Settings] Account deletion RPC error:', error.message);
-          const { error: signOutError } = await supabase.auth.signOut();
-          if (signOutError) console.log('[Settings] Sign out after delete error:', signOutError.message);
-        } else {
-          console.log('[Settings] Account deleted via RPC');
-        }
-      }
-      logout();
-      router.replace('/');
-      Alert.alert('Account Deleted', 'Your account has been permanently deleted.');
-    } catch (error: any) {
-      console.log('[Settings] Account deletion error:', error?.message);
-      Alert.alert('Error', 'Failed to delete account. Please try again or contact support.');
-    } finally {
-      setIsDeletingAccount(false);
-    }
-  };
-
-  const showDeleteConfirmation = () => {
-    if (Platform.OS === 'web') {
-      const userInput = prompt('Type DELETE to confirm account deletion:');
-      if (userInput === 'DELETE') {
-        performAccountDeletion();
-      } else if (userInput !== null) {
-        Alert.alert('Invalid Input', 'Please type DELETE exactly to confirm.');
-      }
-    } else {
-      Alert.prompt(
-        'Confirm Deletion',
-        'Type DELETE to confirm account deletion',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: (text?: string) => {
-              if (text === 'DELETE') {
-                performAccountDeletion();
-              } else {
-                Alert.alert('Invalid Input', 'Please type DELETE exactly to confirm.');
-              }
-            }
-          }
-        ],
-        'plain-text'
-      );
-    }
   };
 
   const handleReportBug = () => {
@@ -520,7 +451,7 @@ export default function SettingsScreen() {
           <View style={styles.section}>
             <Text style={[styles.dangerZoneTitle, { color: colors.secondaryText }]}>Danger Zone</Text>
             
-            <TouchableOpacity style={styles.subtleDeleteButton} onPress={handleDeleteAccount} disabled={isDeletingAccount}>
+            <TouchableOpacity style={styles.subtleDeleteButton} onPress={confirmDeleteAccount} disabled={isDeletingAccount}>
               <Trash2 size={16} color={Colors.error} />
               <Text style={styles.subtleDeleteText}>Delete account</Text>
             </TouchableOpacity>

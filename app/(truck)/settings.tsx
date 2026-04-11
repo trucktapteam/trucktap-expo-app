@@ -1,23 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform } from 'react-native';
 import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, ArrowLeft } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useNotifications } from '@/contexts/NotificationContext';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { useAccountDeletion } from '@/hooks/useAccountDeletion';
 
 
 export default function TruckSettings() {
   const { currentUser, logout, setCurrentUser } = useApp();
-  const { user: authUser, isAuthenticated } = useAuth();
+  const { user: authUser } = useAuth();
   const router = useRouter();
   const { colors } = useTheme();
-  const { permissionStatus: notifStatus, preferences: notifPrefs, togglePreference } = useNotifications();
   const [locationStatus, setLocationStatus] = useState<'granted' | 'denied' | 'unknown'>('unknown');
-  const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
+  const { isDeletingAccount, confirmDeleteAccount } = useAccountDeletion({
+    source: 'truck-settings',
+  });
 
   useEffect(() => {
     checkLocationPermission();
@@ -89,75 +89,6 @@ setCurrentUser(customerUser);
           onPress: () => {
             logout();
             router.replace('/');
-          }
-        }
-      ]
-    );
-  };
-
-  const performAccountDeletion = async () => {
-    if (!isAuthenticated || !authUser) return;
-    setIsDeletingAccount(true);
-    try {
-      if (isSupabaseConfigured) {
-        const { error } = await supabase.rpc('delete_user');
-        if (error) {
-          console.log('[TruckSettings] Account deletion RPC error:', error.message);
-          const { error: signOutError } = await supabase.auth.signOut();
-          if (signOutError) console.log('[TruckSettings] Sign out error:', signOutError.message);
-        } else {
-          console.log('[TruckSettings] Account deleted via RPC');
-        }
-      }
-      logout();
-      router.replace('/');
-      Alert.alert('Account Deleted', 'Your account has been permanently deleted.');
-    } catch (error: any) {
-      console.log('[TruckSettings] Account deletion error:', error?.message);
-      Alert.alert('Error', 'Failed to delete account. Please try again or contact support.');
-    } finally {
-      setIsDeletingAccount(false);
-    }
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? This will permanently remove your account, truck data, and all associated information. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          onPress: () => {
-            if (Platform.OS === 'web') {
-              const userInput = prompt('Type DELETE to confirm account deletion:');
-              if (userInput === 'DELETE') {
-                performAccountDeletion();
-              } else if (userInput !== null) {
-                Alert.alert('Invalid Input', 'Please type DELETE exactly to confirm.');
-              }
-            } else {
-              Alert.prompt(
-                'Confirm Deletion',
-                'Type DELETE to confirm account deletion',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: (text?: string) => {
-                      if (text === 'DELETE') {
-                        performAccountDeletion();
-                      } else {
-                        Alert.alert('Invalid Input', 'Please type DELETE exactly to confirm.');
-                      }
-                    }
-                  }
-                ],
-                'plain-text'
-              );
-            }
           }
         }
       ]
@@ -236,7 +167,7 @@ setCurrentUser(customerUser);
             <ChevronRight size={20} color={colors.error} style={styles.chevron} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.dangerButton, { backgroundColor: `${colors.error}08`, borderColor: `${colors.error}20` }]} onPress={handleDeleteAccount} disabled={isDeletingAccount}>
+          <TouchableOpacity style={[styles.dangerButton, { backgroundColor: `${colors.error}08`, borderColor: `${colors.error}20` }]} onPress={confirmDeleteAccount} disabled={isDeletingAccount}>
             <Trash2 size={20} color={colors.error} />
             <Text style={[styles.dangerButtonText, { color: colors.error }]}>Delete Account</Text>
             <ChevronRight size={20} color={colors.error} style={styles.chevron} />
