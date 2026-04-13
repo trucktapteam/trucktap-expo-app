@@ -98,7 +98,7 @@ setCurrentUser(customerUser);
   const handleReportBug = () => {
     const email = 'support@trucktap.app';
     const subject = 'Bug Report - TruckTap';
-    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 1.0.32`;
+    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 1.0.33`;
     
     Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   };
@@ -241,7 +241,7 @@ setCurrentUser(customerUser);
 
             <View style={styles.aboutRow}>
               <Text style={[styles.aboutLabel, { color: colors.text }]}>Version</Text>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>1.0.32</Text>
+              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>1.0.33</Text>
             </View>
 
             <View style={[styles.divider, { backgroundColor: colors.border }]} />

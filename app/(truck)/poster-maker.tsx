@@ -21,7 +21,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import PosterRenderer from '@/components/posters/PosterRenderer';
 import type { PosterTemplate, PosterConfig } from '@/types/poster';
-import { getTruckShareUrl } from '@/lib/truckShare';
+import { getTruckDeepLink, getTruckShareUrl } from '@/lib/truckShare';
 
 const TEMPLATES: { id: PosterTemplate; label: string; description: string }[] = [
   { id: 'simple', label: 'Simple', description: 'Clean white background, centered QR' },
@@ -60,7 +60,7 @@ export default function PosterMaker() {
     const generateQR = async () => {
       try {
         setIsGeneratingQR(true);
-        const url = getTruckShareUrl(truck.id);
+        const url = getTruckDeepLink(truck.id);
         const dataUrl = await QRCode.toDataURL(url, {
           width: 800,
           margin: 2,

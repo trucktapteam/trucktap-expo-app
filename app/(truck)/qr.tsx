@@ -17,7 +17,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { DEBUG } from '@/constants/debug';
 import QRCodeSVG from 'react-native-qrcode-svg';
-import { getTruckShareUrl } from '@/lib/truckShare';
+import { getTruckDeepLink, getTruckShareUrl } from '@/lib/truckShare';
 
 export default function QRCodeScreen() {
   const { getUserTruck, isProfileComplete, markQrShared } = useApp();
@@ -32,12 +32,14 @@ export default function QRCodeScreen() {
       console.warn('⚠️ No truckId available for QR generation');
       return '';
     }
-    const webUrl = getTruckShareUrl(truckId);
+    const deepLink = getTruckDeepLink(truckId);
     
-    if (DEBUG) console.log('QR URL generated:', webUrl, 'truckId:', truckId);
+    if (DEBUG) console.log('QR URL generated:', deepLink, 'truckId:', truckId);
     
-    return webUrl;
+    return deepLink;
   }, [truckId]);
+
+  const profileUrl = useMemo(() => getTruckShareUrl(truckId), [truckId]);
 
   const profileComplete = useMemo(() => {
     return truck ? isProfileComplete(truck.id) : false;
@@ -49,7 +51,7 @@ export default function QRCodeScreen() {
     if (!truck) return;
 
     try {
-      await Clipboard.setStringAsync(qrUrl);
+      await Clipboard.setStringAsync(profileUrl);
       markQrShared();
       Alert.alert('Link Copied', 'Profile link copied to clipboard!');
     } catch (error) {

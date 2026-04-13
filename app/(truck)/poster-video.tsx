@@ -21,7 +21,7 @@ import PromoVideoTemplateA from '@/components/posters/video/PromoVideoTemplateA'
 import PromoVideoTemplateB from '@/components/posters/video/PromoVideoTemplateB';
 import PromoVideoTemplateC from '@/components/posters/video/PromoVideoTemplateC';
 import { captureRef } from 'react-native-view-shot';
-import { getTruckShareUrl } from '@/lib/truckShare';
+import { getTruckDeepLink, getTruckShareUrl } from '@/lib/truckShare';
 
 type VideoTemplate = 'clean' | 'neon' | 'graffiti';
 
@@ -60,7 +60,7 @@ export default function PosterVideoScreen() {
 
     try {
       setIsGenerating(true);
-      const deepLink = getTruckShareUrl(truck.id);
+      const deepLink = getTruckDeepLink(truck.id);
       const dataUrl = await QRCode.toDataURL(deepLink, {
         width: 600,
         margin: 1,

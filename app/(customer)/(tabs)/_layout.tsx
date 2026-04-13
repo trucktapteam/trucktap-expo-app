@@ -4,6 +4,7 @@ import React from 'react';
 import { Image } from 'react-native';
 import Colors from '@/constants/colors';
 import LogoHeader from '@/components/LogoHeader';
+import CustomerDiscoverHeader from '@/components/CustomerDiscoverHeader';
 
 const LOGO = require('@/assets/images/icon.png');
 
@@ -24,6 +25,7 @@ export default function CustomerTabsLayout() {
         name="discover"
         options={{
           title: 'Discover',
+          header: () => <CustomerDiscoverHeader />,
           tabBarIcon: ({ color }) => (
             <Image
               source={LOGO}

@@ -9,7 +9,14 @@ import { useFilteredTrucks, useApp } from '@/contexts/AppContext';
 import { Image } from 'expo-image';
 import { supabase } from '@/lib/supabase';
 import { formatSightingLastSeen, hasSightingCoordinates } from '@/lib/sightings';
-import { Sighting } from '@/types';
+import { FoodTruck, Sighting } from '@/types';
+import TruckClusterMarker from '@/components/map/TruckClusterMarker';
+import { CLUSTER_BREAKPOINT_DELTA, clusterTruckMarkers } from '@/lib/mapClustering';
+
+const TRUCK_PIN_IMAGE = require('@/assets/images/orange-pin.png');
+// Tune this to control when automatic truck name labels appear.
+const LABEL_ZOOM_DELTA = CLUSTER_BREAKPOINT_DELTA;
+const MAX_TRUCK_LABELS = 6;
 
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 3959;
@@ -36,6 +43,7 @@ export default function CustomerHomeScreen() {
   const { isTruckOpenNow, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks } = useApp();
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
+  const truckMarkerRefs = useRef<Record<string, any>>({});
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showClosed, setShowClosed] = useState<boolean>(false);
   const [isLocating, setIsLocating] = useState<boolean>(false);
@@ -146,6 +154,52 @@ export default function CustomerHomeScreen() {
     };
   }, [centerPoint]);
 
+  const [currentRegion, setCurrentRegion] = useState(mapRegion);
+
+  useEffect(() => {
+    setCurrentRegion(mapRegion);
+  }, [mapRegion]);
+
+  const clusteredMapTrucks = useMemo(
+    () => clusterTruckMarkers(mapTrucks as FoodTruck[], currentRegion),
+    [mapTrucks, currentRegion]
+  );
+
+  const shouldShowZoomLabels =
+    currentRegion.latitudeDelta < LABEL_ZOOM_DELTA &&
+    currentRegion.longitudeDelta < LABEL_ZOOM_DELTA;
+
+  const visibleTruckLabels = useMemo(() => {
+    if (!shouldShowZoomLabels) return [];
+
+    return mapTrucks
+      .sort((a, b) => {
+        const aOpen = openTruckIds.has(a.id) ? 1 : 0;
+        const bOpen = openTruckIds.has(b.id) ? 1 : 0;
+        if (aOpen !== bOpen) return bOpen - aOpen;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, MAX_TRUCK_LABELS);
+  }, [mapTrucks, openTruckIds, shouldShowZoomLabels]);
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleTruckLabels.map((truck) => truck.id));
+
+    const timeout = setTimeout(() => {
+      Object.entries(truckMarkerRefs.current).forEach(([truckId, markerRef]) => {
+        if (!markerRef) return;
+
+        if (visibleIds.has(truckId)) {
+          markerRef.showCallout?.();
+        } else {
+          markerRef.hideCallout?.();
+        }
+      });
+    }, 150);
+
+    return () => clearTimeout(timeout);
+  }, [visibleTruckLabels]);
+
   const handleTruckPress = (truckId: string) => {
     setSelectedSighting(null);
     router.push(`/(customer)/truck/${truckId}` as any);
@@ -153,6 +207,18 @@ export default function CustomerHomeScreen() {
 
   const handleSightingPress = (sighting: Sighting) => {
     setSelectedSighting(sighting);
+  };
+
+  const handleClusterPress = (latitude: number, longitude: number) => {
+    mapRef.current?.animateToRegion(
+      {
+        latitude,
+        longitude,
+        latitudeDelta: Math.max(currentRegion.latitudeDelta * 0.5, 0.02),
+        longitudeDelta: Math.max(currentRegion.longitudeDelta * 0.5, 0.02),
+      },
+      300
+    );
   };
 
   const fetchSightings = useCallback(async () => {
@@ -394,7 +460,14 @@ export default function CustomerHomeScreen() {
                 </View>
               </View>
             )}
-            <MapView ref={mapRef} style={styles.map} initialRegion={mapRegion} showsUserLocation={true} provider={PROVIDER_GOOGLE}>
+            <MapView
+              ref={mapRef}
+              style={styles.map}
+              initialRegion={mapRegion}
+              showsUserLocation={true}
+              provider={PROVIDER_GOOGLE}
+              onRegionChangeComplete={setCurrentRegion}
+            >
               {centerPoint && (
                 <>
                   <Circle
@@ -406,18 +479,38 @@ export default function CustomerHomeScreen() {
                   />
                 </>
               )}
-              {mapTrucks.map((truck: any) => {
-                const isOpen = openTruckIds.has(truck.id);
+              {clusteredMapTrucks.map((item) => {
+                if (item.type === 'cluster') {
+                  return (
+                    <Marker
+                      key={`cluster-${item.id}`}
+                      coordinate={{
+                        latitude: item.latitude,
+                        longitude: item.longitude,
+                      }}
+                      onPress={() => handleClusterPress(item.latitude, item.longitude)}
+                    >
+                      <TruckClusterMarker count={item.count} />
+                    </Marker>
+                  );
+                }
+
+                const truck = item.truck;
+
                 return (
                   <Marker
                     key={truck.id}
+                    ref={(ref) => {
+                      truckMarkerRefs.current[truck.id] = ref;
+                    }}
                     coordinate={{
                       latitude: truck.location.latitude,
                       longitude: truck.location.longitude,
                     }}
-                    pinColor={isOpen ? '#f97316' : '#9ca3af'}
                     title={truck.name}
                     description={truck.location?.address || 'Food truck'}
+                    image={TRUCK_PIN_IMAGE}
+                    anchor={{ x: 0.5, y: 1 }}
                     onPress={() => handleTruckPress(truck.id)}
                   />
                 );
@@ -736,7 +829,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   searchContainer: {
     paddingHorizontal: 20,
-    marginTop: 8,
+    marginTop: 2,
     marginBottom: 6,
   },
   searchBar: {

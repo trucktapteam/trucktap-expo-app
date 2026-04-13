@@ -13,6 +13,13 @@ import { Image } from 'expo-image';
 import { FoodTruck, Sighting } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { formatSightingLastSeen, hasSightingCoordinates } from '@/lib/sightings';
+import TruckClusterMarker from '@/components/map/TruckClusterMarker';
+import { CLUSTER_BREAKPOINT_DELTA, clusterTruckMarkers } from '@/lib/mapClustering';
+
+const TRUCK_PIN_IMAGE = require('@/assets/images/orange-pin.png');
+// Tune this to control when automatic truck name labels appear.
+const LABEL_ZOOM_DELTA = CLUSTER_BREAKPOINT_DELTA;
+const MAX_TRUCK_LABELS = 6;
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.45;
@@ -28,11 +35,19 @@ export default function FullMapScreen() {
   const { colors } = useTheme();
   const { isAuthenticated } = useAuth();
   const mapRef = useRef<MapView>(null);
+  const truckMarkerRefs = useRef<Record<string, any>>({});
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [selectedTruck, setSelectedTruck] = useState<FoodTruck | null>(null);
   const [selectedSighting, setSelectedSighting] = useState<Sighting | null>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState<boolean>(false);
   const [sightings, setSightings] = useState<Sighting[]>([]);
+  const mapRegion = useMemo(() => ({
+    latitude: 37.7181,
+    longitude: -85.9011,
+    latitudeDelta: 0.15,
+    longitudeDelta: 0.15,
+  }), []);
+  const [currentRegion, setCurrentRegion] = useState(mapRegion);
   const sheetY = useRef(new Animated.Value(SHEET_MAX_HEIGHT)).current;
   const markerScales = useRef<{ [key: string]: Animated.Value }>({}).current;
 
@@ -68,12 +83,45 @@ export default function FullMapScreen() {
     }
   });
 
-  const mapRegion = useMemo(() => ({
-    latitude: 37.7181,
-    longitude: -85.9011,
-    latitudeDelta: 0.15,
-    longitudeDelta: 0.15,
-  }), []);
+  const clusteredTrucks = useMemo(
+    () => clusterTruckMarkers(trucksForMap, currentRegion),
+    [trucksForMap, currentRegion]
+  );
+
+  const shouldShowZoomLabels =
+    currentRegion.latitudeDelta < LABEL_ZOOM_DELTA &&
+    currentRegion.longitudeDelta < LABEL_ZOOM_DELTA;
+
+  const visibleTruckLabels = useMemo(() => {
+    if (!shouldShowZoomLabels) return [];
+
+    return trucksForMap
+      .sort((a, b) => {
+        const aOpen = isTruckOpenNow(a.id) ? 1 : 0;
+        const bOpen = isTruckOpenNow(b.id) ? 1 : 0;
+        if (aOpen !== bOpen) return bOpen - aOpen;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, MAX_TRUCK_LABELS);
+  }, [trucksForMap, isTruckOpenNow, shouldShowZoomLabels]);
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleTruckLabels.map((truck) => truck.id));
+
+    const timeout = setTimeout(() => {
+      Object.entries(truckMarkerRefs.current).forEach(([truckId, markerRef]) => {
+        if (!markerRef) return;
+
+        if (visibleIds.has(truckId)) {
+          markerRef.showCallout?.();
+        } else {
+          markerRef.hideCallout?.();
+        }
+      });
+    }, 150);
+
+    return () => clearTimeout(timeout);
+  }, [visibleTruckLabels]);
 
   const openSheet = useCallback(() => {
     Animated.spring(sheetY, {
@@ -174,6 +222,18 @@ export default function FullMapScreen() {
         animateMarker(selectedTruck.id, 1);
       }
     }
+  };
+
+  const handleClusterPress = (latitude: number, longitude: number) => {
+    mapRef.current?.animateToRegion(
+      {
+        latitude,
+        longitude,
+        latitudeDelta: Math.max(currentRegion.latitudeDelta * 0.5, 0.02),
+        longitudeDelta: Math.max(currentRegion.longitudeDelta * 0.5, 0.02),
+      },
+      300
+    );
   };
 
   const handleFavoriteToggle = () => {
@@ -280,22 +340,43 @@ export default function FullMapScreen() {
             ref={mapRef} 
             style={styles.map} 
             initialRegion={mapRegion}
+            onRegionChangeComplete={setCurrentRegion}
             onPress={handleMapPress}
             showsUserLocation={true}
           >
             
-            {trucksForMap.map(truck => {
-              const isOpen = isTruckOpenNow(truck.id);
+            {clusteredTrucks.map((item) => {
+              if (item.type === 'cluster') {
+                return (
+                  <Marker
+                    key={`cluster-${item.id}`}
+                    coordinate={{
+                      latitude: item.latitude,
+                      longitude: item.longitude,
+                    }}
+                    onPress={() => handleClusterPress(item.latitude, item.longitude)}
+                  >
+                    <TruckClusterMarker count={item.count} />
+                  </Marker>
+                );
+              }
+
+              const truck = item.truck;
+
               return (
                 <Marker
                   key={truck.id}
+                  ref={(ref) => {
+                    truckMarkerRefs.current[truck.id] = ref;
+                  }}
                   coordinate={{
                     latitude: truck.location.latitude,
                     longitude: truck.location.longitude,
                   }}
-                  pinColor={isOpen ? '#f97316' : '#9ca3af'}
                   title={truck.name}
                   description={truck.location?.address || 'Food truck'}
+                  image={TRUCK_PIN_IMAGE}
+                  anchor={{ x: 0.5, y: 1 }}
                   onPress={() => handleTruckPress(truck.id)}
                 />
               );
