@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Platform, Alert, Modal, RefreshControl } from 'react-native';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Platform, Alert, Modal, RefreshControl, Animated } from 'react-native';
 import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { Search, MapPin, Clock, Navigation, CheckCircle, Maximize2, Minimize2, AlertCircle, XCircle, Radar, Compass, ArrowLeft } from 'lucide-react-native';
@@ -7,10 +7,9 @@ import * as Location from 'expo-location';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useFilteredTrucks, useApp } from '@/contexts/AppContext';
 import { Image } from 'expo-image';
-import TruckMapMarker from '@/components/TruckMapMarker';
-
-
-
+import { supabase } from '@/lib/supabase';
+import { formatSightingLastSeen, hasSightingCoordinates } from '@/lib/sightings';
+import { Sighting } from '@/types';
 
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 3959;
@@ -23,6 +22,14 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
 };
+
+const hasMapLocation = (truck: any) =>
+  Number.isFinite(truck?.location?.latitude) &&
+  Number.isFinite(truck?.location?.longitude);
+
+const hasCoordinates = (truck: any) =>
+  Number.isFinite(truck?.location?.latitude) &&
+  Number.isFinite(truck?.location?.longitude);
 
 export default function CustomerHomeScreen() {
   const router = useRouter();
@@ -38,8 +45,9 @@ export default function CustomerHomeScreen() {
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [tempExploreLocation, setTempExploreLocation] = useState<{ latitude: number; longitude: number; label: string }>({ latitude: 37.7749, longitude: -122.4194, label: 'San Francisco, CA' });
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-
-  const DEBUG_DISCOVER = false;
+  const [sightings, setSightings] = useState<Sighting[]>([]);
+  const [selectedSighting, setSelectedSighting] = useState<Sighting | null>(null);
+  const spotMarkerScale = useRef(new Animated.Value(1)).current;
 
   const allTrucks = useFilteredTrucks('', 'All', false);
 
@@ -58,13 +66,13 @@ export default function CustomerHomeScreen() {
     return ids;
   }, [allTrucks, isTruckOpenNow]);
 
-  const trucks = useMemo(() => {
+  const mapTrucks = useMemo(() => {
     const trimmedQuery = searchQuery.trim().toLowerCase();
 
     const result = allTrucks.filter((truck: any) => {
       if (truck?.archived === true || truck?.archivedAt) return false;
 
-      if (!truck.location || typeof truck.location.latitude !== 'number' || typeof truck.location.longitude !== 'number') return false;
+      if (!hasMapLocation(truck)) return false;
 
       if (centerPoint) {
         const distance = calculateDistance(
@@ -92,11 +100,40 @@ export default function CustomerHomeScreen() {
       return true;
     });
 
-    if (DEBUG_DISCOVER) {
-      console.log('[Discover] allTrucks:', allTrucks.length, '-> displayed:', result.length);
-    }
-
     return result;
+  }, [allTrucks, centerPoint, customerRadius, searchQuery, showClosed, openTruckIds]);
+
+  const listTrucks = useMemo(() => {
+    const trimmedQuery = searchQuery.trim().toLowerCase();
+
+    return allTrucks.filter((truck: any) => {
+      if (truck?.archived === true || truck?.archivedAt) return false;
+
+      if (centerPoint && hasCoordinates(truck)) {
+        const distance = calculateDistance(
+          centerPoint.latitude,
+          centerPoint.longitude,
+          truck.location.latitude,
+          truck.location.longitude
+        );
+        if (distance > customerRadius) return false;
+      }
+
+      if (trimmedQuery) {
+        const searchableFields = [
+          truck.name || '',
+          truck.cuisine_type || '',
+          truck.bio || '',
+          truck.location?.address || '',
+          ...(truck.search_keywords || []),
+        ];
+        if (!searchableFields.some(field => field.toLowerCase().includes(trimmedQuery))) return false;
+      }
+
+      if (!showClosed && !openTruckIds.has(truck.id)) return false;
+
+      return true;
+    });
   }, [allTrucks, centerPoint, customerRadius, searchQuery, showClosed, openTruckIds]);
 
   const mapRegion = useMemo(() => {
@@ -110,8 +147,31 @@ export default function CustomerHomeScreen() {
   }, [centerPoint]);
 
   const handleTruckPress = (truckId: string) => {
+    setSelectedSighting(null);
     router.push(`/(customer)/truck/${truckId}` as any);
   };
+
+  const handleSightingPress = (sighting: Sighting) => {
+    setSelectedSighting(sighting);
+  };
+
+  const fetchSightings = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('sightings')
+        .select('*')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setSightings((data ?? []).filter(hasSightingCoordinates));
+    } catch (error) {
+      console.error('[Discover] Failed to load sightings:', error);
+    }
+  }, []);
 
   useEffect(() => {
     const getUserLocation = async () => {
@@ -138,6 +198,10 @@ export default function CustomerHomeScreen() {
   }, []);
 
   useEffect(() => {
+    void fetchSightings();
+  }, [fetchSightings]);
+
+  useEffect(() => {
     if (centerPoint && mapRef.current) {
       mapRef.current.animateToRegion({
         latitude: centerPoint.latitude,
@@ -147,6 +211,30 @@ export default function CustomerHomeScreen() {
       }, 500);
     }
   }, [centerPoint]);
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(spotMarkerScale, {
+          toValue: 1.05,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(spotMarkerScale, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+      spotMarkerScale.stopAnimation();
+    };
+  }, [spotMarkerScale]);
 
   const handleEnableExplore = () => {
     setIsExploreModalVisible(true);
@@ -175,6 +263,7 @@ export default function CustomerHomeScreen() {
     setIsRefreshing(true);
     try {
       await refreshAllTrucks();
+      await fetchSightings();
     } catch (err) {
       console.log('[Discover] Refresh error:', err);
     } finally {
@@ -317,22 +406,38 @@ export default function CustomerHomeScreen() {
                   />
                 </>
               )}
-              {trucks.map((truck: any) => {
+              {mapTrucks.map((truck: any) => {
                 const isOpen = openTruckIds.has(truck.id);
                 return (
                   <Marker
-  key={truck.id}
-  coordinate={{
-    latitude: truck.location.latitude,
-    longitude: truck.location.longitude,
-  }}
-  pinColor={isOpen ? "#f97316" : "#9ca3af"}
-  title={truck.name}
-  description={truck.location?.address || 'Food truck'}
-  onPress={() => handleTruckPress(truck.id)}
-/>
+                    key={truck.id}
+                    coordinate={{
+                      latitude: truck.location.latitude,
+                      longitude: truck.location.longitude,
+                    }}
+                    pinColor={isOpen ? '#f97316' : '#9ca3af'}
+                    title={truck.name}
+                    description={truck.location?.address || 'Food truck'}
+                    onPress={() => handleTruckPress(truck.id)}
+                  />
                 );
               })}
+              {sightings.map((sighting) => (
+                <Marker
+                  key={`sighting-${sighting.id}`}
+                  coordinate={{
+                    latitude: sighting.latitude,
+                    longitude: sighting.longitude,
+                  }}
+                  title={sighting.truck_name}
+                  description="Recently Spotted"
+                  onPress={() => handleSightingPress(sighting)}
+                >
+                  <View style={styles.sightingMarker}>
+                    <View style={styles.sightingMarkerInner} />
+                  </View>
+                </Marker>
+              ))}
             </MapView>
             <TouchableOpacity
               style={styles.findMeButton}
@@ -356,10 +461,12 @@ export default function CustomerHomeScreen() {
       </View>
 
       <View style={styles.listContainer}>
-        <Text style={styles.listTitle}>
-          {showClosed ? 'All Trucks' : 'Open Now'} ({trucks.length})
-        </Text>
-        {trucks.length === 0 ? (
+        <View style={styles.listHeader}>
+          <Text style={styles.listTitle}>
+            {showClosed ? 'All Trucks' : 'Open Now'} ({listTrucks.length})
+          </Text>
+        </View>
+        {listTrucks.length === 0 ? (
           <View style={styles.emptyStateContainer}>
             <View style={styles.emptyStateCard}>
               {searchQuery.trim() ? (
@@ -390,7 +497,7 @@ export default function CustomerHomeScreen() {
                 <>
                   <AlertCircle size={48} color={colors.secondaryText} strokeWidth={1.5} />
                   <Text style={styles.emptyStateTitle}>No trucks nearby</Text>
-                  <Text style={styles.emptyStateSubtitle}>Try widening your search radius, or tap Explore to check out other cities.</Text>
+                  <Text style={styles.emptyStateSubtitle}>Try widening your search radius, or check back when more trucks are live on the map.</Text>
                   <TouchableOpacity
                     style={styles.emptyStateButton}
                     onPress={() => setIsRadiusModalVisible(true)}
@@ -414,35 +521,106 @@ export default function CustomerHomeScreen() {
               />
             }
           >
-            {trucks.map(truck => (
-              <TouchableOpacity
-                key={truck.id}
-                style={styles.truckCard}
-                onPress={() => handleTruckPress(truck.id)}
-              >
-                <Image source={truck.logo ? { uri: truck.logo } : undefined} style={styles.truckLogo} />
-                <View style={styles.truckInfo}>
-                  <View style={styles.truckNameRow}>
-                    <Text style={styles.truckName}>{truck.name}</Text>
-                    {truck.verified && (
-                      <CheckCircle size={16} color={colors.success} fill={colors.success} />
-                    )}
-                  </View>
-                  <Text style={styles.truckCuisine}>{truck.cuisine_type}</Text>
-                  <View style={styles.truckMeta}>
-                    <View style={[styles.statusBadge, openTruckIds.has(truck.id) && { backgroundColor: `${colors.success}20` }]}>
-                      <Text style={[styles.statusText, openTruckIds.has(truck.id) && { color: colors.success }]}>
-                        {openTruckIds.has(truck.id) ? 'Open' : 'Closed'}
+            {listTrucks.map((truck, index) => (
+              <React.Fragment key={truck.id}>
+                {index === 0 && (
+                  <TouchableOpacity
+                    style={[styles.truckCard, styles.spotListCard]}
+                    onPress={() => router.push('/(customer)/add-sighting' as any)}
+                    activeOpacity={0.85}
+                  >
+                    <View style={[styles.truckLogo, styles.spotListIconWrap]}>
+                      <Animated.View
+                        style={[
+                          styles.spotListMarker,
+                          { transform: [{ scale: spotMarkerScale }] },
+                        ]}
+                      >
+                        <View style={styles.spotListMarkerInner} />
+                      </Animated.View>
+                    </View>
+                    <View style={styles.truckInfo}>
+                      <Text style={styles.truckName}>Seen a food truck?</Text>
+                      <Text style={styles.truckCuisine}>Drop it on the map</Text>
+                      <Text style={styles.spotListAction}>+ Add a Spot</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.truckCard}
+                  onPress={() => handleTruckPress(truck.id)}
+                >
+                  <Image source={truck.logo ? { uri: truck.logo } : undefined} style={styles.truckLogo} />
+                  <View style={styles.truckInfo}>
+                    <View style={styles.truckNameRow}>
+                      <Text style={styles.truckName}>{truck.name}</Text>
+                      {truck.verified && (
+                        <CheckCircle size={16} color={colors.success} fill={colors.success} />
+                      )}
+                    </View>
+                    <Text style={styles.truckCuisine}>{truck.cuisine_type}</Text>
+                    <View style={styles.truckMeta}>
+                      <View style={[styles.statusBadge, openTruckIds.has(truck.id) && { backgroundColor: `${colors.success}20` }]}>
+                        <Text style={[styles.statusText, openTruckIds.has(truck.id) && { color: colors.success }]}>
+                          {openTruckIds.has(truck.id) ? 'Open' : 'Closed'}
+                        </Text>
+                      </View>
+                      <Text style={styles.truckDistance}>
+                        {truck.location?.address
+                          ? truck.location.address.split(',')[0]
+                          : openTruckIds.has(truck.id)
+                          ? 'Location available'
+                          : 'Not currently serving'}
                       </Text>
                     </View>
-                    <Text style={styles.truckDistance}>{truck.location?.address ? truck.location.address.split(',')[0] : 'Unknown location'}</Text>
                   </View>
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </React.Fragment>
             ))}
           </ScrollView>
         )}
       </View>
+
+      <Modal
+        visible={selectedSighting !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedSighting(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setSelectedSighting(null)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+            style={styles.sightingModalContent}
+          >
+            <Image
+              source={selectedSighting?.photo_url ? { uri: selectedSighting.photo_url } : undefined}
+              style={styles.sightingImage}
+              contentFit="cover"
+            />
+            <Text style={styles.sightingName}>{selectedSighting?.truck_name}</Text>
+            <View style={styles.sightingBadge}>
+              <Text style={styles.sightingBadgeText}>👀 Recently Spotted</Text>
+            </View>
+            <Text style={styles.sightingTimestamp}>
+              {formatSightingLastSeen(selectedSighting?.created_at)}
+            </Text>
+            {selectedSighting?.notes ? (
+              <Text style={styles.sightingNotes}>{selectedSighting.notes}</Text>
+            ) : null}
+            <TouchableOpacity
+              style={styles.sightingCloseButton}
+              onPress={() => setSelectedSighting(null)}
+            >
+              <Text style={styles.sightingCloseButtonText}>Close</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       <Modal
         visible={isRadiusModalVisible}
@@ -649,16 +827,41 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.background,
   },
+  sightingMarker: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F59E0B',
+    borderWidth: 3,
+    borderColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+    shadowColor: '#92400E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  sightingMarkerInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FEF3C7',
+  },
   listContainer: {
     flex: 1,
     paddingHorizontal: 20,
     marginTop: 4,
   },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   listTitle: {
     fontSize: 17,
     fontWeight: '600' as const,
     color: colors.text,
-    marginBottom: 8,
   },
   list: {
     flex: 1,
@@ -683,6 +886,37 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderRadius: 11,
     backgroundColor: colors.secondaryBackground,
   },
+  spotListCard: {
+    backgroundColor: colors.cardBackground,
+    borderColor: colors.border,
+    paddingVertical: 8,
+  },
+  spotListIconWrap: {
+    backgroundColor: colors.secondaryBackground,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spotListMarker: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#F59E0B',
+    borderWidth: 3,
+    borderColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#F59E0B',
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  spotListMarkerInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FEF3C7',
+  },
   truckInfo: {
     flex: 1,
     marginLeft: 12,
@@ -703,6 +937,11 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 14,
     color: colors.secondaryText,
     marginBottom: 8,
+  },
+  spotListAction: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: colors.primary,
   },
   truckMeta: {
     flexDirection: 'row',
@@ -960,5 +1199,62 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 15,
     fontWeight: '500' as const,
     color: colors.secondaryText,
+  },
+  sightingModalContent: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.cardBackground,
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sightingImage: {
+    width: '100%',
+    height: 190,
+    borderRadius: 16,
+    backgroundColor: colors.secondaryBackground,
+    marginBottom: 14,
+  },
+  sightingName: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    color: colors.text,
+    marginBottom: 10,
+  },
+  sightingBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
+  sightingBadgeText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#92400E',
+  },
+  sightingTimestamp: {
+    fontSize: 13,
+    color: colors.secondaryText,
+    marginBottom: 10,
+  },
+  sightingNotes: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+    marginBottom: 16,
+  },
+  sightingCloseButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  sightingCloseButtonText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: colors.background,
   },
 });

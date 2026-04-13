@@ -33,7 +33,7 @@ export default function VerificationScreen() {
       {
         id: 'address',
         label: 'Add address',
-        completed: !!truck.location.address && truck.location.address.trim() !== '',
+        completed: !!(truck.location?.address) && truck.location.address.trim() !== '',
       },
       {
         id: 'cuisine',

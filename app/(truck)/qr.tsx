@@ -17,7 +17,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { DEBUG } from '@/constants/debug';
 import QRCodeSVG from 'react-native-qrcode-svg';
-import { buildTruckPublicUrl } from '@/lib/truckShare';
+import { getTruckShareUrl } from '@/lib/truckShare';
 
 export default function QRCodeScreen() {
   const { getUserTruck, isProfileComplete, markQrShared } = useApp();
@@ -32,7 +32,7 @@ export default function QRCodeScreen() {
       console.warn('⚠️ No truckId available for QR generation');
       return '';
     }
-    const webUrl = buildTruckPublicUrl(truckId);
+    const webUrl = getTruckShareUrl(truckId);
     
     if (DEBUG) console.log('QR URL generated:', webUrl, 'truckId:', truckId);
     

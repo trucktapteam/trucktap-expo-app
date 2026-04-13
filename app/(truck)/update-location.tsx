@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -13,15 +13,52 @@ export default function UpdateLocationScreen() {
   const truck = getUserTruck();
 
   const [isLoading, setIsLoading] = useState(false);
+  const [manualAddress, setManualAddress] = useState('');
+  const [pendingLocation, setPendingLocation] = useState<{
+    latitude: number;
+    longitude: number;
+    address: string;
+    source: 'gps' | 'manual';
+  } | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{
     latitude: number;
     longitude: number;
     address: string;
-  } | null>(truck?.location || null);
+  } | null>(
+    truck &&
+    Number.isFinite(truck.location?.latitude) &&
+    Number.isFinite(truck.location?.longitude)
+      ? truck.location
+      : null
+  );
+
+  const saveLiveLocation = async (location: { latitude: number; longitude: number; address: string }) => {
+    if (!truck) return;
+
+    await updateTruckDetails(truck.id, {
+      open_now: true,
+      location,
+    });
+
+    setCurrentLocation(location);
+    setPendingLocation(null);
+
+    Alert.alert(
+      "You're now live",
+      'You are now live and visible to customers.',
+      [
+        {
+          text: 'OK',
+          onPress: () => router.back(),
+        },
+      ]
+    );
+  };
 
   const handleGetCurrentLocation = async () => {
     try {
       setIsLoading(true);
+      setPendingLocation(null);
 
       const { status } = await Location.requestForegroundPermissionsAsync();
       
@@ -64,27 +101,104 @@ export default function UpdateLocationScreen() {
         console.log('Geocoding error:', error);
       }
 
-      setCurrentLocation({ latitude, longitude, address });
-
-      if (truck) {
-        await updateTruckDetails(truck.id, { location: { latitude, longitude, address } });
-        
-        Alert.alert(
-          'Location Updated',
-          'Your truck location has been updated successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => router.back(),
-            },
-          ]
-        );
-      }
+      setPendingLocation({
+        latitude,
+        longitude,
+        address,
+        source: 'gps',
+      });
     } catch (error) {
       console.error('Error getting location:', error);
       Alert.alert(
         'Error',
         'Failed to get your current location. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleManualLocation = async () => {
+    const trimmedAddress = manualAddress.trim();
+
+    if (!trimmedAddress) {
+      Alert.alert('Enter a location', 'Type the serving location you want customers to see.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setPendingLocation(null);
+
+      const geocode = await Location.geocodeAsync(trimmedAddress);
+
+      if (!geocode.length) {
+        Alert.alert('Location not found', 'Try a more specific address or landmark.');
+        return;
+      }
+
+      const { latitude, longitude } = geocode[0];
+      let resolvedAddress = trimmedAddress;
+
+      try {
+        const reverseGeocode = await Location.reverseGeocodeAsync({
+          latitude,
+          longitude,
+        });
+
+        if (reverseGeocode && reverseGeocode.length > 0) {
+          const result = reverseGeocode[0];
+          const formatted = [
+            result.name,
+            result.street,
+            result.city,
+            result.region,
+          ]
+            .filter(Boolean)
+            .join(', ');
+
+          if (formatted) {
+            resolvedAddress = formatted;
+          }
+        }
+      } catch (error) {
+        console.log('Reverse geocoding manual location failed:', error);
+      }
+
+      setPendingLocation({
+        latitude,
+        longitude,
+        address: resolvedAddress,
+        source: 'manual',
+      });
+    } catch (error) {
+      console.error('Error geocoding location:', error);
+      Alert.alert(
+        'Error',
+        'Failed to set that location. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleConfirmPendingLocation = async () => {
+    if (!pendingLocation) return;
+    setIsLoading(true);
+
+    try {
+      await saveLiveLocation({
+        latitude: pendingLocation.latitude,
+        longitude: pendingLocation.longitude,
+        address: pendingLocation.address,
+      });
+    } catch (error) {
+      console.error('Error confirming live location:', error);
+      Alert.alert(
+        'Error',
+        'Failed to save your live location. Please try again.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -102,27 +216,55 @@ export default function UpdateLocationScreen() {
         >
           <ArrowLeft size={24} color={Colors.dark} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Update Location</Text>
+        <Text style={styles.headerTitle}>Go Live</Text>
         <View style={styles.placeholder} />
       </View>
 
-      <View style={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.iconContainer}>
           <MapPin size={64} color={Colors.primary} />
         </View>
 
         <Text style={styles.title}>Set Your Live Location</Text>
         <Text style={styles.description}>
-          Update your truck&apos;s location so customers can find you on the map.
+          Choose how you want to set your serving location. Your truck only appears on the map after you confirm a location.
         </Text>
 
         {currentLocation && (
           <View style={styles.locationCard}>
-            <Text style={styles.locationLabel}>Current Location</Text>
+            <Text style={styles.locationLabel}>Selected Location</Text>
             <Text style={styles.locationAddress}>{currentLocation.address}</Text>
             <Text style={styles.locationCoords}>
               {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
             </Text>
+          </View>
+        )}
+
+        {pendingLocation && (
+          <View style={styles.previewCard}>
+            <Text style={styles.locationLabel}>
+              {pendingLocation.source === 'gps' ? 'Current Location Preview' : 'Search Result'}
+            </Text>
+            <Text style={styles.locationAddress}>{pendingLocation.address}</Text>
+            <Text style={styles.locationCoords}>
+              {pendingLocation.latitude.toFixed(6)}, {pendingLocation.longitude.toFixed(6)}
+            </Text>
+            <TouchableOpacity
+              style={[styles.confirmButton, isLoading && styles.buttonDisabled]}
+              onPress={handleConfirmPendingLocation}
+              disabled={isLoading}
+              activeOpacity={0.7}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.confirmButtonText}>Confirm Live Location</Text>
+              )}
+            </TouchableOpacity>
           </View>
         )}
 
@@ -137,15 +279,38 @@ export default function UpdateLocationScreen() {
           ) : (
             <>
               <MapPin size={20} color="#fff" />
-              <Text style={styles.buttonText}>Get Current Location</Text>
+              <Text style={styles.buttonText}>Use Current Location</Text>
             </>
           )}
         </TouchableOpacity>
 
+        <View style={styles.manualCard}>
+          <Text style={styles.manualTitle}>Search for a Location</Text>
+          <Text style={styles.manualDescription}>
+            Search for an address, landmark, or business and then confirm it as your serving location.
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={manualAddress}
+            onChangeText={setManualAddress}
+            placeholder="123 Main St, Louisville, KY"
+            placeholderTextColor={Colors.gray}
+            autoCapitalize="words"
+          />
+          <TouchableOpacity
+            style={[styles.secondaryButton, isLoading && styles.buttonDisabled]}
+            onPress={handleManualLocation}
+            disabled={isLoading}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.secondaryButtonText}>Search This Location</Text>
+          </TouchableOpacity>
+        </View>
+
         <Text style={styles.note}>
-          Make sure you&apos;re at your truck&apos;s current location before updating.
+          GPS is only used if you tap "Use Current Location." You can search and confirm a different serving spot anytime.
         </Text>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -180,10 +345,10 @@ const styles = StyleSheet.create({
     width: 40,
   },
   content: {
-    flex: 1,
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 40,
+    paddingBottom: 32,
   },
   iconContainer: {
     width: 120,
@@ -263,6 +428,75 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: '600' as const,
+    color: '#fff',
+  },
+  manualCard: {
+    width: '100%',
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 16,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  previewCard: {
+    width: '100%',
+    backgroundColor: `${Colors.primary}08`,
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}25`,
+  },
+  manualTitle: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.dark,
+    marginBottom: 8,
+  },
+  manualDescription: {
+    fontSize: 14,
+    color: Colors.gray,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: Colors.dark,
+    marginBottom: 12,
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    paddingVertical: 14,
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.primary,
+  },
+  confirmButton: {
+    marginTop: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  confirmButtonText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
     color: '#fff',
   },
   note: {

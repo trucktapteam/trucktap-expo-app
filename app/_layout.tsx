@@ -14,6 +14,7 @@ import * as Linking from 'expo-linking';
 import { trpc, trpcClient } from "@/lib/trpc";
 import { DEBUG } from "@/constants/debug";
 import { supabase } from '@/lib/supabase';
+import { getTruckRouteFromUrl } from '@/lib/truckShare';
 
 void SplashScreen.preventAutoHideAsync().catch((e) => {
   console.log('[RootLayout] SplashScreen.preventAutoHideAsync error:', e);
@@ -176,22 +177,11 @@ export default function RootLayout() {
           return;
         }
 
-        if (path) {
-          if (path.startsWith('truck/')) {
-            const truckId = path.replace('truck/', '');
-            if (truckId) {
-              if (DEBUG) console.log('Navigating to truck:', truckId);
-              console.log('[RootLayout] Routing to truck screen from deep link');
-              router.push(`/truck/${truckId}` as any);
-            }
-          } else if (path.startsWith('public/')) {
-            const truckId = path.replace('public/', '');
-            if (truckId) {
-              if (DEBUG) console.log('Navigating to public truck:', truckId);
-              console.log('[RootLayout] Routing to public truck screen from deep link');
-              router.push(`/public/${truckId}` as any);
-            }
-          }
+        const truckRoute = getTruckRouteFromUrl(event.url);
+        if (truckRoute) {
+          console.log('[RootLayout] Routing to truck screen from deep link:', truckRoute);
+          router.replace(truckRoute as any);
+          return;
         }
       } catch (error) {
         console.log('[RootLayout] Error handling deep link:', error);

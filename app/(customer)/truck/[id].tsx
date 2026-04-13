@@ -4,6 +4,6 @@ import TruckProfile from '@/components/TruckProfile';
 
 export default function TruckDetailScreen() {
   const { id } = useLocalSearchParams();
-  
+
   return <TruckProfile truckId={id as string} mode="customer" />;
 }

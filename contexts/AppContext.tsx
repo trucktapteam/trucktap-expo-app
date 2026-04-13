@@ -166,8 +166,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       images: galleryImages,
       open_now: row.is_open ?? false,
       location: {
-        latitude: row.latitude ?? 0,
-        longitude: row.longitude ?? 0,
+        latitude: typeof row.latitude === 'number' ? row.latitude : Number.NaN,
+        longitude: typeof row.longitude === 'number' ? row.longitude : Number.NaN,
         address: row.address ?? row.label ?? '',
       },
       hours: 'Not set',
@@ -258,25 +258,25 @@ export const [AppProvider, useApp] = createContextHook(() => {
       }
     }
 
-    const mappedReviews: Review[] = (reviewRows ?? []).map((row: any) => {
-      const profile = profilesById[row.user_id];
+    const mappedReviews = (reviewRows ?? []).map((row: any) => {
+  const userId = row.user_id?.toString() ?? '';
+  const profile = profilesById[userId];
 
-      return {
-        id: row.id,
-        truckId: row.truck_id,
-        rating: row.rating,
-        text: row.text,
-        createdAt: row.created_at,
-        user: {
-          id: row.user_id,
-          name:
-            profile?.display_name ||
-           profile?.display_name || 'Food Truck Fan',
-          profile_photo: profile?.profile_photo,
-        },
-      };
-    });
-
+  return {
+    id: row.id?.toString() ?? '',
+    truckId: row.truck_id?.toString() ?? '',
+    rating: typeof row.rating === 'number' ? row.rating : Number(row.rating) || 0,
+    text: row.text ?? '',
+    createdAt: row.created_at
+      ? String(row.created_at)
+      : new Date().toISOString(),
+    user: {
+      id: userId,
+      name: profile?.display_name || 'Food Truck Fan',
+      profile_photo: profile?.profile_photo ?? null,
+    },
+  };
+}) as Review[];
     setReviews(mappedReviews);
 
     if (DEBUG) {
@@ -426,8 +426,27 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, [fetchOwnedTrucksFromSupabase, fetchAllTrucksFromSupabase]);
   
   useEffect(() => {
-  void fetchReviewsFromSupabase();
-}, [fetchReviewsFromSupabase]);
+    void fetchReviewsFromSupabase();
+
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    const reviewChannel = supabase
+      .channel('reviews-refresh')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reviews' },
+        () => {
+          void fetchReviewsFromSupabase();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void reviewChannel.unsubscribe();
+    };
+  }, [fetchReviewsFromSupabase]);
 
   useEffect(() => {
     void fetchAllTrucksFromSupabase();
@@ -1639,9 +1658,15 @@ export function useTruckReviews(truckId: string) {
   const { reviews } = useApp();
 
   return useMemo(() => {
-    return reviews.filter(review => review.truckId === truckId).sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    const requestedId = truckId?.toString() ?? '';
+
+    return reviews
+      .filter(review => review.truckId?.toString() === requestedId)
+      .sort((a, b) => {
+        const aTime = Date.parse(a.createdAt || '') || 0;
+        const bTime = Date.parse(b.createdAt || '') || 0;
+        return bTime - aTime;
+      });
   }, [reviews, truckId]);
 }
 

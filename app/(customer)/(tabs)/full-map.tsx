@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Alert, Animated, PanResponder, Dimensions, Linking } from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { Target, ChevronRight, Heart, Star, Navigation, Eye, EyeOff } from 'lucide-react-native';
 import * as Location from 'expo-location';
@@ -10,12 +10,17 @@ import { useFilteredTrucks, useApp, useTruckRating } from '@/contexts/AppContext
 import { useAuth } from '@/contexts/AuthContext';
 import AuthPromptModal from '@/components/AuthPromptModal';
 import { Image } from 'expo-image';
-import { FoodTruck } from '@/types';
-import TruckMapMarker from '@/components/TruckMapMarker';
+import { FoodTruck, Sighting } from '@/types';
+import { supabase } from '@/lib/supabase';
+import { formatSightingLastSeen, hasSightingCoordinates } from '@/lib/sightings';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.45;
 const SNAP_THRESHOLD = 50;
+
+const hasMapLocation = (truck: FoodTruck) =>
+  Number.isFinite(truck.location?.latitude) &&
+  Number.isFinite(truck.location?.longitude);
 
 export default function FullMapScreen() {
   const router = useRouter();
@@ -25,19 +30,37 @@ export default function FullMapScreen() {
   const mapRef = useRef<MapView>(null);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [selectedTruck, setSelectedTruck] = useState<FoodTruck | null>(null);
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [selectedSighting, setSelectedSighting] = useState<Sighting | null>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState<boolean>(false);
+  const [sightings, setSightings] = useState<Sighting[]>([]);
   const sheetY = useRef(new Animated.Value(SHEET_MAX_HEIGHT)).current;
   const markerScales = useRef<{ [key: string]: Animated.Value }>({}).current;
 
   const allTrucks = useFilteredTrucks('', 'All', false);
-  const trucksWithLocation = useMemo(() => allTrucks.filter(truck =>
-    truck.location &&
-    typeof truck.location.latitude === 'number' &&
-    typeof truck.location.longitude === 'number'
-  ), [allTrucks]);
+  const trucksWithLocation = useMemo(
+    () => allTrucks.filter(hasMapLocation),
+    [allTrucks]
+  );
   const openTrucks = trucksWithLocation.filter(truck => isTruckOpenNow(truck.id));
   const trucksForMap = showClosed ? trucksWithLocation : openTrucks;
+
+  const fetchSightings = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('sightings')
+        .select('*')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setSightings((data ?? []).filter(hasSightingCoordinates));
+    } catch (error) {
+      console.error('[FullMapScreen] Failed to load sightings:', error);
+    }
+  }, []);
 
   trucksWithLocation.forEach(truck => {
     if (!markerScales[truck.id]) {
@@ -68,6 +91,7 @@ export default function FullMapScreen() {
       useNativeDriver: true,
     }).start(() => {
       setSelectedTruck(null);
+      setSelectedSighting(null);
     });
   }, [sheetY]);
 
@@ -106,6 +130,7 @@ export default function FullMapScreen() {
     }
     const truck = trucksWithLocation.find(t => t.id === truckId);
     if (truck) {
+      setSelectedSighting(null);
       if (selectedTruck?.id) {
         animateMarker(selectedTruck.id, 1);
       }
@@ -122,10 +147,30 @@ export default function FullMapScreen() {
     }
   };
 
+  const handleSightingPress = (sighting: Sighting) => {
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+
+    if (selectedTruck?.id) {
+      animateMarker(selectedTruck.id, 1);
+    }
+
+    setSelectedTruck(null);
+    setSelectedSighting(sighting);
+
+    mapRef.current?.animateToRegion({
+      latitude: sighting.latitude,
+      longitude: sighting.longitude,
+      latitudeDelta: 0.02,
+      longitudeDelta: 0.02,
+    }, 500);
+  };
+
   const handleMapPress = () => {
-    if (selectedTruck) {
+    if (selectedTruck || selectedSighting) {
       closeSheet();
-      if (selectedTruck.id) {
+      if (selectedTruck?.id) {
         animateMarker(selectedTruck.id, 1);
       }
     }
@@ -149,10 +194,10 @@ export default function FullMapScreen() {
   };
 
   useEffect(() => {
-    if (selectedTruck) {
+    if (selectedTruck || selectedSighting) {
       openSheet();
     }
-  }, [selectedTruck, openSheet]);
+  }, [selectedSighting, selectedTruck, openSheet]);
 
   const handleViewDetails = () => {
     if (selectedTruck) {
@@ -168,14 +213,10 @@ export default function FullMapScreen() {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
 
-        const location = await Location.getCurrentPositionAsync({
+        await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
 
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
       } catch (error) {
         console.error('Error getting location:', error);
       }
@@ -183,6 +224,10 @@ export default function FullMapScreen() {
 
     void getUserLocation();
   }, []);
+
+  useEffect(() => {
+    void fetchSightings();
+  }, [fetchSightings]);
 
   const handleFindMe = async () => {
     if (Platform.OS === 'web') {
@@ -205,8 +250,6 @@ export default function FullMapScreen() {
       });
 
       const { latitude, longitude } = location.coords;
-
-      setUserLocation({ latitude, longitude });
 
       mapRef.current?.animateToRegion({
         latitude,
@@ -245,18 +288,34 @@ export default function FullMapScreen() {
               const isOpen = isTruckOpenNow(truck.id);
               return (
                 <Marker
-  key={truck.id}
-  coordinate={{
-    latitude: truck.location.latitude,
-    longitude: truck.location.longitude,
-  }}
-  pinColor={isOpen ? "#f97316" : "#9ca3af"}
-  title={truck.name}
-  description={truck.location?.address || 'Food truck'}
-  onPress={() => handleTruckPress(truck.id)}
-/>
+                  key={truck.id}
+                  coordinate={{
+                    latitude: truck.location.latitude,
+                    longitude: truck.location.longitude,
+                  }}
+                  pinColor={isOpen ? '#f97316' : '#9ca3af'}
+                  title={truck.name}
+                  description={truck.location?.address || 'Food truck'}
+                  onPress={() => handleTruckPress(truck.id)}
+                />
               );
             })}
+            {sightings.map((sighting) => (
+              <Marker
+                key={`sighting-${sighting.id}`}
+                coordinate={{
+                  latitude: sighting.latitude,
+                  longitude: sighting.longitude,
+                }}
+                title={sighting.truck_name}
+                description="Recently Spotted"
+                onPress={() => handleSightingPress(sighting)}
+              >
+                <View style={styles.sightingMarker}>
+                  <View style={styles.sightingMarkerInner} />
+                </View>
+              </Marker>
+            ))}
           </MapView>
 
           <TouchableOpacity
@@ -281,7 +340,7 @@ export default function FullMapScreen() {
             <Target size={24} color={colors.background} />
           </TouchableOpacity>
 
-          {!showClosed && openTrucks.length === 0 && (
+          {!showClosed && openTrucks.length === 0 && sightings.length === 0 && (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateTitle}>No trucks open right now</Text>
               <TouchableOpacity
@@ -293,7 +352,7 @@ export default function FullMapScreen() {
             </View>
           )}
 
-          {selectedTruck && (
+          {(selectedTruck || selectedSighting) && (
             <Animated.View 
               style={[
                 styles.bottomSheet,
@@ -306,12 +365,16 @@ export default function FullMapScreen() {
                 <View style={styles.handleBar} />
               </View>
               
-              <TruckBottomSheet
-                truck={selectedTruck}
-                isFavorited={currentUser?.favorites.includes(selectedTruck.id) || false}
-                onViewDetails={handleViewDetails}
-                onToggleFavorite={handleFavoriteToggle}
-              />
+              {selectedTruck ? (
+                <TruckBottomSheet
+                  truck={selectedTruck}
+                  isFavorited={currentUser?.favorites.includes(selectedTruck.id) || false}
+                  onViewDetails={handleViewDetails}
+                  onToggleFavorite={handleFavoriteToggle}
+                />
+              ) : selectedSighting ? (
+                <SightingBottomSheet sighting={selectedSighting} />
+              ) : null}
             </Animated.View>
           )}
 
@@ -332,6 +395,10 @@ type TruckBottomSheetProps = {
   isFavorited: boolean;
   onViewDetails: () => void;
   onToggleFavorite: () => void;
+};
+
+type SightingBottomSheetProps = {
+  sighting: Sighting;
 };
 
 const openNavigation = (latitude: number, longitude: number) => {
@@ -393,7 +460,7 @@ function TruckBottomSheet({ truck, isFavorited, onViewDetails, onToggleFavorite 
         
         <TouchableOpacity 
           style={styles.primaryButton} 
-          onPress={() => openNavigation(truck.location.latitude, truck.location.longitude)}
+          onPress={() => truck.location && openNavigation(truck.location.latitude, truck.location.longitude)}
           activeOpacity={0.8}
         >
           <Text style={styles.primaryButtonText}>Navigate</Text>
@@ -412,6 +479,41 @@ function TruckBottomSheet({ truck, isFavorited, onViewDetails, onToggleFavorite 
           />
         </TouchableOpacity>
       </View>
+    </View>
+  );
+}
+
+function SightingBottomSheet({ sighting }: SightingBottomSheetProps) {
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
+
+  return (
+    <View style={styles.sheetContent}>
+      <Image
+        source={sighting.photo_url ? { uri: sighting.photo_url } : undefined}
+        style={styles.sheetHeroImage}
+      />
+
+      <View style={styles.sightingSheetHeader}>
+        <Text style={styles.sheetName}>{sighting.truck_name}</Text>
+        <View style={styles.sightingPill}>
+          <Text style={styles.sightingPillText}>👀 Recently Spotted</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sightingTimestamp}>{formatSightingLastSeen(sighting.created_at)}</Text>
+      {sighting.notes ? (
+        <Text style={styles.sightingNotes}>{sighting.notes}</Text>
+      ) : null}
+
+      <TouchableOpacity
+        style={styles.primaryButton}
+        onPress={() => openNavigation(sighting.latitude, sighting.longitude)}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.primaryButtonText}>Navigate</Text>
+        <Navigation size={18} color={colors.background} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -456,6 +558,27 @@ const createStyles = (colors: any) => StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: colors.background,
+  },
+  sightingMarker: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F59E0B',
+    borderWidth: 3,
+    borderColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+    shadowColor: '#92400E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  sightingMarkerInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FEF3C7',
   },
   showClosedButton: {
     position: 'absolute',
@@ -627,6 +750,33 @@ const createStyles = (colors: any) => StyleSheet.create({
   sheetButtons: {
     flexDirection: 'row',
     gap: 12,
+  },
+  sightingSheetHeader: {
+    gap: 10,
+    marginBottom: 10,
+  },
+  sightingPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  sightingPillText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#92400E',
+  },
+  sightingTimestamp: {
+    fontSize: 13,
+    color: colors.secondaryText,
+    marginBottom: 10,
+  },
+  sightingNotes: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+    marginBottom: 18,
   },
   primaryButton: {
     flex: 1,

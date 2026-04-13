@@ -51,6 +51,17 @@ export type FoodTruck = {
   lastOwnerActivityAt?: number;
 };
 
+export type Sighting = {
+  id: string;
+  truck_name: string;
+  photo_url?: string | null;
+  latitude: number;
+  longitude: number;
+  notes?: string | null;
+  created_at: string;
+  expires_at: string;
+};
+
 export type Review = {
   id: string;
   truckId: string;

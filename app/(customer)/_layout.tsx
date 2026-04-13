@@ -15,6 +15,7 @@ export default function CustomerLayout() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="truck/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="truck/menu" options={{ headerShown: false }} />
+      <Stack.Screen name="add-sighting" options={{ title: 'Add Sighting' }} />
       <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="edit-profile" options={{ title: 'Edit Profile' }} />
     </Stack>

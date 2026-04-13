@@ -12,7 +12,7 @@ import TruckSectionCard from '@/components/TruckSectionCard';
 import ReviewerAvatar from '@/components/ReviewerAvatar';
 import ExpandableText from '@/components/ExpandableText';
 import AuthPromptModal from '@/components/AuthPromptModal';
-import { buildTruckPublicUrl } from '@/lib/truckShare';
+import { getTruckShareUrl } from '@/lib/truckShare';
 import { MenuItem } from '@/types';
 
 interface TruckProfileProps {
@@ -38,6 +38,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   }, [isAuthenticated, authUser, truck]);
   
   const reviews = useTruckReviews(truckId);
+  console.log('[REVIEWS RAW]', reviews);
   const { average, count } = useTruckRating(truckId);
   
   const truckMenuItems = useMemo(() => 
@@ -48,6 +49,10 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const isFavorite = useMemo(() => 
     mode === 'customer' && currentUser?.favorites.includes(truckId) || false,
     [currentUser, truckId, mode]
+  );
+  const hasNavigableLocation = useMemo(
+    () => Number.isFinite(truck?.location?.latitude) && Number.isFinite(truck?.location?.longitude),
+    [truck]
   );
 
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
@@ -118,6 +123,10 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const hasValidPhone = !!truck.phone && truck.phone.length === 10;
 
   const handleNavigate = () => {
+    if (!hasNavigableLocation) {
+      Alert.alert('Location unavailable', 'This truck has not set a live serving location yet.');
+      return;
+    }
     incrementNavigation(truck.id);
     const { latitude, longitude } = truck.location;
     const url = Platform.select({
@@ -143,7 +152,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Check out ${truck.name} on TruckTap! ${buildTruckPublicUrl(truck.id)}`,
+        message: `Check out ${truck.name} on TruckTap! ${getTruckShareUrl(truck.id)}`,
         title: truck.name,
       });
     } catch (error) {
@@ -166,20 +175,30 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     }
   };
 
-  const formatTimestamp = (dateInput: string | Date) => {
-    const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    
-    if (hours < 1) return 'Just now';
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
-  };
+  const formatTimestamp = (dateInput?: string | Date) => {
+  if (!dateInput) return 'Just now';
+console.log('[FORMAT DATE]', dateInput);
+  const date =
+    typeof dateInput === 'string'
+      ? new Date(dateInput)
+      : dateInput;
+
+  if (!date || isNaN(date.getTime())) return 'Just now';
+
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+
+  if (hours < 1) return 'Just now';
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+};
 
   const handleOpenReviewModal = () => {
     if (authLoading) {
       console.log('[TruckProfile] Auth still loading, ignoring review action');
+      
       return;
     }
     if (!isAuthenticated || !authUser) {
@@ -320,12 +339,15 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
 
           <View style={styles.actionButtons}>
             <TouchableOpacity 
-              style={styles.navigateButton} 
+              style={[styles.navigateButton, !hasNavigableLocation && styles.navigateButtonDisabled]} 
               onPress={handleNavigate}
+              disabled={!hasNavigableLocation}
               activeOpacity={0.7}
             >
               <Navigation size={20} color={colors.background} />
-              <Text style={styles.navigateButtonText}>Navigate</Text>
+              <Text style={styles.navigateButtonText}>
+                {hasNavigableLocation ? 'Navigate' : 'Location Unavailable'}
+              </Text>
             </TouchableOpacity>
             
             {mode === 'customer' && hasValidPhone && (
@@ -355,7 +377,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
             <View style={styles.aboutContent}>
               <View style={styles.infoRow}>
                 <MapPin size={20} color={colors.secondaryText} />
-                <Text style={styles.infoText}>{truck.location.address}</Text>
+                <Text style={styles.infoText}>{truck.location.address || 'Serving location not set'}</Text>
               </View>
               <View style={styles.infoRow}>
                 <Clock size={20} color={colors.secondaryText} />
@@ -829,6 +851,9 @@ emptyReviewText: {
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+  },
+  navigateButtonDisabled: {
+    opacity: 0.5,
   },
   navigateButtonText: {
     fontSize: 15,

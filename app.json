@@ -2,10 +2,10 @@
   "expo": {
     "name": "TruckTap Food Truck Finder",
     "slug": "trucktap-food-truck-finder-cqgko70",
-    "version": "1.0.30",
+    "version": "1.0.32",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "rork-app",
+    "scheme": "trucktap",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -16,6 +16,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.rork.trucktap-food-truck-finder-cqgko70",
+      "associatedDomains": [
+        "applinks:gettrucktap.com",
+        "applinks:www.gettrucktap.com"
+      ],
       "infoPlist": {
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationAlwaysUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
@@ -23,10 +27,9 @@
         "UIBackgroundModes": [
           "location"
         ],
-        "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos",
-        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera",
-        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone",
-        "NSPhotoLibraryAddUsageDescription": "Allow $(PRODUCT_NAME) to save photos."
+       "NSPhotoLibraryUsageDescription": "TruckTap uses your photos so you can upload food truck sightings and profile images.",
+"NSCameraUsageDescription": "TruckTap uses your camera so you can take photos when spotting food trucks.",
+"NSPhotoLibraryAddUsageDescription": "TruckTap can save images you choose to export or share."
       }
     },
     "android": {
@@ -42,21 +45,38 @@
 
   "package": "app.rork.trucktap_food_truck_finder_cqgko70",
   "googleServicesFile": "./google-services.json",
-  "versionCode": 25,
-      "permissions": [
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.CAMERA",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.ACCESS_MEDIA_LOCATION",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO"
+  "versionCode": 32,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "gettrucktap.com",
+              "pathPrefix": "/truck/"
+            },
+            {
+              "scheme": "https",
+              "host": "www.gettrucktap.com",
+              "pathPrefix": "/truck/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ],
+      "permissions": [
+  "android.permission.ACCESS_COARSE_LOCATION",
+  "android.permission.ACCESS_FINE_LOCATION",
+  "android.permission.CAMERA",
+  "android.permission.POST_NOTIFICATIONS",
+  "android.permission.READ_MEDIA_IMAGES",
+  "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+],
+    
      "config": {
   "googleMaps": {
     "apiKey": "AIzaSyBrypvMT0Q615u2xdVT0SaklZRlQ7-YUIk"
@@ -70,7 +90,7 @@
       [
         "expo-router",
         {
-          "origin": "https://rork.com/"
+          "origin": "https://gettrucktap.com/"
         }
       ],
       "expo-font",
@@ -86,26 +106,27 @@
         }
       ],
       [
-        "expo-image-picker",
-        {
-          "photosPermission": "The app accesses your photos to let you share them with your friends."
-        }
-      ],
+  "expo-image-picker",
+  {
+    "photosPermission": "TruckTap uses your photos so you can upload food truck sightings and profile images.",
+    "cameraPermission": "TruckTap uses your camera so you can take photos when spotting food trucks."
+  }
+],
       [
-        "expo-media-library",
-        {
-          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos.",
-          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save photos.",
-          "isAccessMediaLocationEnabled": true
-        }
-      ]
+  "expo-media-library",
+  {
+    "photosPermission": "TruckTap uses your photos so you can upload food truck sightings and profile images.",
+    "savePhotosPermission": "TruckTap can save images you choose to export or share.",
+    "isAccessMediaLocationEnabled": true
+  }
+]
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "router": {
-        "origin": "https://rork.com/"
+        "origin": "https://gettrucktap.com/"
       },
       "eas": {
         "projectId": "79c2d2c4-e3da-4169-b304-12dde44b15e5"

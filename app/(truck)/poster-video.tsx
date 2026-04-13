@@ -21,7 +21,7 @@ import PromoVideoTemplateA from '@/components/posters/video/PromoVideoTemplateA'
 import PromoVideoTemplateB from '@/components/posters/video/PromoVideoTemplateB';
 import PromoVideoTemplateC from '@/components/posters/video/PromoVideoTemplateC';
 import { captureRef } from 'react-native-view-shot';
-import { buildTruckPublicUrl } from '@/lib/truckShare';
+import { getTruckShareUrl } from '@/lib/truckShare';
 
 type VideoTemplate = 'clean' | 'neon' | 'graffiti';
 
@@ -60,7 +60,7 @@ export default function PosterVideoScreen() {
 
     try {
       setIsGenerating(true);
-      const deepLink = buildTruckPublicUrl(truck.id);
+      const deepLink = getTruckShareUrl(truck.id);
       const dataUrl = await QRCode.toDataURL(deepLink, {
         width: 600,
         margin: 1,
@@ -152,10 +152,10 @@ export default function PosterVideoScreen() {
           await navigator.share({
             title: `${truck.name} - TruckTap Promo`,
             text: `Check out ${truck.name} on TruckTap!`,
-            url: buildTruckPublicUrl(truck.id),
+            url: getTruckShareUrl(truck.id),
           });
         } else {
-          await navigator.clipboard.writeText(buildTruckPublicUrl(truck.id));
+          await navigator.clipboard.writeText(getTruckShareUrl(truck.id));
           Alert.alert('Link Copied', 'Profile link copied to clipboard!');
         }
         return;

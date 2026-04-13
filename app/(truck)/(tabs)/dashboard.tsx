@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity, Share, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
-import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, FileImage, ScanLine, CheckCircle2, X, AlertCircle, Eye, Link, Sparkles, Bell, Archive, ArchiveRestore } from 'lucide-react-native';
+import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, X, AlertCircle, Eye, Link, Sparkles, Bell, Archive, ArchiveRestore } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckMenu, useTruckRating } from '@/contexts/AppContext';
 import * as Clipboard from 'expo-clipboard';
@@ -10,7 +10,7 @@ import StatsRow from '@/components/StatsRow';
 import DashboardCard from '@/components/DashboardCard';
 import Toast from '@/components/Toast';
 import { DEBUG } from '@/constants/debug';
-import { buildTruckPublicUrl } from '@/lib/truckShare';
+import { getTruckShareUrl } from '@/lib/truckShare';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -27,14 +27,44 @@ const formatLastScanned = (dateString: string): string => {
   return date.toLocaleDateString();
 };
 
+const formatLiveUpdatedText = (dateString?: string, nowMs: number = Date.now()): string => {
+  if (!dateString) return 'Last updated just now';
+
+  const timestamp = Date.parse(dateString);
+  if (Number.isNaN(timestamp)) return 'Last updated just now';
+
+  const diffMs = Math.max(0, nowMs - timestamp);
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+  if (diffMins < 1) return 'Last updated just now';
+  if (diffMins < 60) return `Last updated ${diffMins} min ago`;
+  if (diffHours < 24) return `Last updated ${diffHours} hr ago`;
+  return `Last updated ${Math.floor(diffHours / 24)} day${Math.floor(diffHours / 24) === 1 ? '' : 's'} ago`;
+};
+
+const formatServingLocation = (truck: any): string => {
+  const address = truck?.location?.address?.trim?.();
+  if (address) {
+    return address;
+  }
+
+  const latitude = truck?.location?.latitude;
+  const longitude = truck?.location?.longitude;
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    return `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+  }
+
+  return 'Location saved';
+};
+
 export default function TruckDashboard() {
-  const SHOW_QR_TOOLS = false;
   const router = useRouter();
   const { getUserTruck, updateTruckDetails, getQrScanStats, checklistDismissed, dismissChecklist, hasHoursSet, isProfileComplete, hasUnreadOwnerUpdates, qrShared } = useApp();
   const truck = getUserTruck();
-  const [isOpen, setIsOpen] = useState(truck?.open_now || false);
   const [toastVisible, setToastVisible] = useState(false);
   const [statusToast, setStatusToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' }>({ visible: false, message: '', type: 'success' });
+  const [liveNowMs, setLiveNowMs] = useState(Date.now());
   
   const bannerOpacity = useRef(new Animated.Value(0)).current;
   const bannerTranslateY = useRef(new Animated.Value(-5)).current;
@@ -45,50 +75,55 @@ export default function TruckDashboard() {
   const rating = useTruckRating(truck?.id || '');
 
   const truckOpenNow = truck?.open_now ?? false;
-  useEffect(() => {
-    if (DEBUG) console.log('[Dashboard] Truck open_now changed:', truckOpenNow);
-    setIsOpen(truckOpenNow);
-  }, [truckOpenNow]);
 
   const hoursSet = truck ? hasHoursSet(truck.id) : false;
   const hasPhotos = !!(truck && truck.images.length > 0);
   const hasMenu = menuItems.length > 0;
-  const hasSharedQr = qrShared;
   const hasUnread = hasUnreadOwnerUpdates();
 
   useEffect(() => {
     if (truck) {
-      if (DEBUG) console.log('[Checklist] hoursSet:', hoursSet, 'hasMenu:', hasMenu, 'hasPhotos:', hasPhotos, 'hasSharedQr:', hasSharedQr);
+      if (DEBUG) console.log('[Checklist] hoursSet:', hoursSet, 'hasMenu:', hasMenu, 'hasPhotos:', hasPhotos, 'hasSharedQr:', qrShared);
     }
-  }, [truck, hoursSet, hasMenu, hasPhotos, hasSharedQr, menuItems.length]);
+  }, [truck, hoursSet, hasMenu, hasPhotos, qrShared, menuItems.length]);
 
   const showChecklist = !checklistDismissed && (!hasMenu || !hasPhotos || !hoursSet);
 
-  const handleToggleStatus = async (value: boolean) => {
-    if (!truck) return;
-    if (DEBUG) console.log('[Dashboard] handleToggleStatus:', value);
-    setIsOpen(value);
-    
-    try {
-      await updateTruckDetails(truck.id, { open_now: value });
+  const handleGoLive = () => {
+    router.push('/(truck)/update-location' as any);
+  };
 
+  const handleStopServing = async () => {
+    if (!truck) return;
+
+    try {
+      await updateTruckDetails(truck.id, {
+        open_now: false,
+      });
+      setStatusToast({
+        visible: true,
+        message: 'Truck is no longer serving and has been removed from the map.',
+        type: 'success',
+      });
     } catch (error: any) {
-      console.log('[Dashboard] Toggle status failed:', error?.message);
-      setIsOpen(!value);
+      console.log('[Dashboard] Stop serving failed:', error?.message);
+      setStatusToast({
+        visible: true,
+        message: 'Could not update serving status. Please try again.',
+        type: 'error',
+      });
     }
-    
-    const toastMessage = value ? "You're live on the map." : "You're hidden from customers.";
-    setStatusToast({
-      visible: true,
-      message: toastMessage,
-      type: 'success'
-    });
   };
 
   const profileComplete = truck ? isProfileComplete(truck.id) : false;
-  const profileUrl = buildTruckPublicUrl(truck?.id);
+  const profileUrl = getTruckShareUrl(truck?.id);
 
   const isArchived = truck ? (truck.archived === true || !!truck.archivedAt) : false;
+  const hasTruckIdentity = !!truck?.id;
+  const hasShareableRoute = typeof profileUrl === 'string' && profileUrl.trim().length > 0;
+  const canShareTruck = hasTruckIdentity && hasShareableRoute && !isArchived;
+  const liveLocationText = truck ? formatServingLocation(truck) : '';
+  const liveUpdatedText = formatLiveUpdatedText(truck?.lastUpdated, liveNowMs);
 
   useEffect(() => {
     if (isArchived) {
@@ -110,13 +145,29 @@ export default function TruckDashboard() {
     }
   }, [isArchived, bannerOpacity, bannerTranslateY]);
 
+  useEffect(() => {
+    if (!truckOpenNow) {
+      return;
+    }
+
+    setLiveNowMs(Date.now());
+    const intervalId = setInterval(() => {
+      setLiveNowMs(Date.now());
+    }, 60000);
+
+    return () => clearInterval(intervalId);
+  }, [truckOpenNow]);
+
   const showToast = () => {
     setToastVisible(true);
     setTimeout(() => setToastVisible(false), 2000);
   };
 
   const handleCopyLink = async () => {
-    if (!truck) return;
+    if (!truck || !canShareTruck) {
+      Alert.alert('Sharing unavailable', 'This truck does not currently have a valid shareable public page.');
+      return;
+    }
     try {
       await Clipboard.setStringAsync(profileUrl);
       showToast();
@@ -126,7 +177,10 @@ export default function TruckDashboard() {
   };
 
   const handleShareProfile = async () => {
-    if (!truck) return;
+    if (!truck || !canShareTruck) {
+      Alert.alert('Sharing unavailable', 'This truck does not currently have a valid shareable public page.');
+      return;
+    }
     try {
       await Share.share({
         message: `Check out ${truck.name} on TruckTap! ${profileUrl}`,
@@ -139,7 +193,10 @@ export default function TruckDashboard() {
   };
 
   const handleShareQR = () => {
-    if (!truck) return;
+    if (!truck || !canShareTruck) {
+      Alert.alert('Sharing unavailable', 'This truck does not currently have a valid shareable public page.');
+      return;
+    }
     router.push('/(truck)/qr' as any);
   };
 
@@ -160,7 +217,6 @@ export default function TruckDashboard() {
               archiveReason: 'owner_archived',
               open_now: false,
             });
-            setIsOpen(false);
             setStatusToast({
               visible: true,
               message: 'Truck archived successfully',
@@ -203,7 +259,7 @@ export default function TruckDashboard() {
         truckName={truck.name}
         cuisineType={truck.cuisine_type}
         logoUrl={truck.logo}
-        isOpen={isOpen}
+        isOpen={truckOpenNow}
       />
 
       <ScrollView 
@@ -305,43 +361,57 @@ export default function TruckDashboard() {
                 </Text>
               </TouchableOpacity>
                    
-            {SHOW_QR_TOOLS && (
-              <TouchableOpacity 
-                style={styles.checklistItem}
-                onPress={() => router.push('/(truck)/qr' as any)}
-                disabled={hasSharedQr}
-              >
-                <View style={[styles.checklistIcon, hasSharedQr && styles.checklistIconComplete]}>
-                  {hasSharedQr ? (
-                    <CheckCircle2 size={20} color={Colors.success} />
-                  ) : (
-                    <View style={styles.checklistIconEmpty} />
-                  )}
-                </View>
-                <Text style={[styles.checklistItemText, hasSharedQr && styles.checklistItemTextComplete]}>
-                  Share QR code
-                </Text>
-              </TouchableOpacity>
-            )}
             </View>
           </View>
         )}
 
-        <View style={styles.toggleCard}>
-          <View style={styles.toggleLeft}>
-            <Text style={styles.toggleTitle}>Truck Status</Text>
-            <Text style={styles.toggleSubtitle}>
-              {isArchived ? 'Archived (hidden from customers)' : isOpen ? 'Currently accepting orders' : 'Closed for business'}
-            </Text>
+        <View style={styles.liveCard}>
+          <View style={styles.liveHeader}>
+            <View style={[styles.liveBadge, truckOpenNow ? styles.liveBadgeOn : styles.liveBadgeOff]}>
+              <Text style={[styles.liveBadgeText, truckOpenNow ? styles.liveBadgeTextOn : styles.liveBadgeTextOff]}>
+                {truckOpenNow ? "You're Live • Customers can see you now" : 'Not Currently Serving'}
+              </Text>
+            </View>
           </View>
-          <Switch
-            value={isOpen}
-            onValueChange={handleToggleStatus}
-            trackColor={{ false: Colors.gray, true: Colors.success }}
-            thumbColor="#fff"
-            ios_backgroundColor={Colors.gray}
-            disabled={isArchived}
-          />
+          {truckOpenNow ? (
+            <>
+              <Text style={styles.liveTitle}>You're live and visible to nearby customers</Text>
+              <Text style={styles.liveDescription}>
+                Serving at: {liveLocationText}
+              </Text>
+              <Text style={styles.liveMetaText}>{liveUpdatedText}</Text>
+              <View style={styles.liveActions}>
+                <TouchableOpacity
+                  style={styles.liveButton}
+                  onPress={() => router.push('/(truck)/update-location' as any)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.liveButtonText}>Update Location</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.liveButton, styles.liveButtonSecondary]}
+                  onPress={handleStopServing}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.liveButtonText, styles.liveButtonTextSecondary]}>Stop Serving</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.liveTitle}>Go Live and Start Getting Customers</Text>
+              <Text style={styles.liveDescription}>
+                Confirm your serving location to mark your truck open and appear on the map.
+              </Text>
+              <TouchableOpacity
+                style={styles.liveButton}
+                onPress={handleGoLive}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.liveButtonText}>Go Live</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         <StatsRow 
@@ -441,7 +511,7 @@ export default function TruckDashboard() {
 
         <TouchableOpacity 
           style={styles.previewCard}
-          onPress={() => router.push(`/public/${truck.id}?preview=true` as any)}
+          onPress={() => router.push(`/truck/${truck.id}?preview=true` as any)}
           activeOpacity={0.7}
         >
           <View style={styles.previewIconContainer}>
@@ -457,87 +527,75 @@ export default function TruckDashboard() {
           <Text style={styles.sectionTitle}>Share Your Truck</Text>
         </View>
 
-        <View style={[styles.shareMainCard, !profileComplete && styles.shareMainCardDisabled]}>
+        <View style={styles.shareMainCard}>
           <View style={styles.shareMainHeader}>
             <View style={styles.shareMainIconContainer}>
-              <Sparkles size={28} color={profileComplete ? Colors.primary : Colors.gray} />
+              <Sparkles size={28} color={canShareTruck ? Colors.primary : Colors.gray} />
             </View>
             <View style={styles.shareMainTextContainer}>
-              <Text style={[styles.shareMainTitle, !profileComplete && styles.shareMainTitleDisabled]}>
+              <Text style={styles.shareMainTitle}>
                 Share Your Truck
               </Text>
               <Text style={styles.shareMainSubtitle}>
-                {profileComplete 
-                  ? 'Let customers find your truck instantly'
-                  : 'Complete your profile to enable sharing'}
+                {canShareTruck
+                  ? 'Your truck is ready to share'
+                  : 'Sharing is unavailable until this truck has a valid public page.'}
               </Text>
             </View>
           </View>
 
-          {profileComplete ? (
-            <View style={styles.shareButtonsContainer}>
-              <TouchableOpacity 
-                style={styles.sharePrimaryButton}
-                onPress={handleShareProfile}
-                activeOpacity={0.7}
-              >
-                <Share2 size={20} color="#fff" />
-                <Text style={styles.sharePrimaryButtonText}>Share via Text / Social</Text>
-              </TouchableOpacity>
-
-              <View style={styles.shareSecondaryButtons}>
-  {SHOW_QR_TOOLS && (
-    <TouchableOpacity 
-      style={styles.shareSecondaryButton}
-      onPress={handleShareQR}
-      activeOpacity={0.7}
-    >
-      <QrCode size={20} color={Colors.primary} />
-      <Text style={styles.shareSecondaryButtonText}>QR Code</Text>
-    </TouchableOpacity>
-  )}
-
-  <TouchableOpacity 
-    style={styles.shareSecondaryButton}
-    onPress={handleCopyLink}
-    activeOpacity={0.7}
-  >
-    <Link size={20} color={Colors.primary} />
-    <Text style={styles.shareSecondaryButtonText}>Copy Link</Text>
-  </TouchableOpacity>
-</View>
-              
-            </View>
-          ) : (
+          {canShareTruck && !profileComplete && (
             <View style={styles.shareDisabledHelper}>
-              <AlertCircle size={16} color={Colors.gray} />
+              <AlertCircle size={16} color={Colors.warning} />
               <Text style={styles.shareDisabledHelperText}>
-                Add menu items, photos, and operating hours to unlock sharing
+                Add menu items, photos, and operating hours to improve your public profile, but you can still share your truck right now.
               </Text>
             </View>
           )}
-        </View>
 
-        {SHOW_QR_TOOLS && (
-  <View style={styles.sectionHeader}>
-    <Text style={styles.sectionTitle}>Marketing Tools</Text>
-  </View>
-)}
+          {!canShareTruck && (
+            <View style={styles.shareDisabledHelper}>
+              <AlertCircle size={16} color={Colors.gray} />
+              <Text style={styles.shareDisabledHelperText}>
+                Sharing is currently unavailable because this truck is archived or missing a valid public link.
+              </Text>
+            </View>
+          )}
 
-       {SHOW_QR_TOOLS && (
-        <View style={styles.gridContainer}>
-          <DashboardCard 
-            icon={QrCode}
-            label="QR Code"
-            onPress={() => router.push('/(truck)/qr' as any)}
-          />
-          <DashboardCard 
-            icon={FileImage}
-            label="Posters"
-            onPress={() => router.push('/(truck)/poster-maker' as any)}
-          />
+          <View style={[styles.shareButtonsContainer, !canShareTruck && styles.shareButtonsContainerDisabled]}>
+            <TouchableOpacity 
+              style={[styles.sharePrimaryButton, !canShareTruck && styles.sharePrimaryButtonDisabled]}
+              onPress={handleShareProfile}
+              disabled={!canShareTruck}
+              activeOpacity={0.7}
+            >
+              <Share2 size={20} color="#fff" />
+              <Text style={styles.sharePrimaryButtonText}>Share via Text / Social</Text>
+            </TouchableOpacity>
+
+            <View style={styles.shareSecondaryButtons}>
+              <TouchableOpacity 
+                style={styles.shareSecondaryButton}
+                onPress={handleShareQR}
+                disabled={!canShareTruck}
+                activeOpacity={0.7}
+              >
+                <QrCode size={20} color={Colors.primary} />
+                <Text style={styles.shareSecondaryButtonText}>View QR Code</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.shareSecondaryButton}
+                onPress={handleCopyLink}
+                disabled={!canShareTruck}
+                activeOpacity={0.7}
+              >
+                <Link size={20} color={Colors.primary} />
+                <Text style={styles.shareSecondaryButtonText}>Copy Link</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
-       )}
 
         {qrStats.totalScans > 0 && (
           <View style={styles.qrStatsCard}>
@@ -601,10 +659,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.gray,
   },
-  toggleCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  liveCard: {
     backgroundColor: '#fff',
     padding: 20,
     borderRadius: 16,
@@ -615,18 +670,71 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  toggleLeft: {
-    flex: 1,
+  liveHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginBottom: 12,
   },
-  toggleTitle: {
-    fontSize: 16,
-    fontWeight: '600' as const,
+  liveBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  liveBadgeOn: {
+    backgroundColor: `${Colors.success}20`,
+  },
+  liveBadgeOff: {
+    backgroundColor: `${Colors.gray}20`,
+  },
+  liveBadgeText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  liveBadgeTextOn: {
+    color: Colors.success,
+  },
+  liveBadgeTextOff: {
+    color: Colors.gray,
+  },
+  liveTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
     color: Colors.dark,
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  toggleSubtitle: {
+  liveDescription: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: Colors.gray,
+    marginBottom: 6,
+  },
+  liveMetaText: {
     fontSize: 13,
     color: Colors.gray,
+    marginBottom: 16,
+  },
+  liveButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  liveButtonSecondary: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  liveButtonText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: '#fff',
+  },
+  liveButtonTextSecondary: {
+    color: Colors.dark,
+  },
+  liveActions: {
+    flexDirection: 'row',
+    gap: 12,
   },
   sectionHeader: {
     marginBottom: 16,
@@ -911,6 +1019,9 @@ const styles = StyleSheet.create({
   shareButtonsContainer: {
     gap: 12,
   },
+  shareButtonsContainerDisabled: {
+    opacity: 0.6,
+  },
   sharePrimaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -925,6 +1036,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+  },
+  sharePrimaryButtonDisabled: {
+    backgroundColor: Colors.gray,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
   },
   sharePrimaryButtonText: {
     fontSize: 16,
