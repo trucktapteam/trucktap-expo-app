@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.rork.trucktap-food-truck-finder-cqgko70",
+      "bundleIdentifier": "com.trucktap.app",
       "associatedDomains": [
         "applinks:gettrucktap.com",
         "applinks:www.gettrucktap.com"
@@ -43,7 +43,7 @@
     "color": "#FF6600"
   },
 
-  "package": "app.rork.trucktap_food_truck_finder_cqgko70",
+  "package": "com.trucktap.app",
   "googleServicesFile": "./google-services.json",
   "versionCode": 32,
       "intentFilters": [
