@@ -8,6 +8,7 @@ import { DEBUG } from '@/constants/debug';
 import * as Device from 'expo-device';
 import { supabase } from '@/lib/supabase';
 import * as Notifications from 'expo-notifications';
+import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -42,6 +43,7 @@ const DEFAULT_PREFS: NotificationPreferences = {
 const STORAGE_KEY = 'notificationPreferences';
 
 export const [NotificationProvider, useNotifications] = createContextHook(() => {
+  const { user } = useSupabaseAuth();
   const [permissionStatus, setPermissionStatus] = useState<
     'granted' | 'denied' | 'undetermined' | 'unknown'
   >('unknown');
@@ -169,7 +171,17 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
         return true;
       }
 
-      const { status } = await Notifications.requestPermissionsAsync();
+      const { status } = await Notifications.requestPermissionsAsync(
+        Platform.OS === 'ios'
+          ? {
+              ios: {
+                allowAlert: true,
+                allowBadge: true,
+                allowSound: true,
+              },
+            }
+          : {}
+      );
       setPermissionStatus(status === 'granted' ? 'granted' : 'denied');
 
       if (status === 'denied') {
@@ -350,6 +362,18 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
 
     void init();
   }, [registerPushToken]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || isExpoGo || !Device.isDevice) {
+      return;
+    }
+
+    if (permissionStatus !== 'granted' || !user) {
+      return;
+    }
+
+    void registerPushToken();
+  }, [permissionStatus, registerPushToken, user]);
 
   return useMemo(
     () => ({

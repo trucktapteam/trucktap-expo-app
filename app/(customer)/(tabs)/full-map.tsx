@@ -16,7 +16,7 @@ import { formatSightingLastSeen, hasSightingCoordinates } from '@/lib/sightings'
 import TruckClusterMarker from '@/components/map/TruckClusterMarker';
 import { CLUSTER_BREAKPOINT_DELTA, clusterTruckMarkers } from '@/lib/mapClustering';
 
-const TRUCK_PIN_IMAGE = require('@/assets/images/orange-pin.png');
+const TRUCK_MARKER_COLOR = '#f97316';
 // Tune this to control when automatic truck name labels appear.
 const LABEL_ZOOM_DELTA = CLUSTER_BREAKPOINT_DELTA;
 const MAX_TRUCK_LABELS = 6;
@@ -375,7 +375,7 @@ export default function FullMapScreen() {
                   }}
                   title={truck.name}
                   description={truck.location?.address || 'Food truck'}
-                  image={TRUCK_PIN_IMAGE}
+                  pinColor={TRUCK_MARKER_COLOR}
                   anchor={{ x: 0.5, y: 1 }}
                   onPress={() => handleTruckPress(truck.id)}
                 />

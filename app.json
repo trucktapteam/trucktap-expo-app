@@ -20,6 +20,9 @@
         "applinks:gettrucktap.com",
         "applinks:www.gettrucktap.com"
       ],
+       "config": {
+     "googleMapsApiKey": "AIzaSyBrypvMT0Q615u2xdVT0SaklZRlQ7-YUIk"
+    },
       "infoPlist": {
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationAlwaysUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
@@ -43,7 +46,7 @@
     "color": "#FF6600"
   },
 
-  "package": "com.trucktap.app",
+  "package": "app.rork.trucktap_food_truck_finder_cqgko70",
   "googleServicesFile": "./google-services.json",
   "versionCode": 32,
       "intentFilters": [

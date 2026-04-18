@@ -13,7 +13,7 @@ import { FoodTruck, Sighting } from '@/types';
 import TruckClusterMarker from '@/components/map/TruckClusterMarker';
 import { CLUSTER_BREAKPOINT_DELTA, clusterTruckMarkers } from '@/lib/mapClustering';
 
-const TRUCK_PIN_IMAGE = require('@/assets/images/orange-pin.png');
+const TRUCK_MARKER_COLOR = '#f97316';
 // Tune this to control when automatic truck name labels appear.
 const LABEL_ZOOM_DELTA = CLUSTER_BREAKPOINT_DELTA;
 const MAX_TRUCK_LABELS = 6;
@@ -82,16 +82,6 @@ export default function CustomerHomeScreen() {
 
       if (!hasMapLocation(truck)) return false;
 
-      if (centerPoint) {
-        const distance = calculateDistance(
-          centerPoint.latitude,
-          centerPoint.longitude,
-          truck.location.latitude,
-          truck.location.longitude
-        );
-        if (distance > customerRadius) return false;
-      }
-
       if (trimmedQuery) {
         const searchableFields = [
           truck.name || '',
@@ -109,7 +99,7 @@ export default function CustomerHomeScreen() {
     });
 
     return result;
-  }, [allTrucks, centerPoint, customerRadius, searchQuery, showClosed, openTruckIds]);
+  }, [allTrucks, searchQuery, showClosed, openTruckIds]);
 
   const listTrucks = useMemo(() => {
     const trimmedQuery = searchQuery.trim().toLowerCase();
@@ -509,7 +499,7 @@ export default function CustomerHomeScreen() {
                     }}
                     title={truck.name}
                     description={truck.location?.address || 'Food truck'}
-                    image={TRUCK_PIN_IMAGE}
+                    pinColor={TRUCK_MARKER_COLOR}
                     anchor={{ x: 0.5, y: 1 }}
                     onPress={() => handleTruckPress(truck.id)}
                   />
