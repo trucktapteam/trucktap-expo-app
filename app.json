@@ -18,12 +18,10 @@
       "bundleIdentifier": "com.trucktap.app",
       "associatedDomains": [
         "applinks:gettrucktap.com",
-        "applinks:www.gettrucktap.com",
-        "applinks:gettrucktap.com",
         "applinks:www.gettrucktap.com"
       ],
       "config": {
-        "googleMapsApiKey": "AIzaSyBrypvMT0Q615u2xdVT0SaklZRlQ7-YUIk"
+        "googleMapsApiKey": "AIzaSyBNu2iITZWEnCL7NMOcp3jI0eKVvivRt-Q"
       },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TruckTap uses your location to show nearby food trucks and help you discover trucks near your current area.",
