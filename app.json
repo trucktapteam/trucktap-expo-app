@@ -69,9 +69,8 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.CAMERA",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.POST_NOTIFICATIONS"
+        
       ],
       "blockedPermissions": [
         "android.permission.READ_MEDIA_IMAGES",

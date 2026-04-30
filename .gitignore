@@ -44,3 +44,8 @@ rork-eslint.config.js
 core
 node_modules
 .expo
+# build artifacts / temp
+aab-check/
+*.aab
+*.zip
+supabase/.temp/

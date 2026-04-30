@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform, Switch } from 'react-native';
 import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, ArrowLeft } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { useApp } from '@/contexts/AppContext';
@@ -7,14 +7,30 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAccountDeletion } from '@/hooks/useAccountDeletion';
+import { useNotifications } from '@/contexts/NotificationContext';
+import { supabase } from '@/lib/supabase';
 
+type OwnerNotificationPreferences = {
+  favorites: boolean;
+  reviews: boolean;
+};
+
+const DEFAULT_OWNER_NOTIFICATION_PREFS: OwnerNotificationPreferences = {
+  favorites: true,
+  reviews: true,
+};
 
 export default function TruckSettings() {
   const { currentUser, logout, setCurrentUser } = useApp();
   const { user: authUser } = useAuth();
   const router = useRouter();
   const { colors } = useTheme();
+  const { permissionStatus: notificationStatus, requestPermission, registerPushToken } = useNotifications();
   const [locationStatus, setLocationStatus] = useState<'granted' | 'denied' | 'unknown'>('unknown');
+  const [ownerNotificationPrefs, setOwnerNotificationPrefs] =
+    useState<OwnerNotificationPreferences>(DEFAULT_OWNER_NOTIFICATION_PREFS);
+  const [savingOwnerNotificationKey, setSavingOwnerNotificationKey] =
+    useState<keyof OwnerNotificationPreferences | null>(null);
   const { isDeletingAccount, confirmDeleteAccount } = useAccountDeletion({
     source: 'truck-settings',
   });
@@ -22,6 +38,34 @@ export default function TruckSettings() {
   useEffect(() => {
     checkLocationPermission();
   }, []);
+
+  useEffect(() => {
+    const loadOwnerNotificationPreferences = async () => {
+      if (!authUser?.id) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('notify_owner_favorites, notify_owner_reviews')
+          .eq('id', authUser.id)
+          .maybeSingle();
+
+        if (error) {
+          console.log('Error loading owner notification preferences:', error.message);
+          return;
+        }
+
+        setOwnerNotificationPrefs({
+          favorites: data?.notify_owner_favorites ?? true,
+          reviews: data?.notify_owner_reviews ?? true,
+        });
+      } catch (error) {
+        console.log('Unexpected owner notification preference load error:', error);
+      }
+    };
+
+    void loadOwnerNotificationPreferences();
+  }, [authUser?.id]);
 
   const checkLocationPermission = async () => {
     try {
@@ -48,6 +92,61 @@ export default function TruckSettings() {
     } catch (error) {
       console.log('Error opening location settings:', error);
       Alert.alert('Error', 'Unable to open your device settings right now.');
+    }
+  };
+
+  const toggleOwnerNotificationPreference = async (
+    key: keyof OwnerNotificationPreferences,
+    value: boolean
+  ) => {
+    if (!authUser?.id) {
+      Alert.alert('Sign In Required', 'Please sign in to update truck notification settings.');
+      return;
+    }
+
+    if (value) {
+      let granted = notificationStatus === 'granted';
+
+      if (!granted) {
+        granted = await requestPermission();
+        if (!granted) return;
+      }
+
+      await registerPushToken();
+    }
+
+    const previousPrefs = ownerNotificationPrefs;
+    const nextPrefs = {
+      ...ownerNotificationPrefs,
+      [key]: value,
+    };
+
+    const column =
+      key === 'favorites' ? 'notify_owner_favorites' : 'notify_owner_reviews';
+
+    setOwnerNotificationPrefs(nextPrefs);
+    setSavingOwnerNotificationKey(key);
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ [column]: value })
+        .eq('id', authUser.id);
+
+      if (error) {
+        console.log('Error saving owner notification preference:', error.message);
+        setOwnerNotificationPrefs(previousPrefs);
+        Alert.alert(
+          'Setting Not Saved',
+          'Truck notification preferences are not available yet. Please try again after the database update is applied.'
+        );
+      }
+    } catch (error) {
+      console.log('Unexpected owner notification preference save error:', error);
+      setOwnerNotificationPrefs(previousPrefs);
+      Alert.alert('Setting Not Saved', 'Unable to update notification settings right now.');
+    } finally {
+      setSavingOwnerNotificationKey(null);
     }
   };
 
@@ -128,6 +227,55 @@ setCurrentUser(customerUser);
             </View>
             <ChevronRight size={20} color={colors.secondaryText} />
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Truck notifications</Text>
+
+          <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingLeft}>
+                <Bell size={20} color={colors.secondaryText} />
+                <View style={styles.settingTextWrap}>
+                  <Text style={[styles.settingLabel, { color: colors.text }]}>New favorites</Text>
+                  <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Get notified when someone favorites your truck</Text>
+                </View>
+              </View>
+              <Switch
+                value={ownerNotificationPrefs.favorites}
+                onValueChange={(value) => void toggleOwnerNotificationPreference('favorites', value)}
+                disabled={savingOwnerNotificationKey === 'favorites'}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                ios_backgroundColor={colors.border}
+              />
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingLeft}>
+                <Bell size={20} color={colors.secondaryText} />
+                <View style={styles.settingTextWrap}>
+                  <Text style={[styles.settingLabel, { color: colors.text }]}>New reviews</Text>
+                  <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Get notified when someone reviews your truck</Text>
+                </View>
+              </View>
+              <Switch
+                value={ownerNotificationPrefs.reviews}
+                onValueChange={(value) => void toggleOwnerNotificationPreference('reviews', value)}
+                disabled={savingOwnerNotificationKey === 'reviews'}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                ios_backgroundColor={colors.border}
+              />
+            </View>
+          </View>
+
+          {notificationStatus === 'denied' && (
+            <View style={[styles.noticeCard, { backgroundColor: `${colors.error}10` }]}>
+              <AlertCircle size={16} color={colors.error} />
+              <Text style={[styles.noticeText, { color: colors.error }]}>Notifications are disabled. Enable them in your device settings to receive truck alerts.</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
