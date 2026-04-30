@@ -2,7 +2,7 @@
   "expo": {
     "name": "TruckTap Food Truck Finder",
     "slug": "trucktap-food-truck-finder-cqgko70",
-    "version": "1.0.33",
+    "version": "1.0.37",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "trucktap",
@@ -42,7 +42,7 @@
       },
       "package": "app.rork.trucktap_food_truck_finder_cqgko70",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 32,
+      "versionCode": 37,
       "intentFilters": [
         {
           "action": "VIEW",
