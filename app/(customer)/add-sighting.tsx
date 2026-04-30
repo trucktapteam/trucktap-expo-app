@@ -72,12 +72,6 @@ export default function AddSightingScreen() {
   }, [captureLocation]);
 
   const pickPhoto = useCallback(async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setToast({ visible: true, message: 'Please allow photo access to upload a sighting.', type: 'error' });
-      return;
-    }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,

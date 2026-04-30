@@ -116,7 +116,7 @@ export default function PosterVideoScreen() {
         return;
       }
 
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      const { status } = await MediaLibrary.requestPermissionsAsync(true);
       if (status !== 'granted') {
         Alert.alert('Permission Required', 'Please grant photo library access to save frame');
         return;

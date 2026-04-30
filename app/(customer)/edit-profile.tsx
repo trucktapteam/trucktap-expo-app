@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ActivityIndicator, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
-import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { User, Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -15,7 +14,6 @@ export default function EditProfileScreen() {
   const { colors } = useTheme();
   const { currentUser, setCurrentUser, refreshCustomerProfile } = useApp();
   console.log('[ProfileScreen] currentUser:', currentUser);
-  const { isAuthenticated } = useAuth();
   const router = useRouter();
   const styles = createStyles(colors);
 
@@ -28,13 +26,6 @@ export default function EditProfileScreen() {
   const handleChangePhoto = async () => {
   if (!currentUser) {
     setToast({ message: 'No user logged in', type: 'error', visible: true });
-    return;
-  }
-
-  const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-  if (permissionResult.granted === false) {
-    setToast({ message: 'Please allow access to your photos.', type: 'error', visible: true });
     return;
   }
 

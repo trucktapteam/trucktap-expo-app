@@ -22,14 +22,6 @@ export default function TruckGalleryScreen() {
   const [loading, setLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  if (!truck) {
-    return (
-      <View style={styles.center}>
-        <Text>No truck found</Text>
-      </View>
-    );
-  }
-
   // helper to upload a gallery image to Supabase storage and return a public URL
   const uploadGalleryImageAsync = useCallback(
     async (uri: string, truckId: string): Promise<string> => {
@@ -69,13 +61,15 @@ export default function TruckGalleryScreen() {
     []
   );
 
-  const handleAddPhoto = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Permission Required", "Enable photo access to upload images.");
-      return;
-    }
+  if (!truck) {
+    return (
+      <View style={styles.center}>
+        <Text>No truck found</Text>
+      </View>
+    );
+  }
 
+  const handleAddPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
