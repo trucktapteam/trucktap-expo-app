@@ -6,6 +6,7 @@ const BLOCKED_MEDIA_PERMISSIONS = new Set([
   'android.permission.READ_MEDIA_IMAGES',
   'android.permission.READ_MEDIA_VIDEO',
   'android.permission.READ_MEDIA_AUDIO',
+  'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
   'android.permission.ACCESS_MEDIA_LOCATION',
 ]);
 
