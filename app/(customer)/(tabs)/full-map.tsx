@@ -18,6 +18,7 @@ import { CLUSTER_BREAKPOINT_DELTA, clusterTruckMarkers } from '@/lib/mapClusteri
 import { areMapRegionsEqual, getValidatedCoordinate, isValidCoordinate, isValidMapRegion } from '@/lib/mapValidation';
 
 const TRUCK_MARKER_COLOR = '#f97316';
+const IOS_PLAIN_MAP_DIAGNOSTIC = Platform.OS === 'ios';
 // Tune this to control when automatic truck name labels appear.
 const LABEL_ZOOM_DELTA = CLUSTER_BREAKPOINT_DELTA;
 const MAX_TRUCK_LABELS = 6;
@@ -84,11 +85,19 @@ export default function FullMapScreen() {
   });
 
   const clusteredTrucks = useMemo(
-    () => clusterTruckMarkers(trucksForMap, currentRegion),
+    () => (
+      IOS_PLAIN_MAP_DIAGNOSTIC
+        ? []
+        : clusterTruckMarkers(trucksForMap, currentRegion)
+    ),
     [trucksForMap, currentRegion]
   );
 
   const handleRegionChangeComplete = useCallback((region: any) => {
+    if (IOS_PLAIN_MAP_DIAGNOSTIC) {
+      return;
+    }
+
     if (!isValidMapRegion(region)) {
       return;
     }
@@ -273,6 +282,12 @@ export default function FullMapScreen() {
   };
 
   useEffect(() => {
+    if (IOS_PLAIN_MAP_DIAGNOSTIC && __DEV__) {
+      console.log('[FullMap][iOS diagnostic] Mounted plain Google MapView with markers, clustering, and region state updates disabled.');
+    }
+  }, []);
+
+  useEffect(() => {
     if (selectedTruck || selectedSighting) {
       openSheet();
     }
@@ -359,12 +374,12 @@ export default function FullMapScreen() {
             ref={mapRef} 
             style={styles.map} 
             initialRegion={mapRegion}
-            onRegionChangeComplete={handleRegionChangeComplete}
+            onRegionChangeComplete={IOS_PLAIN_MAP_DIAGNOSTIC ? undefined : handleRegionChangeComplete}
             onPress={handleMapPress}
-            showsUserLocation={true}
+            showsUserLocation={!IOS_PLAIN_MAP_DIAGNOSTIC}
           >
             
-            {clusteredTrucks.map((item) => {
+            {!IOS_PLAIN_MAP_DIAGNOSTIC && clusteredTrucks.map((item) => {
               if (item.type === 'cluster') {
                 const clusterCoordinate = getValidatedCoordinate(`full-map cluster ${item.id}`, {
                   latitude: item.latitude,
@@ -411,7 +426,7 @@ export default function FullMapScreen() {
                 />
               );
             })}
-            {sightings.map((sighting) => {
+            {!IOS_PLAIN_MAP_DIAGNOSTIC && sightings.map((sighting) => {
               const sightingCoordinate = getValidatedCoordinate(`full-map sighting ${sighting.id}`, {
                 latitude: sighting.latitude,
                 longitude: sighting.longitude,

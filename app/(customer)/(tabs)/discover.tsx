@@ -15,6 +15,7 @@ import { CLUSTER_BREAKPOINT_DELTA, clusterTruckMarkers } from '@/lib/mapClusteri
 import { areMapRegionsEqual, getValidatedCoordinate, isValidCoordinate, isValidMapRegion } from '@/lib/mapValidation';
 
 const TRUCK_MARKER_COLOR = '#f97316';
+const IOS_PLAIN_MAP_DIAGNOSTIC = Platform.OS === 'ios';
 // Tune this to control when automatic truck name labels appear.
 const LABEL_ZOOM_DELTA = CLUSTER_BREAKPOINT_DELTA;
 const MAX_TRUCK_LABELS = 6;
@@ -150,6 +151,10 @@ export default function CustomerHomeScreen() {
   }, [mapRegion]);
 
   const handleRegionChangeComplete = useCallback((region: any) => {
+    if (IOS_PLAIN_MAP_DIAGNOSTIC) {
+      return;
+    }
+
     if (!isValidMapRegion(region)) {
       return;
     }
@@ -169,7 +174,11 @@ export default function CustomerHomeScreen() {
   }, []);
 
   const clusteredMapTrucks = useMemo(
-    () => clusterTruckMarkers(mapTrucks as FoodTruck[], currentRegion),
+    () => (
+      IOS_PLAIN_MAP_DIAGNOSTIC
+        ? []
+        : clusterTruckMarkers(mapTrucks as FoodTruck[], currentRegion)
+    ),
     [mapTrucks, currentRegion]
   );
 
@@ -244,6 +253,12 @@ export default function CustomerHomeScreen() {
       setSightings((data ?? []).filter(hasSightingCoordinates));
     } catch (error) {
       console.error('[Discover] Failed to load sightings:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (IOS_PLAIN_MAP_DIAGNOSTIC && __DEV__) {
+      console.log('[Discover][iOS diagnostic] Mounted plain Google MapView with markers, clustering, and region state updates disabled.');
     }
   }, []);
 
@@ -472,11 +487,11 @@ export default function CustomerHomeScreen() {
               ref={mapRef}
               style={styles.map}
               initialRegion={mapRegion}
-              showsUserLocation={true}
+              showsUserLocation={!IOS_PLAIN_MAP_DIAGNOSTIC}
               provider={PROVIDER_GOOGLE}
-              onRegionChangeComplete={handleRegionChangeComplete}
+              onRegionChangeComplete={IOS_PLAIN_MAP_DIAGNOSTIC ? undefined : handleRegionChangeComplete}
             >
-              {centerPoint && (
+              {!IOS_PLAIN_MAP_DIAGNOSTIC && centerPoint && (
                 <>
                   <Circle
                     center={centerPoint}
@@ -487,7 +502,7 @@ export default function CustomerHomeScreen() {
                   />
                 </>
               )}
-              {clusteredMapTrucks.map((item) => {
+              {!IOS_PLAIN_MAP_DIAGNOSTIC && clusteredMapTrucks.map((item) => {
                 if (item.type === 'cluster') {
                   const clusterCoordinate = getValidatedCoordinate(`discover cluster ${item.id}`, {
                     latitude: item.latitude,
@@ -534,7 +549,7 @@ export default function CustomerHomeScreen() {
                   />
                 );
               })}
-              {sightings.map((sighting) => {
+              {!IOS_PLAIN_MAP_DIAGNOSTIC && sightings.map((sighting) => {
                 const sightingCoordinate = getValidatedCoordinate(`discover sighting ${sighting.id}`, {
                   latitude: sighting.latitude,
                   longitude: sighting.longitude,
