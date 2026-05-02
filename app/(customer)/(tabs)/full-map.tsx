@@ -283,7 +283,7 @@ export default function FullMapScreen() {
 
   useEffect(() => {
     if (IOS_PLAIN_MAP_DIAGNOSTIC && __DEV__) {
-      console.log('[FullMap][iOS diagnostic] Mounted plain Google MapView with markers, clustering, and region state updates disabled.');
+      console.log('[FullMap][iOS diagnostic] Mounted Google MapView with basic truck markers only. Clustering, custom markers, sightings, and region state updates disabled.');
     }
   }, []);
 
@@ -379,6 +379,15 @@ export default function FullMapScreen() {
             showsUserLocation={!IOS_PLAIN_MAP_DIAGNOSTIC}
           >
             
+            {IOS_PLAIN_MAP_DIAGNOSTIC && trucksForMap.map((truck) => (
+              <Marker
+                key={truck.id}
+                coordinate={{
+                  latitude: truck.location.latitude,
+                  longitude: truck.location.longitude,
+                }}
+              />
+            ))}
             {!IOS_PLAIN_MAP_DIAGNOSTIC && clusteredTrucks.map((item) => {
               if (item.type === 'cluster') {
                 const clusterCoordinate = getValidatedCoordinate(`full-map cluster ${item.id}`, {

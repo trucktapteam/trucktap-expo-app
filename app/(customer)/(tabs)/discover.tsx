@@ -258,7 +258,7 @@ export default function CustomerHomeScreen() {
 
   useEffect(() => {
     if (IOS_PLAIN_MAP_DIAGNOSTIC && __DEV__) {
-      console.log('[Discover][iOS diagnostic] Mounted plain Google MapView with markers, clustering, and region state updates disabled.');
+      console.log('[Discover][iOS diagnostic] Mounted Google MapView with basic truck markers only. Clustering, custom markers, sightings, and region state updates disabled.');
     }
   }, []);
 
@@ -502,6 +502,15 @@ export default function CustomerHomeScreen() {
                   />
                 </>
               )}
+              {IOS_PLAIN_MAP_DIAGNOSTIC && mapTrucks.map((truck) => (
+                <Marker
+                  key={truck.id}
+                  coordinate={{
+                    latitude: truck.location.latitude,
+                    longitude: truck.location.longitude,
+                  }}
+                />
+              ))}
               {!IOS_PLAIN_MAP_DIAGNOSTIC && clusteredMapTrucks.map((item) => {
                 if (item.type === 'cluster') {
                   const clusterCoordinate = getValidatedCoordinate(`discover cluster ${item.id}`, {
