@@ -256,7 +256,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       return;
     }
 
-    if (DEBUG) console.log('[Auth] Signing out');
+    if (__DEV__) {
+      console.log('[Auth] Logout requested:', {
+        file: 'contexts/AuthContext.tsx',
+        functionName: 'signOut',
+        reason: 'Explicit signOut call',
+        userId: user?.id ?? null,
+        email: user?.email ?? null,
+        sessionExists: isAuthenticated,
+      });
+    }
 
     const { error } = await supabase.auth.signOut();
 
@@ -264,7 +273,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       console.log('[Auth] Sign out error:', error.message);
       throw error;
     }
-  }, []);
+  }, [isAuthenticated, user]);
 
   const requireAuth = useCallback(
     (callback: () => void): boolean => {

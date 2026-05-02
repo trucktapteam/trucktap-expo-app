@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { formatSightingLastSeen, hasSightingCoordinates } from '@/lib/sightings';
 import { Sighting } from '@/types';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
+import { getTruckDisplayLocation } from '@/lib/truckLocation';
 
 const TRUCK_MARKER_COLOR = '#f97316';
 
@@ -559,11 +560,9 @@ export default function CustomerHomeScreen() {
                           {openTruckIds.has(truck.id) ? 'Open' : 'Closed'}
                         </Text>
                       </View>
-                      <Text style={styles.truckDistance}>
-                        {truck.location?.address
-                          ? truck.location.address.split(',')[0]
-                          : openTruckIds.has(truck.id)
-                          ? 'Location available'
+                      <Text style={styles.truckDistance} numberOfLines={1} ellipsizeMode="tail">
+                        {openTruckIds.has(truck.id)
+                          ? getTruckDisplayLocation(truck)
                           : 'Not currently serving'}
                       </Text>
                     </View>
@@ -954,6 +953,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.secondaryText,
   },
   truckDistance: {
+    flex: 1,
     fontSize: 12,
     color: colors.secondaryText,
   },

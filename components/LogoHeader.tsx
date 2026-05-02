@@ -12,7 +12,7 @@ const LOGO = require('@/assets/images/icon.png');
 export default function LogoHeader() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { signOut } = useAuth();
+  const { signOut, user, isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
 
   const handleDebugClear = async () => {
@@ -28,6 +28,14 @@ export default function LogoHeader() {
           style: 'destructive',
           onPress: async () => {
             try {
+              console.log('[LogoHeader] Debug auth/data clear requested:', {
+                file: 'components/LogoHeader.tsx',
+                functionName: 'handleDebugClear',
+                reason: 'Developer long-press Clear & Reload action',
+                userId: user?.id ?? null,
+                email: user?.email ?? null,
+                sessionExists: isAuthenticated,
+              });
               console.log('[DEBUG] Clearing all AsyncStorage data...');
               await AsyncStorage.clear();
               console.log('[DEBUG] Signing out...');

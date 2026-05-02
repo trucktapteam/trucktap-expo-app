@@ -564,13 +564,23 @@ if (!favoritesError && favoriteRows) {
           await AsyncStorage.setItem('userProfile', JSON.stringify(newProfile));
         }
       } else if (!isAuthenticated) {
+        if (__DEV__) {
+          console.log('[AppContext] Clearing user profile:', {
+            file: 'contexts/AppContext.tsx',
+            functionName: 'syncAuthWithUserProfile',
+            reason: 'Auth state is unauthenticated after auth loading completed',
+            userId: authUser?.id ?? userProfile?.id ?? null,
+            email: authUser?.email ?? userProfile?.email ?? null,
+            sessionExists: isAuthenticated,
+          });
+        }
         setUserProfile(null);
         if (DEBUG) console.log('[AppContext] Cleared user profile');
       }
     };
     
     void syncAuthWithUserProfile();
-  }, [isAuthenticated, authUser, authLoading]);
+  }, [isAuthenticated, authUser, authLoading, userProfile?.email, userProfile?.id]);
 
   useEffect(() => {
     const hydrateSettings = async () => {
@@ -1429,6 +1439,16 @@ if (error) {
   }, []);
 
   const logout = useCallback(async () => {
+    if (__DEV__) {
+      console.log('[AppContext] Logout requested:', {
+        file: 'contexts/AppContext.tsx',
+        functionName: 'logout',
+        reason: 'Explicit AppContext logout call',
+        userId: authUser?.id ?? userProfile?.id ?? null,
+        email: authUser?.email ?? userProfile?.email ?? null,
+        sessionExists: isAuthenticated,
+      });
+    }
     setUserProfile(null);
     try {
       await AsyncStorage.multiRemove(['userProfile', 'authUser']);
@@ -1440,7 +1460,7 @@ if (error) {
     } catch (error) {
       console.log('[AppContext] Error during logout:', error);
     }
-  }, []);
+  }, [authUser, isAuthenticated, userProfile]);
 
   const setPendingRedirect = useCallback((route: string | null) => {
     if (DEBUG) console.log('[AppContext] Setting pending redirect:', route);

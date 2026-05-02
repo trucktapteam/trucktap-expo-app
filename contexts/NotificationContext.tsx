@@ -41,15 +41,37 @@ const DEFAULT_PREFS: NotificationPreferences = {
 };
 
 const STORAGE_KEY = 'notificationPreferences';
+const PREFERENCE_SELECT =
+  'notify_favorites_open, notify_new_trucks, notify_announcements';
+
+const profileRowToPreferences = (row: any): NotificationPreferences => ({
+  favoritesOpen: row?.notify_favorites_open === true,
+  newTrucksNearby: row?.notify_new_trucks === true,
+  truckAnnouncements: row?.notify_announcements === true,
+});
+
+const preferencesToProfilePayload = (prefs: NotificationPreferences) => ({
+  notify_favorites_open: prefs.favoritesOpen,
+  notify_new_trucks: prefs.newTrucksNearby,
+  notify_announcements: prefs.truckAnnouncements,
+});
+
+const logNotificationPrefs = (...args: any[]) => {
+  if (__DEV__) {
+    console.log(...args);
+  }
+};
 
 export const [NotificationProvider, useNotifications] = createContextHook(() => {
-  const { user } = useSupabaseAuth();
+  const { user, isLoading: authLoading } = useSupabaseAuth();
   const [permissionStatus, setPermissionStatus] = useState<
     'granted' | 'denied' | 'undetermined' | 'unknown'
   >('unknown');
   const [preferences, setPreferences] =
     useState<NotificationPreferences>(DEFAULT_PREFS);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSavingPreferences, setIsSavingPreferences] = useState<boolean>(false);
+  const [preferencesUserId, setPreferencesUserId] = useState<string | null>(null);
 
   const checkPermission = useCallback(async () => {
     if (Platform.OS === 'web') {
@@ -212,53 +234,116 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
     }
   }, []);
 
-  const savePreferences = useCallback(async (newPrefs: NotificationPreferences) => {
-    console.log('[Notifications] savePreferences called with:', newPrefs);
-
-    setPreferences(newPrefs);
-
+  const persistPreferencesLocally = useCallback(async (newPrefs: NotificationPreferences) => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
-      console.log('[Notifications] Saved locally');
+      if (DEBUG) console.log('[Notifications] Saved preferences locally');
     } catch (error) {
-      console.log('[Notifications] Local save failed:', error);
-    }
-
-    try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      console.log('[Notifications] getUser result:', userData, userError);
-
-      if (userError) {
-        console.log('[Notifications] Error getting user:', userError);
-        return;
-      }
-
-      if (!userData?.user) {
-        console.log('[Notifications] No logged-in user found');
-        return;
-      }
-
-      const { data: updatedRows, error: updateError } = await supabase
-        .from('profiles')
-        .update({
-          notify_favorites_open: newPrefs.favoritesOpen,
-          notify_new_trucks: newPrefs.newTrucksNearby,
-          notify_announcements: newPrefs.truckAnnouncements,
-        })
-        .eq('id', userData.user.id)
-        .select();
-
-      console.log('[Notifications] profile update result:', updatedRows, updateError);
-
-      if (updateError) {
-        console.log('[Notifications] Error saving to Supabase:', updateError);
-      } else {
-        console.log('[Notifications] Saved to Supabase');
-      }
-    } catch (error) {
-      console.log('[Notifications] Supabase save failed:', error);
+      console.log('[Notifications] Local preference save failed:', error);
     }
   }, []);
+
+  const loadPreferencesFromSupabase = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      logNotificationPrefs('[Notifications] Loading preferences for user:', {
+        id: user.id,
+        email: user.email,
+      });
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select(PREFERENCE_SELECT)
+        .eq('id', user.id)
+        .single();
+
+      logNotificationPrefs('[Notifications] Loaded Supabase preference values:', data);
+
+      if (error) {
+        logNotificationPrefs('[Notifications] Preference load error:', error);
+        console.log('[Notifications] Error loading notification preferences:', error.message);
+        setPreferences(DEFAULT_PREFS);
+        setPreferencesUserId(user.id);
+        return;
+      }
+
+      const loadedPrefs = profileRowToPreferences(data);
+      setPreferences(loadedPrefs);
+      setPreferencesUserId(user.id);
+      await persistPreferencesLocally(loadedPrefs);
+    } catch (error) {
+      logNotificationPrefs('[Notifications] Preference load exception:', error);
+      console.log('[Notifications] Failed to load notification preferences:', error);
+      setPreferences(DEFAULT_PREFS);
+      setPreferencesUserId(user.id);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [persistPreferencesLocally, user]);
+
+  const savePreferences = useCallback(async (newPrefs: NotificationPreferences) => {
+    if (!user) {
+      setPreferences(DEFAULT_PREFS);
+      setPreferencesUserId(null);
+      Alert.alert('Sign In Required', 'Please sign in to change notification settings.');
+      return false;
+    }
+
+    const payload = preferencesToProfilePayload(newPrefs);
+    setIsSavingPreferences(true);
+
+    try {
+      logNotificationPrefs('[Notifications] Saving preferences for user:', {
+        id: user.id,
+        email: user.email,
+      });
+      logNotificationPrefs('[Notifications] Outgoing preference update payload:', payload);
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', user.id)
+        .select(PREFERENCE_SELECT)
+        .single();
+
+      logNotificationPrefs('[Notifications] Supabase preference update result:', {
+        data,
+        error,
+      });
+
+      if (error) {
+        logNotificationPrefs('[Notifications] Supabase preference update error:', error);
+        console.log('[Notifications] Error saving notification preferences:', error.message);
+        Alert.alert(
+          'Could Not Save Preference',
+          'Your notification setting was not changed. Please try again.'
+        );
+        return false;
+      }
+
+      logNotificationPrefs('[Notifications] Saved Supabase preference values:', data);
+      const savedPrefs = profileRowToPreferences(data);
+      setPreferences(savedPrefs);
+      setPreferencesUserId(user.id);
+      await persistPreferencesLocally(savedPrefs);
+      return true;
+    } catch (error) {
+      logNotificationPrefs('[Notifications] Supabase preference update exception:', error);
+      console.log('[Notifications] Supabase preference save failed:', error);
+      Alert.alert(
+        'Could Not Save Preference',
+        'Your notification setting was not changed. Please try again.'
+      );
+      return false;
+    } finally {
+      setIsSavingPreferences(false);
+    }
+  }, [persistPreferencesLocally, user]);
 
   const togglePreference = useCallback(
     async (key: keyof NotificationPreferences, value: boolean) => {
@@ -285,18 +370,6 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
 
   useEffect(() => {
     const init = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          setPreferences(JSON.parse(stored));
-          if (DEBUG) {
-            console.log('[Notifications] Loaded preferences from storage');
-          }
-        }
-      } catch (error) {
-        console.log('[Notifications] Error loading preferences:', error);
-      }
-
       if (Platform.OS === 'web') {
         if ('Notification' in window) {
           const perm = Notification.permission;
@@ -364,6 +437,27 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
   }, [registerPushToken]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!user) {
+      setPreferencesUserId(null);
+      setPreferences(DEFAULT_PREFS);
+      return;
+    }
+
+    setPreferences(DEFAULT_PREFS);
+    setPreferencesUserId(null);
+    void loadPreferencesFromSupabase();
+  }, [authLoading, loadPreferencesFromSupabase, user]);
+
+  const preferencesReadyForUser = !user || preferencesUserId === user.id;
+  const displayedPreferences = preferencesReadyForUser ? preferences : DEFAULT_PREFS;
+  const preferencesLoading =
+    authLoading || isLoading || isSavingPreferences || !preferencesReadyForUser;
+
+  useEffect(() => {
     if (Platform.OS === 'web' || isExpoGo || !Device.isDevice) {
       return;
     }
@@ -378,8 +472,8 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
   return useMemo(
     () => ({
       permissionStatus,
-      preferences,
-      isLoading,
+      preferences: displayedPreferences,
+      isLoading: preferencesLoading,
       requestPermission,
       checkPermission,
       togglePreference,
@@ -387,8 +481,8 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
     }),
     [
       permissionStatus,
-      preferences,
-      isLoading,
+      displayedPreferences,
+      preferencesLoading,
       requestPermission,
       checkPermission,
       togglePreference,

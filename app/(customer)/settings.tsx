@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert, Linking, Platform, Modal, Pressable } from 'react-native';
-import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, Truck, ChevronLeft, Sun, Moon, Smartphone } from 'lucide-react-native';
+import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, Truck, ChevronLeft, Sun, Moon, Smartphone, Facebook, Instagram } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -10,14 +10,21 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AuthPromptModal from '@/components/AuthPromptModal';
-import { supabase } from '@/lib/supabase';
 import { useAccountDeletion } from '@/hooks/useAccountDeletion';
+
+const FACEBOOK_URL = 'https://www.facebook.com/TruckTap';
+const INSTAGRAM_URL = 'https://www.instagram.com/trucktapapp';
 
 export default function SettingsScreen() {
   const { currentUser, logout } = useApp();
   const { isAuthenticated, user: authUser } = useAuth();
   const { themeMode, setThemeMode, colors } = useTheme();
-  const { permissionStatus: notifStatus, preferences: notifPrefs, togglePreference } = useNotifications();
+  const {
+    permissionStatus: notifStatus,
+    preferences: notifPrefs,
+    isLoading: notifLoading,
+    togglePreference,
+  } = useNotifications();
   const router = useRouter();
   const [locationStatus, setLocationStatus] = useState<'granted' | 'denied' | 'unknown'>('unknown');
   const [showThemeModal, setShowThemeModal] = useState(false);
@@ -30,6 +37,7 @@ export default function SettingsScreen() {
       setShowAuthModal(true);
     },
   });
+  const notificationSwitchesDisabled = notifLoading || !isAuthenticated;
 
   useEffect(() => {
     checkLocationPermission();
@@ -104,6 +112,13 @@ export default function SettingsScreen() {
     const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}`;
     
     Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+  };
+
+  const handleOpenSocialLink = (url: string) => {
+    Linking.openURL(url).catch((error) => {
+      console.log('Error opening social link:', error);
+      Alert.alert('Error', 'Unable to open that link right now.');
+    });
   };
 
   const handleSwitchToTruck = () => {
@@ -267,6 +282,7 @@ export default function SettingsScreen() {
               <Switch
                 value={notifPrefs.favoritesOpen}
                 onValueChange={(val) => togglePreference('favoritesOpen', val)}
+                disabled={notificationSwitchesDisabled}
                 trackColor={{ false: colors.border, true: colors.primary }}
                 ios_backgroundColor={colors.border}
               />
@@ -285,6 +301,7 @@ export default function SettingsScreen() {
               <Switch
                 value={notifPrefs.newTrucksNearby}
                 onValueChange={(val) => togglePreference('newTrucksNearby', val)}
+                disabled={notificationSwitchesDisabled}
                 trackColor={{ false: colors.border, true: colors.primary }}
                 ios_backgroundColor={colors.border}
               />
@@ -303,6 +320,7 @@ export default function SettingsScreen() {
               <Switch
                 value={notifPrefs.truckAnnouncements}
                 onValueChange={(val) => togglePreference('truckAnnouncements', val)}
+                disabled={notificationSwitchesDisabled}
                 trackColor={{ false: colors.border, true: colors.primary }}
                 ios_backgroundColor={colors.border}
               />
@@ -367,26 +385,34 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>About</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>About TruckTap</Text>
 
           <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
             <View style={styles.aboutRow}>
-              <Text style={[styles.aboutLabel, { color: colors.text }]}>App Name</Text>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>TruckTap</Text>
-            </View>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <View style={styles.aboutRow}>
-              <Text style={[styles.aboutLabel, { color: colors.text }]}>Version</Text>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>1.0.33</Text>
-            </View>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <View style={styles.aboutRow}>
               <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>Built for food trucks ❤️</Text>
             </View>
+          </View>
+
+          <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+            <Text style={[styles.followTitle, { color: colors.text }]}>Follow TruckTap</Text>
+
+            <TouchableOpacity style={styles.socialRow} onPress={() => handleOpenSocialLink(FACEBOOK_URL)}>
+              <View style={styles.socialLeft}>
+                <Facebook size={20} color={colors.primary} />
+                <Text style={[styles.socialText, { color: colors.primary }]}>Facebook</Text>
+              </View>
+              <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
+            </TouchableOpacity>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <TouchableOpacity style={styles.socialRow} onPress={() => handleOpenSocialLink(INSTAGRAM_URL)}>
+              <View style={styles.socialLeft}>
+                <Instagram size={20} color={colors.primary} />
+                <Text style={[styles.socialText, { color: colors.primary }]}>Instagram</Text>
+              </View>
+              <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity style={[styles.truckOwnerButton, { backgroundColor: colors.cardBackground, borderColor: `${colors.primary}30` }]} onPress={handleSwitchToTruck}>
@@ -407,6 +433,7 @@ export default function SettingsScreen() {
           </View>
         )}
 
+        <Text style={[styles.versionFooter, { color: colors.secondaryText }]}>v1.0.33</Text>
         <View style={styles.bottomSpacing} />
       </ScrollView>
 
@@ -628,12 +655,28 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  aboutLabel: {
-    fontSize: 16,
-    fontWeight: '500' as const,
-  },
   aboutValue: {
     fontSize: 16,
+  },
+  followTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    marginBottom: 8,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  socialLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  socialText: {
+    fontSize: 16,
+    fontWeight: '500' as const,
   },
   truckOwnerButton: {
     flexDirection: 'row',
@@ -655,7 +698,14 @@ const styles = StyleSheet.create({
     fontWeight: '500' as const,
   },
   bottomSpacing: {
-    height: 40,
+    height: 28,
+  },
+  versionFooter: {
+    fontSize: 12,
+    textAlign: 'center' as const,
+    opacity: 0.55,
+    marginTop: -8,
+    marginBottom: 16,
   },
   themeValue: {
     fontSize: 16,
