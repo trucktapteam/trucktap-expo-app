@@ -13,15 +13,9 @@ import { Image } from 'expo-image';
 import { FoodTruck, Sighting } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { formatSightingLastSeen, hasSightingCoordinates } from '@/lib/sightings';
-import TruckClusterMarker from '@/components/map/TruckClusterMarker';
-import { CLUSTER_BREAKPOINT_DELTA, clusterTruckMarkers } from '@/lib/mapClustering';
-import { areMapRegionsEqual, getValidatedCoordinate, isValidCoordinate, isValidMapRegion } from '@/lib/mapValidation';
+import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 
 const TRUCK_MARKER_COLOR = '#f97316';
-const IOS_PLAIN_MAP_DIAGNOSTIC = Platform.OS === 'ios';
-// Tune this to control when automatic truck name labels appear.
-const LABEL_ZOOM_DELTA = CLUSTER_BREAKPOINT_DELTA;
-const MAX_TRUCK_LABELS = 6;
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.45;
@@ -36,7 +30,6 @@ export default function FullMapScreen() {
   const { colors } = useTheme();
   const { isAuthenticated } = useAuth();
   const mapRef = useRef<MapView>(null);
-  const truckMarkerRefs = useRef<Record<string, any>>({});
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [selectedTruck, setSelectedTruck] = useState<FoodTruck | null>(null);
   const [selectedSighting, setSelectedSighting] = useState<Sighting | null>(null);
@@ -48,9 +41,7 @@ export default function FullMapScreen() {
     latitudeDelta: 0.15,
     longitudeDelta: 0.15,
   }), []);
-  const [currentRegion, setCurrentRegion] = useState(mapRegion);
   const sheetY = useRef(new Animated.Value(SHEET_MAX_HEIGHT)).current;
-  const markerScales = useRef<{ [key: string]: Animated.Value }>({}).current;
 
   const allTrucks = useFilteredTrucks('', 'All', false);
   const trucksWithLocation = useMemo(
@@ -77,79 +68,6 @@ export default function FullMapScreen() {
       console.error('[FullMapScreen] Failed to load sightings:', error);
     }
   }, []);
-
-  trucksWithLocation.forEach(truck => {
-    if (!markerScales[truck.id]) {
-      markerScales[truck.id] = new Animated.Value(1);
-    }
-  });
-
-  const clusteredTrucks = useMemo(
-    () => (
-      IOS_PLAIN_MAP_DIAGNOSTIC
-        ? []
-        : clusterTruckMarkers(trucksForMap, currentRegion)
-    ),
-    [trucksForMap, currentRegion]
-  );
-
-  const handleRegionChangeComplete = useCallback((region: any) => {
-    if (IOS_PLAIN_MAP_DIAGNOSTIC) {
-      return;
-    }
-
-    if (!isValidMapRegion(region)) {
-      return;
-    }
-
-    if (Platform.OS === 'ios' && __DEV__) {
-      console.log('[FullMap][iOS] onRegionChangeComplete', {
-        latitude: region.latitude,
-        longitude: region.longitude,
-        latitudeDelta: region.latitudeDelta,
-        longitudeDelta: region.longitudeDelta,
-      });
-    }
-
-    setCurrentRegion((previous) => (
-      areMapRegionsEqual(previous, region) ? previous : region
-    ));
-  }, []);
-
-  const shouldShowZoomLabels =
-    currentRegion.latitudeDelta < LABEL_ZOOM_DELTA &&
-    currentRegion.longitudeDelta < LABEL_ZOOM_DELTA;
-
-  const visibleTruckLabels = useMemo(() => {
-    if (!shouldShowZoomLabels) return [];
-
-    return trucksForMap
-      .sort((a, b) => {
-        const aOpen = isTruckOpenNow(a.id) ? 1 : 0;
-        const bOpen = isTruckOpenNow(b.id) ? 1 : 0;
-        if (aOpen !== bOpen) return bOpen - aOpen;
-        return a.name.localeCompare(b.name);
-      })
-      .slice(0, MAX_TRUCK_LABELS);
-  }, [trucksForMap, isTruckOpenNow, shouldShowZoomLabels]);
-
-  useEffect(() => {
-    const visibleIds = new Set(visibleTruckLabels.map((truck) => truck.id));
-
-    const timeout = setTimeout(() => {
-      Object.entries(truckMarkerRefs.current).forEach(([truckId, markerRef]) => {
-        if (!markerRef) return;
-
-        if (visibleIds.has(truckId)) {
-          markerRef.showCallout?.();
-        } else {
-          markerRef.hideCallout?.();
-        }
-      });
-    }, 150);
-
-    return () => clearTimeout(timeout);
-  }, [visibleTruckLabels]);
 
   const openSheet = useCallback(() => {
     Animated.spring(sheetY, {
@@ -191,15 +109,6 @@ export default function FullMapScreen() {
     })
   ).current;
 
-  const animateMarker = (truckId: string, toValue: number) => {
-    Animated.spring(markerScales[truckId], {
-      toValue,
-      useNativeDriver: true,
-      tension: 100,
-      friction: 7,
-    }).start();
-  };
-
   const handleTruckPress = (truckId: string) => {
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -207,12 +116,7 @@ export default function FullMapScreen() {
     const truck = trucksWithLocation.find(t => t.id === truckId);
     if (truck) {
       setSelectedSighting(null);
-      if (selectedTruck?.id) {
-        animateMarker(selectedTruck.id, 1);
-      }
-
       setSelectedTruck(truck);
-      animateMarker(truckId, 1.3);
 
       mapRef.current?.animateToRegion({
         latitude: truck.location.latitude,
@@ -226,10 +130,6 @@ export default function FullMapScreen() {
   const handleSightingPress = (sighting: Sighting) => {
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-
-    if (selectedTruck?.id) {
-      animateMarker(selectedTruck.id, 1);
     }
 
     setSelectedTruck(null);
@@ -246,22 +146,7 @@ export default function FullMapScreen() {
   const handleMapPress = () => {
     if (selectedTruck || selectedSighting) {
       closeSheet();
-      if (selectedTruck?.id) {
-        animateMarker(selectedTruck.id, 1);
-      }
     }
-  };
-
-  const handleClusterPress = (latitude: number, longitude: number) => {
-    mapRef.current?.animateToRegion(
-      {
-        latitude,
-        longitude,
-        latitudeDelta: Math.max(currentRegion.latitudeDelta * 0.5, 0.02),
-        longitudeDelta: Math.max(currentRegion.longitudeDelta * 0.5, 0.02),
-      },
-      300
-    );
   };
 
   const handleFavoriteToggle = () => {
@@ -280,12 +165,6 @@ export default function FullMapScreen() {
       toggleFavorite(selectedTruck.id);
     }
   };
-
-  useEffect(() => {
-    if (IOS_PLAIN_MAP_DIAGNOSTIC && __DEV__) {
-      console.log('[FullMap][iOS diagnostic] Mounted Google MapView with basic truck markers only. Clustering, custom markers, sightings, and region state updates disabled.');
-    }
-  }, []);
 
   useEffect(() => {
     if (selectedTruck || selectedSighting) {
@@ -374,46 +253,11 @@ export default function FullMapScreen() {
             ref={mapRef} 
             style={styles.map} 
             initialRegion={mapRegion}
-            onRegionChangeComplete={IOS_PLAIN_MAP_DIAGNOSTIC ? undefined : handleRegionChangeComplete}
             onPress={handleMapPress}
-            showsUserLocation={!IOS_PLAIN_MAP_DIAGNOSTIC}
+            showsUserLocation={Platform.OS !== 'ios'}
           >
             
-            {IOS_PLAIN_MAP_DIAGNOSTIC && trucksForMap.map((truck) => (
-              <Marker
-                key={truck.id}
-                coordinate={{
-                  latitude: truck.location.latitude,
-                  longitude: truck.location.longitude,
-                }}
-              />
-            ))}
-            {!IOS_PLAIN_MAP_DIAGNOSTIC && clusteredTrucks.map((item) => {
-              if (item.type === 'cluster') {
-                const clusterCoordinate = getValidatedCoordinate(`full-map cluster ${item.id}`, {
-                  latitude: item.latitude,
-                  longitude: item.longitude,
-                });
-
-                if (!clusterCoordinate) {
-                  return null;
-                }
-
-                return (
-                  <Marker
-                    key={`cluster-${item.id}`}
-                    coordinate={clusterCoordinate}
-                    title={`${item.count} trucks`}
-                    description="Zoom in to see nearby trucks"
-                    pinColor={Platform.OS === 'ios' ? TRUCK_MARKER_COLOR : undefined}
-                    onPress={() => handleClusterPress(item.latitude, item.longitude)}
-                  >
-                    {Platform.OS === 'ios' ? null : <TruckClusterMarker count={item.count} />}
-                  </Marker>
-                );
-              }
-
-              const truck = item.truck;
+            {trucksForMap.map((truck) => {
               const truckCoordinate = getValidatedCoordinate(`full-map truck ${truck.id}`, truck.location);
 
               if (!truckCoordinate) {
@@ -423,9 +267,6 @@ export default function FullMapScreen() {
               return (
                 <Marker
                   key={truck.id}
-                  ref={(ref) => {
-                    truckMarkerRefs.current[truck.id] = ref;
-                  }}
                   coordinate={truckCoordinate}
                   title={truck.name}
                   description={truck.location?.address || 'Food truck'}
@@ -435,7 +276,7 @@ export default function FullMapScreen() {
                 />
               );
             })}
-            {!IOS_PLAIN_MAP_DIAGNOSTIC && sightings.map((sighting) => {
+            {sightings.map((sighting) => {
               const sightingCoordinate = getValidatedCoordinate(`full-map sighting ${sighting.id}`, {
                 latitude: sighting.latitude,
                 longitude: sighting.longitude,
@@ -451,15 +292,9 @@ export default function FullMapScreen() {
                   coordinate={sightingCoordinate}
                   title={sighting.truck_name}
                   description="Recently Spotted"
-                  pinColor={Platform.OS === 'ios' ? '#2563eb' : undefined}
+                  pinColor="#2563eb"
                   onPress={() => handleSightingPress(sighting)}
-                >
-                  {Platform.OS === 'ios' ? null : (
-                    <View style={styles.sightingMarker}>
-                      <View style={styles.sightingMarkerInner} />
-                    </View>
-                  )}
-                </Marker>
+                />
               );
             })}
           </MapView>
