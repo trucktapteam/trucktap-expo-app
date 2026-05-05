@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -8,10 +8,13 @@ import { useApp } from '@/contexts/AppContext';
 export default function TruckLayout() {
   const { colors } = useTheme();
   const { isAuthenticated, isLoading } = useAuth();
-  const { isOwner, isOwnerLoading } = useApp();
+  const { currentUser, getUserTruck, isOwner, isOwnerLoading } = useApp();
   const router = useRouter();
+  const pathname = usePathname();
+  const isAdminExternalRoute =
+    pathname === '/admin-truck-picker' || pathname === '/truck-setup';
 
-  const loading = isLoading || isOwnerLoading;
+  const loading = isLoading || isOwnerLoading || (isAuthenticated && !currentUser);
 
   useEffect(() => {
     if (loading) return;
@@ -23,8 +26,23 @@ export default function TruckLayout() {
     if (!isOwner) {
       console.log('[TruckLayout] Authenticated but no owned trucks, redirecting to login');
       router.replace('/truck-login' as any);
+      return;
     }
-  }, [isAuthenticated, loading, isOwner, router]);
+    if (
+      currentUser?.role === 'admin' &&
+      !getUserTruck() &&
+      !pathname.includes('/dashboard') &&
+      !isAdminExternalRoute
+    ) {
+      if (__DEV__) {
+        console.log('[TruckLayout] Admin without owned truck redirected to dashboard:', {
+          pathname,
+          targetRoute: '/(truck)/(tabs)/dashboard',
+        });
+      }
+      router.replace('/(truck)/(tabs)/dashboard' as any);
+    }
+  }, [currentUser?.role, getUserTruck, isAdminExternalRoute, isAuthenticated, loading, isOwner, pathname, router]);
 
   if (loading) {
     return (

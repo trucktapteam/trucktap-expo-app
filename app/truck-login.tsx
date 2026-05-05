@@ -24,8 +24,9 @@ export default function TruckLoginScreen() {
   const { colors } = useTheme();
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
-  const loading = authLoading || isOwnerLoading;
+  const loading = authLoading || isOwnerLoading || (isAuthenticated && !currentUser);
   const ownedTrucks: FoodTruck[] = getOwnedTrucks();
+  const isAdmin = currentUser?.role === 'admin';
 
   useEffect(() => {
     if (loading) return;
@@ -37,15 +38,15 @@ export default function TruckLoginScreen() {
       return;
     }
 
-    if (DEBUG) console.log('[TruckLogin] Authenticated as:', authUser.id, '| Owned trucks:', ownedTrucks.length);
-  }, [isAuthenticated, authUser, loading, ownedTrucks.length]);
+    if (DEBUG) console.log('[TruckLogin] Authenticated as:', authUser.id, '| Role:', currentUser?.role, '| Owned trucks:', ownedTrucks.length);
+  }, [isAuthenticated, authUser, loading, ownedTrucks.length, currentUser?.role]);
 
   useEffect(() => {
-    if (!loading && isAuthenticated && authUser && ownedTrucks.length === 1) {
+    if (!loading && isAuthenticated && authUser && !isAdmin && ownedTrucks.length === 1) {
       if (DEBUG) console.log('[TruckLogin] Auto-selecting truck:', ownedTrucks[0].id);
       selectTruck(ownedTrucks[0]);
     }
-  }, [isAuthenticated, authUser, loading, ownedTrucks.length]);
+  }, [isAuthenticated, authUser, isAdmin, loading, ownedTrucks.length]);
 
   const selectTruck = (truck: FoodTruck) => {
     if (!authUser) return;
@@ -65,10 +66,65 @@ export default function TruckLoginScreen() {
     router.replace('/(truck)/(tabs)/dashboard' as any);
   };
 
+  const enterAdminTools = () => {
+    if (!authUser) return;
+
+    setCurrentUser({
+      ...(currentUser || {
+        id: authUser.id,
+        name: authUser.name,
+        email: authUser.email,
+        favorites: [],
+      }),
+      role: 'admin',
+      truck_id: undefined,
+    });
+    completeOnboarding();
+    if (DEBUG) console.log('[TruckLogin] Admin entering truck tools without selected truck');
+    router.replace('/(truck)/(tabs)/dashboard' as any);
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (isAuthenticated && authUser && isAdmin && ownedTrucks.length === 0) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, styles.centered]}>
+          <View style={[styles.iconContainer, { backgroundColor: `${colors.primary}15` }]}>
+            <Truck size={48} color={colors.primary} strokeWidth={2} />
+          </View>
+          <Text style={[styles.title, { color: colors.text }]}>Admin Tools</Text>
+          <Text style={[styles.subtitle, { color: colors.secondaryText, marginBottom: 32 }]}>
+            No truck selected. Choose or create a truck to manage.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+            onPress={enterAdminTools}
+          >
+            <Text style={styles.primaryButtonText}>Enter Admin Tools</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.createButton, { borderColor: colors.primary, backgroundColor: colors.cardBackground }]}
+            onPress={() => router.push('/truck-setup' as any)}
+          >
+            <Text style={[styles.createButtonText, { color: colors.primary }]}>Create a New Truck</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.backLink]}
+            onPress={() => router.replace('/(customer)/(tabs)/discover' as any)}
+          >
+            <Text style={[styles.backLinkText, { color: colors.secondaryText }]}>Go back to browsing</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
     );
   }
@@ -103,7 +159,7 @@ export default function TruckLoginScreen() {
     );
   }
 
-  if (isAuthenticated && authUser && ownedTrucks.length > 1) {
+  if (isAuthenticated && authUser && (ownedTrucks.length > 1 || (isAdmin && ownedTrucks.length > 0))) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -255,6 +311,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     marginBottom: 24,
+  },
+  primaryButton: {
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+    width: '100%',
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600' as const,
   },
   createButtonText: {
     fontSize: 16,

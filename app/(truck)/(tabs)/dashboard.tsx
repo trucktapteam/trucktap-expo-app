@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated } from 'react-native';
-import { useRouter } from 'expo-router';
-import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, X, AlertCircle, Eye, Link, Sparkles, Bell, Archive, ArchiveRestore } from 'lucide-react-native';
+import { usePathname, useRouter } from 'expo-router';
+import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, X, AlertCircle, Eye, Link, Sparkles, Bell, Archive, ArchiveRestore, Truck } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckMenu, useTruckRating } from '@/contexts/AppContext';
 import * as Clipboard from 'expo-clipboard';
@@ -60,8 +60,32 @@ const formatServingLocation = (truck: any): string => {
 
 export default function TruckDashboard() {
   const router = useRouter();
-  const { getUserTruck, updateTruckDetails, getQrScanStats, checklistDismissed, dismissChecklist, hasHoursSet, isProfileComplete, hasUnreadOwnerUpdates, qrShared } = useApp();
-  const truck = getUserTruck();
+  const pathname = usePathname();
+  const {
+    currentUser,
+    foodTrucks,
+    selectedAdminTruckId,
+    setSelectedAdminTruckId,
+    getUserTruck,
+    updateTruckDetails,
+    getQrScanStats,
+    checklistDismissed,
+    dismissChecklist,
+    hasHoursSet,
+    isProfileComplete,
+    hasUnreadOwnerUpdates,
+    qrShared,
+  } = useApp();
+  const ownerTruck = getUserTruck();
+  const isAdmin = currentUser?.role === 'admin';
+  const selectedAdminTruck = useMemo(
+    () => foodTrucks.find(t => t.id === selectedAdminTruckId) ?? null,
+    [foodTrucks, selectedAdminTruckId]
+  );
+  const selectedAdminTruckIsOwned =
+    isAdmin && !!selectedAdminTruck && !!currentUser?.id && selectedAdminTruck.owner_id === currentUser.id;
+  const truck = isAdmin && selectedAdminTruck ? selectedAdminTruck : ownerTruck;
+  const isAdminViewOnly = isAdmin && !!selectedAdminTruck && !selectedAdminTruckIsOwned;
   const [toastVisible, setToastVisible] = useState(false);
   const [statusToast, setStatusToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' }>({ visible: false, message: '', type: 'success' });
   const [liveNowMs, setLiveNowMs] = useState(Date.now());
@@ -243,12 +267,282 @@ export default function TruckDashboard() {
     });
   };
 
+  const handleChooseTruck = () => {
+    const targetRoute = '/admin-truck-picker';
+    if (__DEV__) {
+      console.log('Admin switching truck');
+      console.log('[TruckDashboard] Choose a Truck pressed:', { currentPathname: pathname, targetRoute });
+      Alert.alert('Debug navigation', `Navigating to ${targetRoute}`);
+    }
+
+    try {
+      router.push(targetRoute as any);
+    } catch (error) {
+      console.log('[TruckDashboard] Choose a Truck navigation failed:', {
+        currentPathname: pathname,
+        targetRoute,
+        error,
+      });
+    }
+  };
+
+  const handleExitTruckMode = () => {
+    const targetRoute = '/admin-truck-picker';
+    if (__DEV__) {
+      console.log('Admin exiting truck mode');
+      console.log('[TruckDashboard] Exit Truck Mode pressed:', { currentPathname: pathname, targetRoute });
+    }
+
+    setSelectedAdminTruckId(null);
+
+    try {
+      router.push(targetRoute as any);
+    } catch (error) {
+      console.log('[TruckDashboard] Exit Truck Mode navigation failed:', {
+        currentPathname: pathname,
+        targetRoute,
+        error,
+      });
+    }
+  };
+
+  const handleCreateTruck = () => {
+    const targetRoute = '/truck-setup';
+    if (__DEV__) {
+      console.log('[TruckDashboard] Create a Truck pressed:', { currentPathname: pathname, targetRoute });
+      Alert.alert('Debug navigation', `Navigating to ${targetRoute}`);
+    }
+
+    try {
+      router.push(targetRoute as any);
+    } catch (error) {
+      console.log('[TruckDashboard] Create a Truck navigation failed:', {
+        currentPathname: pathname,
+        targetRoute,
+        error,
+      });
+    }
+  };
+
+  const handleAdminViewPublicProfile = () => {
+    if (!truck) return;
+    router.push(`/truck/${truck.id}?preview=true` as any);
+  };
+
+  const handleAdminViewOnMap = () => {
+    if (!truck || isArchived) return;
+    const hasCoordinates =
+      Number.isFinite(truck.location?.latitude) && Number.isFinite(truck.location?.longitude);
+    router.push((hasCoordinates ? '/(customer)/(tabs)/full-map' : '/(customer)/(tabs)/discover') as any);
+  };
+
+  const handleAdminCopyLink = async () => {
+    if (!truck || !profileUrl) return;
+
+    try {
+      await Clipboard.setStringAsync(profileUrl);
+      showToast();
+    } catch (error) {
+      console.error('[Dashboard] Admin copy link failed:', error);
+      Alert.alert('Copy unavailable', 'Unable to copy the public truck link right now.');
+    }
+  };
+
+  const handleAdminShareLink = async () => {
+    if (!truck || !profileUrl) return;
+
+    try {
+      await Share.share({
+        message: `Check out ${truck.name} on TruckTap! ${profileUrl}`,
+        url: profileUrl,
+        title: `${truck.name} - TruckTap`,
+      });
+    } catch (error) {
+      console.error('[Dashboard] Admin share link failed:', error);
+    }
+  };
+
   if (!truck) {
+    if (isAdmin) {
+      return (
+        <View style={styles.container}>
+          <View style={styles.emptyStateContainer}>
+            <View style={styles.emptyStateIcon}>
+              <Truck size={36} color={Colors.primary} />
+            </View>
+            <Text style={styles.emptyStateTitle}>No truck selected</Text>
+            <Text style={styles.emptyStateText}>No truck selected. Choose or create a truck to manage.</Text>
+            <TouchableOpacity
+              style={styles.emptyStateButton}
+              onPress={handleChooseTruck}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.emptyStateButtonText}>Choose a Truck</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.emptyStateButton, styles.emptyStateSecondaryButton]}
+              onPress={handleCreateTruck}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.emptyStateButtonText, styles.emptyStateSecondaryButtonText]}>Create a Truck</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
     return (
       <View style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Truck not found</Text>
         </View>
+      </View>
+    );
+  }
+
+  if (isAdminViewOnly) {
+    const hasCoordinates =
+      Number.isFinite(truck.location?.latitude) && Number.isFinite(truck.location?.longitude);
+    const isVisibleToCustomers = !isArchived;
+
+    return (
+      <View style={styles.container}>
+        <HeaderCard
+          truckName={truck.name}
+          cuisineType={truck.cuisine_type}
+          logoUrl={truck.logo}
+          isOpen={truckOpenNow}
+        />
+
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.contentContainer}
+        >
+          <View style={styles.readOnlyCard}>
+            <View style={styles.readOnlyHeader}>
+              <Eye size={22} color={Colors.primary} />
+              <Text style={styles.readOnlyTitle}>Admin inspection mode</Text>
+            </View>
+            <Text style={styles.readOnlyText}>
+              No owner actions available.
+            </Text>
+          </View>
+
+          <View style={styles.inspectionCard}>
+            <Text style={styles.inspectionTitle}>Key data</Text>
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>open_now</Text>
+              <Text style={styles.dataValue}>{truck.open_now ? 'true' : 'false'}</Text>
+            </View>
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>location label</Text>
+              <Text style={styles.dataValue}>{truck.location?.address || 'Not set'}</Text>
+            </View>
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>latitude</Text>
+              <Text style={styles.dataValue}>
+                {hasCoordinates ? truck.location.latitude.toFixed(6) : 'Not set'}
+              </Text>
+            </View>
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>longitude</Text>
+              <Text style={styles.dataValue}>
+                {hasCoordinates ? truck.location.longitude.toFixed(6) : 'Not set'}
+              </Text>
+            </View>
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>owner_id</Text>
+              <Text style={styles.dataValue}>{truck.owner_id || 'Not set'}</Text>
+            </View>
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>archived</Text>
+              <Text style={styles.dataValue}>{isArchived ? 'true' : 'false'}</Text>
+            </View>
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>profile complete</Text>
+              <Text style={styles.dataValue}>{profileComplete ? 'true' : 'false'}</Text>
+            </View>
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>customer visible</Text>
+              <Text style={styles.dataValue}>{isVisibleToCustomers ? 'Likely' : 'No'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.inspectionCard}>
+            <Text style={styles.inspectionTitle}>Inspection actions</Text>
+            <TouchableOpacity
+              style={styles.inspectionButton}
+              onPress={handleAdminViewPublicProfile}
+              activeOpacity={0.7}
+            >
+              <Eye size={20} color="#fff" />
+              <Text style={styles.inspectionButtonText}>View Public Profile as Customer</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.inspectionButton, !isVisibleToCustomers && styles.inspectionButtonDisabled]}
+              onPress={handleAdminViewOnMap}
+              disabled={!isVisibleToCustomers}
+              activeOpacity={0.7}
+            >
+              <MapPin size={20} color="#fff" />
+              <Text style={styles.inspectionButtonText}>
+                {hasCoordinates ? 'View on Map' : 'View in Discover'}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.inspectionButtonRow}>
+              <TouchableOpacity
+                style={[styles.inspectionButton, styles.inspectionButtonHalf]}
+                onPress={handleAdminCopyLink}
+                activeOpacity={0.7}
+              >
+                <Link size={18} color="#fff" />
+                <Text style={styles.inspectionButtonText}>Copy Link</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.inspectionButton, styles.inspectionButtonHalf]}
+                onPress={handleAdminShareLink}
+                activeOpacity={0.7}
+              >
+                <Share2 size={18} color="#fff" />
+                <Text style={styles.inspectionButtonText}>Share Link</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.emptyStateButton}
+            onPress={handleChooseTruck}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.emptyStateButtonText}>Admin: Choose Another Truck</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.emptyStateButton}
+            onPress={handleExitTruckMode}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.emptyStateButtonText}>Admin: Exit Truck Mode</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.emptyStateButton, styles.emptyStateSecondaryButton]}
+            onPress={handleCreateTruck}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.emptyStateButtonText, styles.emptyStateSecondaryButtonText]}>Create a Truck</Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {toastVisible && (
+          <View style={styles.toast}>
+            <CheckCircle2 size={16} color="#fff" />
+            <Text style={styles.toastText}>Link copied</Text>
+          </View>
+        )}
       </View>
     );
   }
@@ -267,8 +561,27 @@ export default function TruckDashboard() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
       >
+        {isAdmin && (
+          <View style={styles.adminControlsCard}>
+            <TouchableOpacity
+              style={styles.adminControlButton}
+              onPress={handleChooseTruck}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.adminControlButtonText}>Admin: Choose Another Truck</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.adminControlButton}
+              onPress={handleExitTruckMode}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.adminControlButtonText}>Admin: Exit Truck Mode</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {isArchived && (
-          <Animated.View 
+          <Animated.View
             style={[
               styles.archiveBanner,
               {
@@ -375,7 +688,7 @@ export default function TruckDashboard() {
           </View>
           {truckOpenNow ? (
             <>
-              <Text style={styles.liveTitle}>You're live and visible to nearby customers</Text>
+              <Text style={styles.liveTitle}>{"You're live and visible to nearby customers"}</Text>
               <Text style={styles.liveDescription}>
                 Serving at: {liveLocationText}
               </Text>
@@ -658,6 +971,175 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 16,
     color: Colors.gray,
+  },
+  adminControlsCard: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  adminControlButton: {
+    width: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  adminControlButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600' as const,
+  },
+  emptyStateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  emptyStateIcon: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: `${Colors.primary}15`,
+    marginBottom: 20,
+  },
+  emptyStateTitle: {
+    fontSize: 24,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyStateText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: Colors.gray,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyStateButton: {
+    width: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  emptyStateButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600' as const,
+  },
+  emptyStateSecondaryButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  emptyStateSecondaryButtonText: {
+    color: Colors.dark,
+  },
+  readOnlyCard: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}30`,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  readOnlyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  readOnlyTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  readOnlyText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.gray,
+  },
+  inspectionCard: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  inspectionTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 14,
+  },
+  dataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  dataLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.gray,
+  },
+  dataValue: {
+    flex: 1.4,
+    fontSize: 13,
+    color: Colors.dark,
+    textAlign: 'right',
+  },
+  inspectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  inspectionButtonDisabled: {
+    backgroundColor: Colors.gray,
+    opacity: 0.65,
+  },
+  inspectionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600' as const,
+    textAlign: 'center',
+  },
+  inspectionButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  inspectionButtonHalf: {
+    flex: 1,
   },
   liveCard: {
     backgroundColor: '#fff',

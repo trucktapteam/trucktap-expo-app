@@ -12,7 +12,7 @@ export default function TruckAnnouncementsScreen() {
   const { foodTrucks, getAnnouncements, getDaysAgoText } = useApp();
 
   const truck = useMemo(() =>
-    foodTrucks.find(t => t.id === id),
+    foodTrucks.find(t => t.id === id && t.is_test !== true),
     [foodTrucks, id]
   );
 

@@ -19,8 +19,11 @@ export default function ProfileScreen() {
  
 
   const styles = createStyles(colors);
+  const visibleTrucks = foodTrucks.filter(t =>
+    !t.archived && t.is_test !== true
+  );
 
-  const favoriteTrucks = foodTrucks.filter(truck => 
+  const favoriteTrucks = visibleTrucks.filter(truck =>
     currentUser?.favorites?.includes(truck.id)
   );
 
@@ -48,7 +51,9 @@ const handleCreateAccount = () => {
 };
 
   const handleTrucksEnterHere = () => {
-    if (currentUser?.role === 'truck' && currentUser?.truck_id) {
+    if (currentUser?.role === 'admin') {
+      router.push('/(truck)/(tabs)/dashboard' as any);
+    } else if (currentUser?.role === 'truck' && currentUser?.truck_id) {
       router.push('/(truck)/(tabs)/dashboard' as any);
     } else {
       router.push('/truck-login' as any);
@@ -99,7 +104,7 @@ const handleCreateAccount = () => {
       <View style={styles.statDivider} />
       <View style={styles.statItem}>
         <MapPin size={20} color={colors.primary} />
-        <Text style={styles.statValue}>{foodTrucks.filter(t => !t.archived).length}</Text>
+        <Text style={styles.statValue}>{visibleTrucks.length}</Text>
         <Text style={styles.statLabel}>Trucks Nearby</Text>
       </View>
     </View>
@@ -132,7 +137,7 @@ const handleCreateAccount = () => {
       <View style={styles.statDivider} />
       <View style={styles.statItem}>
         <MapPin size={20} color={colors.primary} />
-        <Text style={styles.statValue}>{foodTrucks.filter(t => !t.archived).length}</Text>
+        <Text style={styles.statValue}>{visibleTrucks.length}</Text>
         <Text style={styles.statLabel}>Trucks Nearby</Text>
       </View>
     </View>

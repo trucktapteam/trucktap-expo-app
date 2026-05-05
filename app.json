@@ -55,8 +55,18 @@
             },
             {
               "scheme": "https",
+              "host": "gettrucktap.com",
+              "pathPrefix": "/auth/"
+            },
+            {
+              "scheme": "https",
               "host": "www.gettrucktap.com",
               "pathPrefix": "/truck/"
+            },
+            {
+              "scheme": "https",
+              "host": "www.gettrucktap.com",
+              "pathPrefix": "/auth/"
             }
           ],
           "category": [

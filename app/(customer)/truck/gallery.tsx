@@ -21,7 +21,7 @@ export default function TruckGalleryScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const truck = useMemo(() =>
-    foodTrucks.find(t => t.id === id),
+    foodTrucks.find(t => t.id === id && t.is_test !== true),
     [foodTrucks, id]
   );
 

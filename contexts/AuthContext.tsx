@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { DEBUG } from '@/constants/debug';
+import { APP_AUTH_REDIRECT_URL, APP_PASSWORD_RECOVERY_REDIRECT_URL } from '@/lib/authRedirect';
 
 type AuthUser = {
   id: string;
@@ -80,7 +81,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     const { error } = await supabase.auth.signInWithOtp({
       email: trimmedEmail,
       options: {
-        emailRedirectTo: 'rork-app://',
+        emailRedirectTo: APP_AUTH_REDIRECT_URL,
       },
     });
 
@@ -118,7 +119,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       email: trimmedEmail,
       password,
       options: {
-        emailRedirectTo: 'rork-app://',
+        emailRedirectTo: APP_AUTH_REDIRECT_URL,
       },
     });
 
@@ -162,7 +163,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       type: 'signup',
       email: trimmedEmail,
       options: {
-        emailRedirectTo: 'rork-app://',
+        emailRedirectTo: APP_AUTH_REDIRECT_URL,
       },
     });
 
@@ -196,7 +197,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     if (DEBUG) console.log('[Auth] Sending password reset email to:', trimmedEmail);
 
     const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-      redirectTo: 'rork-app://',
+      redirectTo: APP_PASSWORD_RECOVERY_REDIRECT_URL,
     });
 
     if (error) {

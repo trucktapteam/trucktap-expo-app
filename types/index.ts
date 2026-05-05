@@ -1,6 +1,6 @@
 export * from './qr';
 
-export type UserRole = 'customer' | 'truck';
+export type UserRole = 'admin' | 'customer' | 'truck';
 
 export type User = {
   id: string;
@@ -48,6 +48,7 @@ export type FoodTruck = {
   archived?: boolean;
   archivedAt?: number;
   archiveReason?: string;
+  is_test?: boolean;
   lastOwnerActivityAt?: number;
 };
 

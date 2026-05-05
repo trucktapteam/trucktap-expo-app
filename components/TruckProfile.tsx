@@ -36,6 +36,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     if (!isAuthenticated || !authUser || !truck) return false;
     return truck.owner_id === authUser.id;
   }, [isAuthenticated, authUser, truck]);
+  const canViewTestTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
   
   const reviews = useTruckReviews(truckId);
   console.log('[REVIEWS RAW]', reviews);
@@ -111,7 +112,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     }
   }, [isAuthenticated, authUser, isOwnerOfTruck, router]);
 
-  if (!truck) {
+  if (!truck || (mode === 'customer' && truck.is_test === true && !canViewTestTruck)) {
     const styles = createStyles(colors);
     return (
       <View style={styles.container}>

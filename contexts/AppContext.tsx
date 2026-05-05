@@ -15,6 +15,12 @@ const parseJsonArray = (val: any): any[] => {
   return [];
 };
 
+const normalizeUserRole = (role: unknown): User['role'] => {
+  if (role === 'admin') return 'admin';
+  if (role === 'truck' || role === 'owner') return 'truck';
+  return 'customer';
+};
+
 const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   const dbUpdates: Record<string, any> = {};
 
@@ -29,6 +35,7 @@ const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
   if (updates.website !== undefined) dbUpdates.website = updates.website;
   if (updates.open_now !== undefined) dbUpdates.is_open = updates.open_now;
+  if (updates.is_test !== undefined) dbUpdates.is_test = updates.is_test;
   if (updates.operatingHours !== undefined) dbUpdates.operating_hours = updates.operatingHours;
   if (updates.images !== undefined) dbUpdates.gallery_images = updates.images;
   if (updates.menu_images !== undefined) dbUpdates.menu_images = updates.menu_images;
@@ -50,6 +57,8 @@ export type AppState = {
   exploreCenter: { latitude: number; longitude: number; label?: string } | null;
   pendingRedirect: string | null;
   lastViewedOwnerUpdates: string | null;
+  selectedAdminTruckId: string | null;
+  setSelectedAdminTruckId: (truckId: string | null) => void;
   setShowClosed: (value: boolean) => void;
   setCustomerRadius: (value: number) => void;
   setExploreMode: (value: boolean) => void;
@@ -134,6 +143,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [exploreCenter, setExploreCenterState] = useState<{ latitude: number; longitude: number; label?: string } | null>(null);
   const [pendingRedirect, setPendingRedirectState] = useState<string | null>(null);
   const [lastViewedOwnerUpdates, setLastViewedOwnerUpdates] = useState<string | null>(null);
+  const [selectedAdminTruckId, setSelectedAdminTruckId] = useState<string | null>(null);
   const [supabaseOwnedTrucks, setSupabaseOwnedTrucks] = useState<FoodTruck[]>([]);
   const [isOwnerLoading, setIsOwnerLoading] = useState<boolean>(true);
   const [qrShared, setQrShared] = useState<boolean>(false);
@@ -179,7 +189,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
       lastUpdated: row.updated_at ?? row.created_at ?? undefined,
       search_keywords: [],
       analytics: undefined,
-      archived: false,
+      archived: row.archived === true,
+      archivedAt: typeof row.archived_at === 'number' ? row.archived_at : undefined,
+      archiveReason: row.archive_reason ?? undefined,
+      is_test: row.is_test === true,
     };
   }, []);
 
@@ -480,9 +493,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
                 if (Array.isArray(cached.favorites)) {
                   storedFavorites = cached.favorites;
                 }
-                if (cached.role === 'truck' || cached.role === 'customer') {
-                  storedRole = cached.role;
-                }
+                storedRole = normalizeUserRole(cached.role);
                 if (typeof cached.truck_id === 'string' && cached.truck_id.length > 0) {
                   storedTruckId = cached.truck_id;
                 }
@@ -523,7 +534,7 @@ if (!favoritesError && favoriteRows) {
                 name: profileData.display_name || authUser.name,
                 email: authUser.email,
                 profile_photo: profileData.profile_photo || storedProfilePhoto,
-                role: profileData.role === 'truck' ? 'truck' : 'customer',
+                role: normalizeUserRole(profileData.role),
                 truck_id: profileData.truck_id || storedTruckId,
                 favorites: supabaseFavorites,
               };
@@ -670,7 +681,7 @@ if (!favoritesError && favoriteRows) {
             name: profileData.display_name || authUser.name,
             email: authUser.email,
             profile_photo: profileData.profile_photo || userProfile?.profile_photo,
-            role: profileData.role === 'truck' ? 'truck' : 'customer',
+            role: normalizeUserRole(profileData.role),
             truck_id: profileData.truck_id || userProfile?.truck_id,
             favorites: currentFavorites,
           };
@@ -689,7 +700,7 @@ if (!favoritesError && favoriteRows) {
         name: authUser.name,
         email: authUser.email,
         profile_photo: userProfile?.profile_photo,
-        role: userProfile?.role === 'truck' ? 'truck' : 'customer',
+        role: normalizeUserRole(userProfile?.role),
         truck_id: userProfile?.truck_id,
         favorites: currentFavorites,
       };
@@ -1009,11 +1020,14 @@ if (error) {
     return foodTrucks.filter(truck => truck.owner_id === authUser.id);
   }, [isAuthenticated, authUser, foodTrucks, supabaseOwnedTrucks]);
 
+  const isAdmin = userProfile?.role === 'admin';
+
   const isOwner = useMemo(() => {
     if (!isAuthenticated || !authUser) return false;
+    if (isAdmin) return true;
     if (supabaseOwnedTrucks.length > 0) return true;
     return foodTrucks.some(truck => truck.owner_id === authUser.id);
-  }, [isAuthenticated, authUser, foodTrucks, supabaseOwnedTrucks]);
+  }, [isAuthenticated, authUser, isAdmin, foodTrucks, supabaseOwnedTrucks]);
 
   const getUserTruck = useCallback(() => {
     if (!isAuthenticated || !authUser) return null;
@@ -1556,6 +1570,8 @@ if (error) {
     exploreCenter,
     pendingRedirect,
     lastViewedOwnerUpdates,
+    selectedAdminTruckId,
+    setSelectedAdminTruckId,
     setShowClosed,
     setCustomerRadius,
     setExploreMode,
@@ -1616,8 +1632,8 @@ if (error) {
   }), [
     currentUser, isOnboarded, foodTrucks, reviews, menuItems, announcements,
     checklistDismissed, showClosed, customerRadius, exploreMode, exploreCenter,
-    pendingRedirect, lastViewedOwnerUpdates, setShowClosed, setCustomerRadius,
-    setExploreMode, setExploreCenter, setCurrentUser, completeOnboarding,
+    pendingRedirect, lastViewedOwnerUpdates, selectedAdminTruckId, setSelectedAdminTruckId,
+    setShowClosed, setCustomerRadius, setExploreMode, setExploreCenter, setCurrentUser, completeOnboarding,
     toggleFavorite, addMenuImage,
     removeMenuImage, addTruckImage, addGalleryImage, removeGalleryImage,
     removeTruckImage, updateTruckDetails, getUserTruck, getOwnedTrucks,
@@ -1637,7 +1653,9 @@ export function useFilteredTrucks(searchQuery: string, cuisineFilter: string, op
   const { foodTrucks, isTruckOpenNow } = useApp();
 
   return useMemo(() => {
-    let filtered = [...foodTrucks];
+    let filtered = foodTrucks.filter(truck =>
+      truck.archived !== true && !truck.archivedAt && truck.is_test !== true
+    );
 
     if (openOnly) {
       filtered = filtered.filter(truck => isTruckOpenNow(truck.id));
@@ -1670,7 +1688,12 @@ export function useFavoriteTrucks() {
 
   return useMemo(() => {
     if (!currentUser) return [];
-    return foodTrucks.filter(truck => currentUser.favorites.includes(truck.id));
+    return foodTrucks.filter(truck =>
+      currentUser.favorites.includes(truck.id) &&
+      truck.archived !== true &&
+      !truck.archivedAt &&
+      truck.is_test !== true
+    );
   }, [currentUser, foodTrucks]);
 }
 

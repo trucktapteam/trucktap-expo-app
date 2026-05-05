@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -220,97 +220,102 @@ export default function UpdateLocationScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        <View style={styles.iconContainer}>
-          <MapPin size={64} color={Colors.primary} />
-        </View>
-
-        <Text style={styles.title}>Set Your Live Location</Text>
-        <Text style={styles.description}>
-          Choose how you want to set your serving location. Your truck only appears on the map after you confirm a location.
-        </Text>
-
-        {currentLocation && (
-          <View style={styles.locationCard}>
-            <Text style={styles.locationLabel}>Selected Location</Text>
-            <Text style={styles.locationAddress}>{currentLocation.address}</Text>
-            <Text style={styles.locationCoords}>
-              {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
-            </Text>
-          </View>
-        )}
-
-        {pendingLocation && (
-          <View style={styles.previewCard}>
-            <Text style={styles.locationLabel}>
-              {pendingLocation.source === 'gps' ? 'Current Location Preview' : 'Search Result'}
-            </Text>
-            <Text style={styles.locationAddress}>{pendingLocation.address}</Text>
-            <Text style={styles.locationCoords}>
-              {pendingLocation.latitude.toFixed(6)}, {pendingLocation.longitude.toFixed(6)}
-            </Text>
-            <TouchableOpacity
-              style={[styles.confirmButton, isLoading && styles.buttonDisabled]}
-              onPress={handleConfirmPendingLocation}
-              disabled={isLoading}
-              activeOpacity={0.7}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.confirmButtonText}>Confirm Live Location</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={[styles.button, isLoading && styles.buttonDisabled]}
-          onPress={handleGetCurrentLocation}
-          disabled={isLoading}
-          activeOpacity={0.7}
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <MapPin size={20} color="#fff" />
-              <Text style={styles.buttonText}>Use Current Location</Text>
-            </>
-          )}
-        </TouchableOpacity>
+          <View style={styles.iconContainer}>
+            <MapPin size={64} color={Colors.primary} />
+          </View>
 
-        <View style={styles.manualCard}>
-          <Text style={styles.manualTitle}>Search for a Location</Text>
-          <Text style={styles.manualDescription}>
-            Search for an address, landmark, or business and then confirm it as your serving location.
+          <Text style={styles.title}>Set Your Live Location</Text>
+          <Text style={styles.description}>
+            Choose how you want to set your serving location. Your truck only appears on the map after you confirm a location.
           </Text>
-          <TextInput
-            style={styles.input}
-            value={manualAddress}
-            onChangeText={setManualAddress}
-            placeholder="123 Main St, Louisville, KY"
-            placeholderTextColor={Colors.gray}
-            autoCapitalize="words"
-          />
+
+          {currentLocation && (
+            <View style={styles.locationCard}>
+              <Text style={styles.locationLabel}>Selected Location</Text>
+              <Text style={styles.locationAddress}>{currentLocation.address}</Text>
+              <Text style={styles.locationCoords}>
+                {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
+              </Text>
+            </View>
+          )}
+
+          {pendingLocation && (
+            <View style={styles.previewCard}>
+              <Text style={styles.locationLabel}>
+                {pendingLocation.source === 'gps' ? 'Current Location Preview' : 'Search Result'}
+              </Text>
+              <Text style={styles.locationAddress}>{pendingLocation.address}</Text>
+              <Text style={styles.locationCoords}>
+                {pendingLocation.latitude.toFixed(6)}, {pendingLocation.longitude.toFixed(6)}
+              </Text>
+              <TouchableOpacity
+                style={[styles.confirmButton, isLoading && styles.buttonDisabled]}
+                onPress={handleConfirmPendingLocation}
+                disabled={isLoading}
+                activeOpacity={0.7}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Confirm Live Location</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
           <TouchableOpacity
-            style={[styles.secondaryButton, isLoading && styles.buttonDisabled]}
-            onPress={handleManualLocation}
+            style={[styles.button, isLoading && styles.buttonDisabled]}
+            onPress={handleGetCurrentLocation}
             disabled={isLoading}
             activeOpacity={0.7}
           >
-            <Text style={styles.secondaryButtonText}>Search This Location</Text>
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <MapPin size={20} color="#fff" />
+                <Text style={styles.buttonText}>Use Current Location</Text>
+              </>
+            )}
           </TouchableOpacity>
-        </View>
 
-        <Text style={styles.note}>
-          GPS is only used if you tap "Use Current Location." You can search and confirm a different serving spot anytime.
-        </Text>
-      </ScrollView>
+          <View style={styles.manualCard}>
+            <Text style={styles.manualTitle}>Search for a Location</Text>
+            <Text style={styles.manualDescription}>
+              Search for an address, landmark, or business and then confirm it as your serving location.
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={manualAddress}
+              onChangeText={setManualAddress}
+              placeholder="123 Main St, Louisville, KY"
+              placeholderTextColor={Colors.gray}
+              autoCapitalize="words"
+            />
+            <TouchableOpacity
+              style={[styles.secondaryButton, isLoading && styles.buttonDisabled]}
+              onPress={handleManualLocation}
+              disabled={isLoading}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.secondaryButtonText}>Search This Location</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.note}>
+            {'GPS is only used if you tap "Use Current Location." You can search and confirm a different serving spot anytime.'}
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -345,10 +350,11 @@ const styles = StyleSheet.create({
     width: 40,
   },
   content: {
+    flexGrow: 1,
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 40,
-    paddingBottom: 32,
+    paddingBottom: 100,
   },
   iconContainer: {
     width: 120,

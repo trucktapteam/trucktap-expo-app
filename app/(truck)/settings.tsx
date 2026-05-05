@@ -166,7 +166,7 @@ export default function TruckSettings() {
     role: 'customer' as const,
     favorites: [],
   }),
-  role: 'customer' as const,
+  role: currentUser?.role === 'admin' ? 'admin' as const : 'customer' as const,
 };
 setCurrentUser(customerUser);  
             router.replace('/(customer)/(tabs)/discover' as any);
@@ -288,7 +288,11 @@ setCurrentUser(customerUser);
                 <Text style={[styles.infoLabel, { color: colors.text }]}>Role</Text>
               </View>
               <Text style={[styles.infoValue, { color: colors.secondaryText }]}>
-                {currentUser?.role === 'truck' ? 'Truck Owner' : 'Customer'}
+                {currentUser?.role === 'admin'
+                  ? 'Admin'
+                  : currentUser?.role === 'truck'
+                  ? 'Truck Owner'
+                  : 'Customer'}
               </Text>
             </View>
 
@@ -352,7 +356,9 @@ setCurrentUser(customerUser);
           <View style={[styles.noticeCard, { backgroundColor: `${colors.secondaryText}10` }]}>
             <AlertCircle size={16} color={colors.secondaryText} />
             <Text style={[styles.noticeText, { color: colors.secondaryText }]}>
-              {currentUser?.role === 'truck' 
+              {currentUser?.role === 'admin'
+                ? 'Location is used to review and manage truck activity'
+                : currentUser?.role === 'truck'
                 ? 'Location is used to update your truck position and show you to nearby customers'
                 : 'Location is used to find food trucks near you and show distances'
               }
