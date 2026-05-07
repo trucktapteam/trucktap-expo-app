@@ -237,7 +237,7 @@ export default function TruckDashboard() {
           onPress: async () => {
             await updateTruckDetails(truck.id, {
               archived: true,
-              archivedAt: Date.now(),
+              archivedAt: new Date().toISOString(),
               archiveReason: 'owner_archived',
               open_now: false,
             });

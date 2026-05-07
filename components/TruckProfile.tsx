@@ -37,9 +37,9 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     return truck.owner_id === authUser.id;
   }, [isAuthenticated, authUser, truck]);
   const canViewTestTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
+  const canViewArchivedTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
   
   const reviews = useTruckReviews(truckId);
-  console.log('[REVIEWS RAW]', reviews);
   const { average, count } = useTruckRating(truckId);
   
   const truckMenuItems = useMemo(() => 
@@ -112,7 +112,11 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     }
   }, [isAuthenticated, authUser, isOwnerOfTruck, router]);
 
-  if (!truck || (mode === 'customer' && truck.is_test === true && !canViewTestTruck)) {
+  if (
+    !truck ||
+    (mode === 'customer' && truck.is_test === true && !canViewTestTruck) ||
+    (mode === 'customer' && (truck.archived === true || !!truck.archivedAt) && !canViewArchivedTruck)
+  ) {
     const styles = createStyles(colors);
     return (
       <View style={styles.container}>
@@ -122,8 +126,18 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   }
 
   const hasValidPhone = !!truck.phone && truck.phone.length === 10;
+  const truckOpenNow = isTruckOpenNow(truck.id);
+  const isClosedCustomerView = mode === 'customer' && !truckOpenNow;
+  const customerLocationText = isClosedCustomerView
+    ? 'Not currently serving'
+    : truck.location.address || 'Serving location not set';
 
   const handleNavigate = () => {
+    if (isClosedCustomerView) {
+      Alert.alert('Not currently serving', 'This truck is not currently sharing a live serving location.');
+      return;
+    }
+
     if (!hasNavigableLocation) {
       Alert.alert('Location unavailable', 'This truck has not set a live serving location yet.');
       return;
@@ -378,7 +392,7 @@ console.log('[FORMAT DATE]', dateInput);
             <View style={styles.aboutContent}>
               <View style={styles.infoRow}>
                 <MapPin size={20} color={colors.secondaryText} />
-                <Text style={styles.infoText}>{truck.location.address || 'Serving location not set'}</Text>
+                <Text style={styles.infoText}>{customerLocationText}</Text>
               </View>
               <View style={styles.infoRow}>
                 <Clock size={20} color={colors.secondaryText} />

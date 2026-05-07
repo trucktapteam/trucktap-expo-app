@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Heart } from 'lucide-react-native';
+import { Heart, Star } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useFavoriteTrucks, useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,7 +11,7 @@ import AuthPromptModal from '@/components/AuthPromptModal';
 
 export default function FavoritesScreen() {
   const router = useRouter();
-  const { isTruckOpenNow } = useApp();
+  const { isTruckOpenNow, getAverageRating } = useApp();
   const { colors } = useTheme();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const favoriteTrucks = useFavoriteTrucks();
@@ -72,27 +72,42 @@ export default function FavoritesScreen() {
       ) : (
         <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
           <View style={styles.grid}>
-            {favoriteTrucks.map(truck => (
-              <TouchableOpacity
-                key={truck.id}
-                style={styles.truckCard}
-                onPress={() => handleTruckPress(truck.id)}
-              >
-                <Image source={{ uri: truck.hero_image }} style={styles.truckImage} />
-                <View style={styles.truckOverlay}>
-                  <Image source={{ uri: truck.logo }} style={styles.truckLogo} />
-                </View>
-                <View style={styles.truckInfo}>
-                  <Text style={styles.truckName} numberOfLines={1}>{truck.name}</Text>
-                  <Text style={styles.truckCuisine}>{truck.cuisine_type}</Text>
-                  <View style={[styles.statusBadge, isTruckOpenNow(truck.id) && styles.statusBadgeOpen]}>
-                    <Text style={[styles.statusText, isTruckOpenNow(truck.id) && styles.statusTextOpen]}>
-                      {isTruckOpenNow(truck.id) ? 'Open' : 'Closed'}
-                    </Text>
+            {favoriteTrucks.map(truck => {
+              const rating = getAverageRating(truck.id);
+              const openNow = isTruckOpenNow(truck.id);
+
+              return (
+                <TouchableOpacity
+                  key={truck.id}
+                  style={styles.truckCard}
+                  onPress={() => handleTruckPress(truck.id)}
+                >
+                  <Image source={{ uri: truck.hero_image }} style={styles.truckImage} />
+                  <View style={styles.truckOverlay}>
+                    <Image source={{ uri: truck.logo }} style={styles.truckLogo} />
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                  <View style={styles.truckInfo}>
+                    <Text style={styles.truckName} numberOfLines={1}>{truck.name}</Text>
+                    <Text style={styles.truckCuisine}>{truck.cuisine_type}</Text>
+                    {rating.count > 0 ? (
+                      <View style={styles.ratingRow}>
+                        <Star size={13} color={colors.starYellow} fill={colors.starYellow} />
+                        <Text style={styles.ratingText}>
+                          {rating.average.toFixed(1)} ({rating.count})
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.noReviewsText}>No reviews yet</Text>
+                    )}
+                    <View style={[styles.statusBadge, openNow && styles.statusBadgeOpen]}>
+                      <Text style={[styles.statusText, openNow && styles.statusTextOpen]}>
+                        {openNow ? 'Open' : 'Closed'}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </ScrollView>
       )}
@@ -203,6 +218,22 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   truckCuisine: {
     fontSize: 14,
+    color: colors.secondaryText,
+    marginBottom: 6,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 8,
+  },
+  ratingText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: colors.text,
+  },
+  noReviewsText: {
+    fontSize: 12,
     color: colors.secondaryText,
     marginBottom: 8,
   },

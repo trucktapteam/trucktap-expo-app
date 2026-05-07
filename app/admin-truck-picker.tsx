@@ -111,6 +111,9 @@ export default function AdminTruckPickerScreen() {
                   <Text style={[styles.truckMeta, { color: colors.secondaryText }]} numberOfLines={1}>
                     {truck.cuisine_type || 'Food truck'}
                   </Text>
+                  {(truck.archived === true || !!truck.archivedAt) && (
+                    <Text style={[styles.archivedText, { color: colors.error }]}>Archived</Text>
+                  )}
                 </View>
                 <ChevronRight size={20} color={colors.secondaryText} />
               </TouchableOpacity>
@@ -195,6 +198,12 @@ const styles = StyleSheet.create({
   },
   truckMeta: {
     fontSize: 14,
+  },
+  archivedText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    marginTop: 3,
+    textTransform: 'uppercase',
   },
   emptyCard: {
     borderWidth: 1,

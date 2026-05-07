@@ -34,6 +34,7 @@ export type FoodTruck = {
   operatingHours?: OperatingHours;
   verified: boolean;
   lastUpdated?: string;
+  lastLiveUpdatedAt?: string;
   search_keywords?: string[];
   analytics?: {
     views: number;
@@ -46,7 +47,7 @@ export type FoodTruck = {
     lastQrScan?: string;
   };
   archived?: boolean;
-  archivedAt?: number;
+  archivedAt?: string | number;
   archiveReason?: string;
   is_test?: boolean;
   lastOwnerActivityAt?: number;
@@ -56,6 +57,8 @@ export type Sighting = {
   id: string;
   truck_name: string;
   photo_url?: string | null;
+  user_id?: string | null;
+  spotted_by_name?: string | null;
   latitude: number;
   longitude: number;
   notes?: string | null;

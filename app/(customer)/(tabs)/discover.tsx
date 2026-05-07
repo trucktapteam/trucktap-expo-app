@@ -1,19 +1,21 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Platform, Alert, Modal, RefreshControl, Animated } from 'react-native';
+import { AppState as RNAppState, View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Platform, Alert, Modal, RefreshControl, Animated, Linking } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter } from 'expo-router';
-import { Search, MapPin, Clock, Navigation, CheckCircle, Maximize2, Minimize2, AlertCircle, XCircle, Radar, Compass, ArrowLeft } from 'lucide-react-native';
+import { Search, MapPin, Clock, Navigation, CheckCircle, Maximize2, Minimize2, AlertCircle, XCircle, Radar, Compass, ArrowLeft, Star } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useFilteredTrucks, useApp } from '@/contexts/AppContext';
 import { Image } from 'expo-image';
 import { supabase } from '@/lib/supabase';
-import { formatSightingLastSeen, hasSightingCoordinates } from '@/lib/sightings';
+import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, getSafeSpotterDisplayName, hasSightingCoordinates } from '@/lib/sightings';
 import { Sighting } from '@/types';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { getTruckDisplayLocation } from '@/lib/truckLocation';
 
 const TRUCK_MARKER_COLOR = '#f97316';
+const FOREGROUND_SCREEN_REFRESH_DEBOUNCE_MS = 5000;
+const SIGHTING_NOTES_MAX_LENGTH = 280;
 
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 3959;
@@ -33,9 +35,52 @@ const hasMapLocation = (truck: any) =>
 const hasCoordinates = (truck: any) =>
   isValidCoordinate(truck?.location);
 
+const formatSightingCoordinate = (value?: number | null) =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(5) : '';
+
+const getSightingLocationText = (sighting?: Sighting | null) => {
+  if (!sighting) return 'Location unavailable';
+
+  const address =
+    (sighting as any).address ||
+    (sighting as any).location_address ||
+    (sighting as any).formatted_address ||
+    (sighting as any).location?.address;
+
+  if (typeof address === 'string' && address.trim()) {
+    return address.trim();
+  }
+
+  const latitude = formatSightingCoordinate(sighting.latitude);
+  const longitude = formatSightingCoordinate(sighting.longitude);
+
+  if (latitude && longitude) {
+    return `Location: ${latitude}, ${longitude}`;
+  }
+
+  return 'Location unavailable';
+};
+
+const openSightingNavigation = (latitude?: number, longitude?: number) => {
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    Alert.alert('Location unavailable', 'This sighting does not have a usable location.');
+    return;
+  }
+
+  const url = Platform.select({
+    ios: `http://maps.apple.com/?daddr=${latitude},${longitude}`,
+    default: `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`,
+  });
+
+  Linking.openURL(url).catch((error) => {
+    console.log('[Discover] Failed to open sighting navigation:', error);
+    Alert.alert('Error', 'Unable to open maps.');
+  });
+};
+
 export default function CustomerHomeScreen() {
   const router = useRouter();
-  const { isTruckOpenNow, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks } = useApp();
+  const { currentUser, isTruckOpenNow, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews } = useApp();
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -49,9 +94,30 @@ export default function CustomerHomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [sightings, setSightings] = useState<Sighting[]>([]);
   const [selectedSighting, setSelectedSighting] = useState<Sighting | null>(null);
+  const [isEditingSighting, setIsEditingSighting] = useState(false);
+  const [editingSightingTitle, setEditingSightingTitle] = useState('');
+  const [editingSightingNotes, setEditingSightingNotes] = useState('');
+  const [isSavingSightingEdit, setIsSavingSightingEdit] = useState(false);
+  const [isDeletingSighting, setIsDeletingSighting] = useState(false);
   const spotMarkerScale = useRef(new Animated.Value(1)).current;
+  const appStateRef = useRef(RNAppState.currentState);
+  const lastForegroundRefreshAtRef = useRef(0);
+  const foregroundRefreshInFlightRef = useRef(false);
 
   const allTrucks = useFilteredTrucks('', 'All', false);
+
+  const ratingsByTruckId = useMemo(() => {
+    const totals = new Map<string, { sum: number; count: number }>();
+
+    for (const review of reviews) {
+      const current = totals.get(review.truckId) ?? { sum: 0, count: 0 };
+      current.sum += review.rating;
+      current.count += 1;
+      totals.set(review.truckId, current);
+    }
+
+    return totals;
+  }, [reviews]);
 
   const centerPoint = useMemo(() => {
     if (exploreMode && exploreCenter) return exploreCenter;
@@ -128,6 +194,8 @@ export default function CustomerHomeScreen() {
     });
   }, [allTrucks, centerPoint, customerRadius, searchQuery, showClosed, openTruckIds]);
 
+  const hasFeedContent = listTrucks.length > 0 || sightings.length > 0;
+
   const mapRegion = useMemo(() => {
     const center = centerPoint || { latitude: 37.7181, longitude: -85.9011 };
     return {
@@ -145,7 +213,170 @@ export default function CustomerHomeScreen() {
 
   const handleSightingPress = (sighting: Sighting) => {
     setSelectedSighting(sighting);
+    setIsEditingSighting(false);
+    setEditingSightingTitle('');
+    setEditingSightingNotes('');
   };
+
+  const selectedSightingIsOwned = !!(
+    currentUser?.id &&
+    selectedSighting?.user_id &&
+    currentUser.id === selectedSighting.user_id
+  );
+
+  useEffect(() => {
+    if (__DEV__ && selectedSighting) {
+      console.log('[Discover] Sighting ownership check:', {
+        sightingId: selectedSighting.id,
+        sightingUserId: selectedSighting.user_id ?? null,
+        currentUserId: currentUser?.id ?? null,
+        owned: selectedSightingIsOwned,
+      });
+    }
+  }, [currentUser?.id, selectedSighting, selectedSightingIsOwned]);
+
+  const handleStartEditSighting = useCallback(() => {
+    if (!selectedSighting || !selectedSightingIsOwned) return;
+
+    setEditingSightingTitle(selectedSighting.truck_name ?? '');
+    setEditingSightingNotes(selectedSighting.notes ?? '');
+    setIsEditingSighting(true);
+  }, [selectedSighting, selectedSightingIsOwned]);
+
+  const handleSaveSightingEdit = useCallback(async () => {
+    if (!currentUser?.id || !selectedSighting || !selectedSightingIsOwned) return;
+
+    const trimmedTitle = editingSightingTitle.trim();
+    const trimmedNotes = editingSightingNotes.trim();
+
+    if (!trimmedTitle) {
+      Alert.alert('Name required', 'Please add a truck or sighting name.');
+      return;
+    }
+
+    if (trimmedNotes.length > SIGHTING_NOTES_MAX_LENGTH) {
+      Alert.alert('Notes too long', `Please keep notes under ${SIGHTING_NOTES_MAX_LENGTH} characters.`);
+      return;
+    }
+
+    if (__DEV__) {
+      console.log('[Discover] Sighting edit submit attempt:', {
+        sightingId: selectedSighting.id,
+        userId: currentUser.id,
+        titleChanged: trimmedTitle !== selectedSighting.truck_name,
+        notesChanged: trimmedNotes !== (selectedSighting.notes ?? ''),
+      });
+    }
+
+    setIsSavingSightingEdit(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('sightings')
+        .update({
+          truck_name: trimmedTitle,
+          notes: trimmedNotes || null,
+        })
+        .eq('id', selectedSighting.id)
+        .eq('user_id', currentUser.id)
+        .select('*')
+        .single();
+
+      if (__DEV__) {
+        console.log('[Discover] Expanded sighting edit Supabase result:', {
+          sightingId: selectedSighting.id,
+          error: error?.message ?? null,
+          updated: !!data,
+        });
+      }
+
+      if (error) throw error;
+
+      const updatedSighting = {
+        ...selectedSighting,
+        ...(data as Sighting),
+        spotted_by_name: selectedSighting.spotted_by_name,
+      };
+
+      setSightings(prev => prev.map(sighting => (
+        sighting.id === selectedSighting.id ? updatedSighting : sighting
+      )));
+      setSelectedSighting(updatedSighting);
+      setIsEditingSighting(false);
+    } catch (error: any) {
+      console.log('[Discover] Failed to update sighting:', error?.message ?? error);
+      Alert.alert('Could not save', 'Please try updating your sighting again.');
+    } finally {
+      setIsSavingSightingEdit(false);
+    }
+  }, [currentUser?.id, editingSightingNotes, editingSightingTitle, selectedSighting, selectedSightingIsOwned]);
+
+  const handleDeleteSighting = useCallback(() => {
+    if (!currentUser?.id || !selectedSighting || !selectedSightingIsOwned) return;
+
+    if (__DEV__) {
+      console.log('[Discover] Sighting delete permission check:', {
+        sightingId: selectedSighting.id,
+        sightingUserId: selectedSighting.user_id ?? null,
+        currentUserId: currentUser.id,
+        allowed: selectedSightingIsOwned,
+      });
+    }
+
+    Alert.alert(
+      'Delete sighting?',
+      'This removes your spotted truck from Discover and the map.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeletingSighting(true);
+
+            if (__DEV__) {
+              console.log('[Discover] Sighting delete attempt:', {
+                sightingId: selectedSighting.id,
+                userId: currentUser.id,
+              });
+            }
+
+            try {
+              const { error } = await supabase
+                .from('sightings')
+                .delete()
+                .eq('id', selectedSighting.id)
+                .eq('user_id', currentUser.id);
+
+              if (__DEV__) {
+                console.log('[Discover] Sighting delete Supabase result:', {
+                  sightingId: selectedSighting.id,
+                  error: error?.message ?? null,
+                });
+              }
+
+              if (error) throw error;
+
+              setSightings(prev => prev.filter(sighting => sighting.id !== selectedSighting.id));
+              setSelectedSighting(null);
+              setIsEditingSighting(false);
+
+              if (__DEV__) {
+                console.log('[Discover] Sighting delete success:', {
+                  sightingId: selectedSighting.id,
+                });
+              }
+            } catch (error: any) {
+              console.log('[Discover] Failed to delete sighting:', error?.message ?? error);
+              Alert.alert('Could not delete', 'Please try deleting your sighting again.');
+            } finally {
+              setIsDeletingSighting(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [currentUser?.id, selectedSighting, selectedSightingIsOwned]);
 
   const fetchSightings = useCallback(async () => {
     try {
@@ -159,39 +390,115 @@ export default function CustomerHomeScreen() {
         throw error;
       }
 
-      setSightings((data ?? []).filter(hasSightingCoordinates));
+      const sightingsWithCoordinates = (data ?? []).filter(hasSightingCoordinates);
+      const sightingsWithSpotters = await addSpotterNamesToSightings(supabase, sightingsWithCoordinates);
+      if (__DEV__) {
+        const submitterIds = new Set(
+          sightingsWithCoordinates
+            .map((sighting) => sighting.user_id)
+            .filter((userId): userId is string => typeof userId === 'string' && userId.length > 0)
+        );
+        const mappedSpotterCount = sightingsWithSpotters.filter(sighting => !!sighting.spotted_by_name).length;
+        console.log('[Discover] Sighting spotter enrichment:', {
+          activeSightingCount: sightingsWithCoordinates.length,
+          submitterIdsLoaded: submitterIds.size,
+          spottedByMappingCount: mappedSpotterCount,
+        });
+      }
+      setSightings(sightingsWithSpotters);
     } catch (error) {
       console.error('[Discover] Failed to load sightings:', error);
     }
   }, []);
 
-  useEffect(() => {
-    const getUserLocation = async () => {
-      if (Platform.OS === 'web') return;
+  const refreshUserLocation = useCallback(async (options?: { requestPermission?: boolean }) => {
+    if (Platform.OS === 'web') return;
 
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
+    try {
+      const permission = options?.requestPermission
+        ? await Location.requestForegroundPermissionsAsync()
+        : await Location.getForegroundPermissionsAsync();
 
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+      if (permission.status !== 'granted') return;
 
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-      } catch (error) {
-        console.error('Error getting location:', error);
-      }
-    };
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
 
-    void getUserLocation();
+      setUserLocation({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+    } catch (error) {
+      console.error('[Discover] Error refreshing location:', error);
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshUserLocation({ requestPermission: true });
+  }, [refreshUserLocation]);
 
   useEffect(() => {
     void fetchSightings();
   }, [fetchSightings]);
+
+  useEffect(() => {
+    const subscription = RNAppState.addEventListener('change', (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (!/inactive|background/.test(previousState) || nextState !== 'active') {
+        return;
+      }
+
+      const now = Date.now();
+      if (
+        foregroundRefreshInFlightRef.current ||
+        now - lastForegroundRefreshAtRef.current < FOREGROUND_SCREEN_REFRESH_DEBOUNCE_MS
+      ) {
+        if (__DEV__) {
+          console.log('[Discover] Foreground screen refresh skipped');
+        }
+        return;
+      }
+
+      lastForegroundRefreshAtRef.current = now;
+      foregroundRefreshInFlightRef.current = true;
+
+      if (__DEV__) {
+        console.log('[Discover] Foreground screen refresh started:', {
+          previousState,
+          nextState,
+        });
+      }
+
+      void Promise.allSettled([
+        fetchSightings(),
+        refreshUserLocation(),
+      ])
+        .then((results) => {
+          const rejected = results.filter((result) => result.status === 'rejected');
+          if (rejected.length > 0) {
+            console.log('[Discover] Foreground screen refresh errors:', rejected);
+          }
+          if (__DEV__) {
+            console.log('[Discover] Foreground screen refresh completed:', {
+              errors: rejected.length,
+            });
+          }
+        })
+        .catch((error) => {
+          console.log('[Discover] Foreground screen refresh error:', error);
+        })
+        .finally(() => {
+          foregroundRefreshInFlightRef.current = false;
+        });
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [fetchSightings, refreshUserLocation]);
 
   useEffect(() => {
     if (centerPoint && mapRef.current) {
@@ -405,7 +712,7 @@ export default function CustomerHomeScreen() {
                     key={truck.id}
                     coordinate={truckCoordinate}
                     title={truck.name}
-                    description={truck.location?.address || 'Food truck'}
+                    description={openTruckIds.has(truck.id) ? truck.location?.address || 'Food truck' : 'Not currently serving'}
                     pinColor={TRUCK_MARKER_COLOR}
                     anchor={{ x: 0.5, y: 1 }}
                     onPress={() => handleTruckPress(truck.id)}
@@ -461,7 +768,7 @@ export default function CustomerHomeScreen() {
             {showClosed ? 'All Trucks' : 'Open Now'} ({listTrucks.length})
           </Text>
         </View>
-        {listTrucks.length === 0 ? (
+        {!hasFeedContent ? (
           <View style={styles.emptyStateContainer}>
             <View style={styles.emptyStateCard}>
               {searchQuery.trim() ? (
@@ -516,60 +823,108 @@ export default function CustomerHomeScreen() {
               />
             }
           >
-            {listTrucks.map((truck, index) => (
-              <React.Fragment key={truck.id}>
-                {index === 0 && (
-                  <TouchableOpacity
-                    style={[styles.truckCard, styles.spotListCard]}
-                    onPress={() => router.push('/(customer)/add-sighting' as any)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.truckLogo, styles.spotListIconWrap]}>
-                      <Animated.View
-                        style={[
-                          styles.spotListMarker,
-                          { transform: [{ scale: spotMarkerScale }] },
-                        ]}
-                      >
-                        <View style={styles.spotListMarkerInner} />
-                      </Animated.View>
-                    </View>
-                    <View style={styles.truckInfo}>
-                      <Text style={styles.truckName}>Seen a food truck?</Text>
-                      <Text style={styles.truckCuisine}>Drop it on the map</Text>
-                      <Text style={styles.spotListAction}>+ Add a Spot</Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={styles.truckCard}
-                  onPress={() => handleTruckPress(truck.id)}
+            <TouchableOpacity
+              style={[styles.truckCard, styles.spotListCard]}
+              onPress={() => router.push('/(customer)/add-sighting' as any)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.truckLogo, styles.spotListIconWrap]}>
+                <Animated.View
+                  style={[
+                    styles.spotListMarker,
+                    { transform: [{ scale: spotMarkerScale }] },
+                  ]}
                 >
-                  <Image source={truck.logo ? { uri: truck.logo } : undefined} style={styles.truckLogo} />
-                  <View style={styles.truckInfo}>
-                    <View style={styles.truckNameRow}>
-                      <Text style={styles.truckName}>{truck.name}</Text>
-                      {truck.verified && (
-                        <CheckCircle size={16} color={colors.success} fill={colors.success} />
-                      )}
+                  <View style={styles.spotListMarkerInner} />
+                </Animated.View>
+              </View>
+              <View style={styles.truckInfo}>
+                <Text style={styles.truckName}>Seen a food truck?</Text>
+                <Text style={styles.truckCuisine}>Drop it on the map</Text>
+                <Text style={styles.spotListAction}>+ Add a Spot</Text>
+              </View>
+            </TouchableOpacity>
+
+            {sightings.length > 0 && (
+              <View style={styles.sightingListSection}>
+                {sightings.map((sighting) => (
+                  <TouchableOpacity
+                    key={`sighting-list-${sighting.id}`}
+                    style={styles.sightingListCard}
+                    onPress={() => handleSightingPress(sighting)}
+                    activeOpacity={0.86}
+                  >
+                    <View style={styles.sightingListPhotoHalf}>
+                      <Image
+                        source={sighting.photo_url ? { uri: sighting.photo_url } : undefined}
+                        style={styles.sightingListImage}
+                        contentFit="cover"
+                      />
                     </View>
-                    <Text style={styles.truckCuisine}>{truck.cuisine_type}</Text>
-                    <View style={styles.truckMeta}>
-                      <View style={[styles.statusBadge, openTruckIds.has(truck.id) && { backgroundColor: `${colors.success}20` }]}>
-                        <Text style={[styles.statusText, openTruckIds.has(truck.id) && { color: colors.success }]}>
-                          {openTruckIds.has(truck.id) ? 'Open' : 'Closed'}
+                    <View style={styles.sightingListInfoHalf}>
+                      <View style={styles.sightingListHeaderRow}>
+                        <View style={styles.sightingListBadge}>
+                          <Text style={styles.sightingListBadgeText}>Recently Spotted</Text>
+                        </View>
+                        <Text style={styles.sightingListSpotter} numberOfLines={1}>
+                          by {getSafeSpotterDisplayName(sighting.spotted_by_name)}
                         </Text>
                       </View>
-                      <Text style={styles.truckDistance} numberOfLines={1} ellipsizeMode="tail">
-                        {openTruckIds.has(truck.id)
-                          ? getTruckDisplayLocation(truck)
-                          : 'Not currently serving'}
-                      </Text>
+                      <Text style={styles.sightingListName} numberOfLines={1}>{sighting.truck_name}</Text>
+                      <Text style={styles.sightingTimestamp}>{formatSightingLastSeen(sighting.created_at)}</Text>
                     </View>
-                  </View>
-                </TouchableOpacity>
-              </React.Fragment>
-            ))}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {listTrucks.map((truck) => {
+              const rating = ratingsByTruckId.get(truck.id);
+              const reviewAverage = rating?.count ? Math.round((rating.sum / rating.count) * 10) / 10 : 0;
+              const openNow = openTruckIds.has(truck.id);
+
+              return (
+                <React.Fragment key={truck.id}>
+                  <TouchableOpacity
+                    style={styles.truckCard}
+                    onPress={() => handleTruckPress(truck.id)}
+                  >
+                    <Image source={truck.logo ? { uri: truck.logo } : undefined} style={styles.truckLogo} />
+                    <View style={styles.truckInfo}>
+                      <View style={styles.truckNameRow}>
+                        <Text style={styles.truckName}>{truck.name}</Text>
+                        {truck.verified && (
+                          <CheckCircle size={16} color={colors.success} fill={colors.success} />
+                        )}
+                      </View>
+                      <Text style={styles.truckCuisine}>{truck.cuisine_type}</Text>
+                      <View style={styles.ratingRow}>
+                        {rating?.count ? (
+                          <>
+                            <Star size={13} color={colors.starYellow} fill={colors.starYellow} />
+                            <Text style={styles.ratingText}>{reviewAverage.toFixed(1)} ({rating.count})</Text>
+                          </>
+                        ) : (
+                          <Text style={styles.noReviewsText}>No reviews yet</Text>
+                        )}
+                      </View>
+                      <View style={styles.truckMeta}>
+                        <View style={[styles.statusBadge, openNow && { backgroundColor: `${colors.success}20` }]}>
+                          <Text style={[styles.statusText, openNow && { color: colors.success }]}>
+                            {openNow ? 'Open' : 'Closed'}
+                          </Text>
+                        </View>
+                        <Text style={styles.truckDistance} numberOfLines={1} ellipsizeMode="tail">
+                          {openNow
+                            ? getTruckDisplayLocation(truck)
+                            : 'Not currently serving'}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                </React.Fragment>
+              );
+            })}
           </ScrollView>
         )}
       </View>
@@ -590,27 +945,118 @@ export default function CustomerHomeScreen() {
             onPress={(e) => e.stopPropagation()}
             style={styles.sightingModalContent}
           >
-            <Image
-              source={selectedSighting?.photo_url ? { uri: selectedSighting.photo_url } : undefined}
-              style={styles.sightingImage}
-              contentFit="cover"
-            />
-            <Text style={styles.sightingName}>{selectedSighting?.truck_name}</Text>
-            <View style={styles.sightingBadge}>
-              <Text style={styles.sightingBadgeText}>👀 Recently Spotted</Text>
+            <View style={styles.sightingPhotoHalf}>
+              <Image
+                source={selectedSighting?.photo_url ? { uri: selectedSighting.photo_url } : undefined}
+                style={styles.sightingImage}
+                contentFit="cover"
+              />
+              <View style={styles.sightingBadge}>
+                <Text style={styles.sightingBadgeText}>Recently Spotted</Text>
+              </View>
             </View>
-            <Text style={styles.sightingTimestamp}>
-              {formatSightingLastSeen(selectedSighting?.created_at)}
-            </Text>
-            {selectedSighting?.notes ? (
-              <Text style={styles.sightingNotes}>{selectedSighting.notes}</Text>
-            ) : null}
-            <TouchableOpacity
-              style={styles.sightingCloseButton}
-              onPress={() => setSelectedSighting(null)}
-            >
-              <Text style={styles.sightingCloseButtonText}>Close</Text>
-            </TouchableOpacity>
+            <View style={styles.sightingInfoHalf}>
+              <Text style={styles.sightingName} numberOfLines={2}>{selectedSighting?.truck_name}</Text>
+              <Text style={styles.sightingTimestamp}>
+                {formatSightingLastSeen(selectedSighting?.created_at)}
+              </Text>
+              <Text style={styles.sightingSpotter}>
+                {formatSightingSpotter(selectedSighting)}
+              </Text>
+              {isEditingSighting ? (
+                <>
+                  <TextInput
+                    style={styles.sightingTitleInput}
+                    value={editingSightingTitle}
+                    onChangeText={setEditingSightingTitle}
+                    placeholder="Truck or sighting name"
+                    placeholderTextColor={colors.secondaryText}
+                    maxLength={80}
+                  />
+                  <TextInput
+                    style={styles.sightingNotesInput}
+                    value={editingSightingNotes}
+                    onChangeText={setEditingSightingNotes}
+                    placeholder="Update your note..."
+                    placeholderTextColor={colors.secondaryText}
+                    multiline
+                    maxLength={SIGHTING_NOTES_MAX_LENGTH}
+                  />
+                  <Text style={styles.sightingCharacterCount}>
+                    {editingSightingNotes.length}/{SIGHTING_NOTES_MAX_LENGTH}
+                  </Text>
+                </>
+              ) : selectedSighting?.notes ? (
+                <Text style={styles.sightingNotes} numberOfLines={3}>{selectedSighting.notes}</Text>
+              ) : (
+                <Text style={styles.sightingNotesMuted}>Community photo sighting</Text>
+              )}
+              <View style={styles.sightingLocationCard}>
+                <View style={styles.sightingLocationTextWrap}>
+                  <MapPin size={16} color={colors.primary} />
+                  <Text style={styles.sightingLocationText} numberOfLines={2}>
+                    {getSightingLocationText(selectedSighting)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.sightingNavigateButton}
+                  onPress={() => openSightingNavigation(selectedSighting?.latitude, selectedSighting?.longitude)}
+                  activeOpacity={0.85}
+                >
+                  <Navigation size={15} color={colors.background} />
+                  <Text style={styles.sightingNavigateButtonText}>Navigate</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.sightingActionsRow}>
+                {selectedSightingIsOwned && !isEditingSighting ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.sightingEditButton}
+                      onPress={handleStartEditSighting}
+                      disabled={isDeletingSighting}
+                    >
+                      <Text style={styles.sightingEditButtonText}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.sightingDeleteButton, isDeletingSighting && styles.sightingButtonDisabled]}
+                      onPress={handleDeleteSighting}
+                      disabled={isDeletingSighting}
+                    >
+                      <Text style={styles.sightingDeleteButtonText}>
+                        {isDeletingSighting ? 'Deleting...' : 'Delete'}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
+                {isEditingSighting ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.sightingEditButton}
+                      onPress={() => setIsEditingSighting(false)}
+                      disabled={isSavingSightingEdit}
+                    >
+                      <Text style={styles.sightingEditButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.sightingCloseButton, isSavingSightingEdit && styles.sightingButtonDisabled]}
+                      onPress={handleSaveSightingEdit}
+                      disabled={isSavingSightingEdit}
+                    >
+                      <Text style={styles.sightingCloseButtonText}>
+                        {isSavingSightingEdit ? 'Saving...' : 'Save'}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.sightingCloseButton}
+                    onPress={() => setSelectedSighting(null)}
+                  >
+                    <Text style={styles.sightingCloseButtonText}>Close</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -910,6 +1356,74 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#FEF3C7',
   },
+  sightingListSection: {
+    marginBottom: 4,
+  },
+  sightingListCard: {
+    flexDirection: 'row',
+    height: 92,
+    backgroundColor: colors.secondaryBackground,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 8,
+    padding: 7,
+    gap: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  sightingListPhotoHalf: {
+    width: 76,
+    height: 76,
+    alignSelf: 'center',
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: colors.cardBackground,
+  },
+  sightingListImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: colors.cardBackground,
+  },
+  sightingListInfoHalf: {
+    flex: 1,
+    justifyContent: 'center',
+    minWidth: 0,
+    paddingVertical: 1,
+  },
+  sightingListHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  sightingListBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  sightingListBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#92400E',
+  },
+  sightingListSpotter: {
+    flex: 1,
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: colors.secondaryText,
+  },
+  sightingListName: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: colors.text,
+    marginBottom: 4,
+  },
   truckInfo: {
     flex: 1,
     marginLeft: 12,
@@ -929,7 +1443,22 @@ const createStyles = (colors: any) => StyleSheet.create({
   truckCuisine: {
     fontSize: 14,
     color: colors.secondaryText,
+    marginBottom: 5,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     marginBottom: 8,
+  },
+  ratingText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: colors.text,
+  },
+  noReviewsText: {
+    fontSize: 12,
+    color: colors.secondaryText,
   },
   spotListAction: {
     fontSize: 13,
@@ -1197,18 +1726,26 @@ const createStyles = (colors: any) => StyleSheet.create({
   sightingModalContent: {
     width: '100%',
     maxWidth: 360,
+    maxHeight: '90%',
     backgroundColor: colors.cardBackground,
-    borderRadius: 20,
-    padding: 18,
+    borderRadius: 18,
+    padding: 0,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  sightingPhotoHalf: {
+    width: '100%',
+    height: 170,
+    backgroundColor: colors.secondaryBackground,
   },
   sightingImage: {
     width: '100%',
-    height: 190,
-    borderRadius: 16,
+    height: '100%',
     backgroundColor: colors.secondaryBackground,
-    marginBottom: 14,
+  },
+  sightingInfoHalf: {
+    padding: 16,
   },
   sightingName: {
     fontSize: 20,
@@ -1217,12 +1754,14 @@ const createStyles = (colors: any) => StyleSheet.create({
     marginBottom: 10,
   },
   sightingBadge: {
+    position: 'absolute',
+    left: 12,
+    bottom: 12,
     alignSelf: 'flex-start',
     backgroundColor: '#FEF3C7',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    marginBottom: 10,
   },
   sightingBadgeText: {
     fontSize: 13,
@@ -1232,19 +1771,132 @@ const createStyles = (colors: any) => StyleSheet.create({
   sightingTimestamp: {
     fontSize: 13,
     color: colors.secondaryText,
+    marginBottom: 6,
+  },
+  sightingSpotter: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: colors.primary,
     marginBottom: 10,
   },
   sightingNotes: {
     fontSize: 14,
     lineHeight: 20,
     color: colors.text,
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  sightingNotesMuted: {
+    fontSize: 14,
+    color: colors.secondaryText,
+    marginBottom: 12,
+  },
+  sightingNotesInput: {
+    minHeight: 76,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+    color: colors.text,
+    backgroundColor: colors.secondaryBackground,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlignVertical: 'top',
+  },
+  sightingTitleInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    color: colors.text,
+    backgroundColor: colors.secondaryBackground,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    marginBottom: 8,
+  },
+  sightingCharacterCount: {
+    alignSelf: 'flex-end',
+    fontSize: 11,
+    color: colors.secondaryText,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  sightingLocationCard: {
+    backgroundColor: colors.secondaryBackground,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+    marginBottom: 12,
+    gap: 10,
+  },
+  sightingLocationTextWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  sightingLocationText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.text,
+  },
+  sightingNavigateButton: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  sightingNavigateButtonText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: colors.background,
+  },
+  sightingActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  sightingEditButton: {
+    flex: 1,
+    backgroundColor: colors.secondaryBackground,
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sightingEditButtonText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: colors.text,
+  },
+  sightingDeleteButton: {
+    flex: 1,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  sightingDeleteButtonText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: '#EF4444',
   },
   sightingCloseButton: {
+    flex: 1,
     backgroundColor: colors.primary,
     borderRadius: 12,
     alignItems: 'center',
     paddingVertical: 12,
+  },
+  sightingButtonDisabled: {
+    opacity: 0.65,
   },
   sightingCloseButtonText: {
     fontSize: 15,

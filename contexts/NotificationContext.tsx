@@ -1,6 +1,6 @@
 import createContextHook from '@nkzw/create-context-hook';
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { Platform, Alert } from 'react-native';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { AppState as RNAppState, Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Constants from 'expo-constants';
@@ -41,6 +41,7 @@ const DEFAULT_PREFS: NotificationPreferences = {
 };
 
 const STORAGE_KEY = 'notificationPreferences';
+const FOREGROUND_PERMISSION_REFRESH_DEBOUNCE_MS = 5000;
 const PREFERENCE_SELECT =
   'notify_favorites_open, notify_new_trucks, notify_announcements';
 
@@ -72,6 +73,8 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSavingPreferences, setIsSavingPreferences] = useState<boolean>(false);
   const [preferencesUserId, setPreferencesUserId] = useState<string | null>(null);
+  const appStateRef = useRef(RNAppState.currentState);
+  const lastPermissionRefreshAtRef = useRef(0);
 
   const checkPermission = useCallback(async () => {
     if (Platform.OS === 'web') {
@@ -468,6 +471,46 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
 
     void registerPushToken();
   }, [permissionStatus, registerPushToken, user]);
+
+  useEffect(() => {
+    const subscription = RNAppState.addEventListener('change', (nextState) => {
+      const previousState = appStateRef.current;
+
+      if (__DEV__) {
+        console.log('[Notifications] AppState changed:', {
+          previousState,
+          nextState,
+        });
+      }
+
+      appStateRef.current = nextState;
+
+      if (!/inactive|background/.test(previousState) || nextState !== 'active') {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastPermissionRefreshAtRef.current < FOREGROUND_PERMISSION_REFRESH_DEBOUNCE_MS) {
+        if (__DEV__) console.log('[Notifications] Foreground permission refresh skipped - debounced');
+        return;
+      }
+
+      lastPermissionRefreshAtRef.current = now;
+
+      if (__DEV__) console.log('[Notifications] Foreground permission refresh started');
+      void checkPermission()
+        .then(() => {
+          if (__DEV__) console.log('[Notifications] Foreground permission refresh completed');
+        })
+        .catch((error) => {
+          console.log('[Notifications] Foreground permission refresh error:', error);
+        });
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [checkPermission]);
 
   return useMemo(
     () => ({

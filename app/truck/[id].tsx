@@ -21,7 +21,10 @@ export default function TruckDetailScreen() {
     }
 
     const truckExists = foodTrucks.find((truck) => truck.id === id);
-    const isHiddenFromCustomers = truckExists?.is_test === true;
+    const isHiddenFromCustomers =
+      truckExists?.is_test === true ||
+      truckExists?.archived === true ||
+      !!truckExists?.archivedAt;
     if ((!truckExists || isHiddenFromCustomers) && !isPreview) {
       router.replace('/(customer)/(tabs)/discover' as any);
       return;

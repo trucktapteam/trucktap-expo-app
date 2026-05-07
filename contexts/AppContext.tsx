@@ -1,5 +1,6 @@
 import createContextHook from '@nkzw/create-context-hook';
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { AppState as RNAppState } from 'react-native';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, FoodTruck, Review, MenuItem, OperatingHours, Announcement, TeamUpdate } from '@/types';
 import { teamUpdates } from '@/mocks/data';
@@ -15,10 +16,53 @@ const parseJsonArray = (val: any): any[] => {
   return [];
 };
 
+const FOREGROUND_REFRESH_DEBOUNCE_MS = 5000;
+const STALE_OPEN_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+type LocationRow = {
+  truck_id: string | number;
+  latitude?: number | null;
+  longitude?: number | null;
+  label?: string | null;
+  updated_at?: string | null;
+};
+
 const normalizeUserRole = (role: unknown): User['role'] => {
   if (role === 'admin') return 'admin';
   if (role === 'truck' || role === 'owner') return 'truck';
   return 'customer';
+};
+
+const normalizeArchivedAtForDb = (archivedAt: FoodTruck['archivedAt']): string | null => {
+  if (archivedAt === undefined || archivedAt === null) {
+    return null;
+  }
+
+  if (typeof archivedAt === 'string') {
+    const timestamp = Date.parse(archivedAt);
+    return Number.isNaN(timestamp) ? new Date().toISOString() : archivedAt;
+  }
+
+  if (typeof archivedAt === 'number') {
+    return new Date(archivedAt).toISOString();
+  }
+
+  return new Date().toISOString();
+};
+
+const getTruckLiveTimestamp = (truck: Pick<FoodTruck, 'lastLiveUpdatedAt' | 'lastUpdated'>): string | undefined =>
+  truck.lastLiveUpdatedAt ?? truck.lastUpdated;
+
+const isTruckStaleOpen = (truck: Pick<FoodTruck, 'id' | 'open_now' | 'lastLiveUpdatedAt' | 'lastUpdated'>): boolean => {
+  if (!truck.open_now) return false;
+
+  const timestampValue = getTruckLiveTimestamp(truck);
+  if (!timestampValue) return false;
+
+  const timestamp = new Date(timestampValue).getTime();
+  if (Number.isNaN(timestamp)) return false;
+
+  return Date.now() - timestamp > STALE_OPEN_WINDOW_MS;
 };
 
 const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
@@ -35,6 +79,14 @@ const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
   if (updates.website !== undefined) dbUpdates.website = updates.website;
   if (updates.open_now !== undefined) dbUpdates.is_open = updates.open_now;
+  if (updates.archived !== undefined) dbUpdates.archived = updates.archived;
+  if (Object.prototype.hasOwnProperty.call(updates, 'archivedAt')) {
+    dbUpdates.archived_at = normalizeArchivedAtForDb(updates.archivedAt);
+  }
+  if (updates.archiveReason !== undefined) dbUpdates.archive_reason = updates.archiveReason;
+  if (updates.archiveReason === undefined && Object.prototype.hasOwnProperty.call(updates, 'archiveReason')) {
+    dbUpdates.archive_reason = null;
+  }
   if (updates.is_test !== undefined) dbUpdates.is_test = updates.is_test;
   if (updates.operatingHours !== undefined) dbUpdates.operating_hours = updates.operatingHours;
   if (updates.images !== undefined) dbUpdates.gallery_images = updates.images;
@@ -147,18 +199,25 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [supabaseOwnedTrucks, setSupabaseOwnedTrucks] = useState<FoodTruck[]>([]);
   const [isOwnerLoading, setIsOwnerLoading] = useState<boolean>(true);
   const [qrShared, setQrShared] = useState<boolean>(false);
+  const appStateRef = useRef(RNAppState.currentState);
+  const lastForegroundRefreshAtRef = useRef(0);
+  const foregroundRefreshInFlightRef = useRef(false);
+  const staleOpenAutoCloseAttemptedRef = useRef(new Set<string>());
 
   // Helper to check if current user owns a truck
   const userOwnsTruck = useCallback((truckId: string): boolean => {
     if (!isAuthenticated || !authUser) {
       return false;
     }
+    if (userProfile?.role === 'admin') {
+      return true;
+    }
     const truck = [...supabaseOwnedTrucks, ...foodTrucks].find(t => t.id === truckId);
     if (!truck) {
       return false;
     }
     return truck.owner_id === authUser.id;
-  }, [isAuthenticated, authUser, supabaseOwnedTrucks, foodTrucks]);
+  }, [isAuthenticated, authUser, userProfile?.role, supabaseOwnedTrucks, foodTrucks]);
 
   const mapSupabaseTruckToLocal = useCallback((row: any): FoodTruck => {
     if (DEBUG) console.log('[AppContext] mapSupabaseTruckToLocal raw row.id:', row.id, 'raw row.is_open:', row.is_open, '(type:', typeof row.is_open, ')');
@@ -187,21 +246,22 @@ export const [AppProvider, useApp] = createContextHook(() => {
       operatingHours: row.operating_hours ?? undefined,
       verified: false,
       lastUpdated: row.updated_at ?? row.created_at ?? undefined,
+      lastLiveUpdatedAt: row.location_updated_at ?? row.updated_at ?? row.created_at ?? undefined,
       search_keywords: [],
       analytics: undefined,
       archived: row.archived === true,
-      archivedAt: typeof row.archived_at === 'number' ? row.archived_at : undefined,
+      archivedAt: typeof row.archived_at === 'string' ? row.archived_at : undefined,
       archiveReason: row.archive_reason ?? undefined,
       is_test: row.is_test === true,
     };
   }, []);
 
-  const mergeTruckLocations = useCallback((trucks: FoodTruck[], locationRows: any[] | null | undefined): FoodTruck[] => {
+  const mergeTruckLocations = useCallback((trucks: FoodTruck[], locationRows: LocationRow[] | null | undefined): FoodTruck[] => {
     if (!locationRows || locationRows.length === 0) {
       return trucks;
     }
 
-    const locationsByTruckId = new Map<string, any>();
+    const locationsByTruckId = new Map<string, LocationRow>();
     for (const row of locationRows) {
       if (row?.truck_id) {
         locationsByTruckId.set(row.truck_id.toString(), row);
@@ -221,6 +281,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
           longitude: locationRow.longitude ?? truck.location.longitude,
           address: locationRow.label ?? truck.location.address,
         },
+        lastLiveUpdatedAt: locationRow.updated_at ?? truck.lastLiveUpdatedAt,
       };
     });
   }, []);
@@ -325,10 +386,23 @@ export const [AppProvider, useApp] = createContextHook(() => {
         let merged = mapped;
 
         if (truckIds.length > 0) {
-          const { data: locationRows, error: locationsError } = await supabase
+          const locationsResult = await supabase
             .from('locations')
-            .select('truck_id, latitude, longitude, label')
+            .select('truck_id, latitude, longitude, label, updated_at')
             .in('truck_id', truckIds);
+          let locationRows = locationsResult.data as LocationRow[] | null;
+          let locationsError = locationsResult.error;
+
+          if (locationsError) {
+            if (locationsError.message.includes('updated_at')) {
+              const fallback = await supabase
+                .from('locations')
+                .select('truck_id, latitude, longitude, label')
+                .in('truck_id', truckIds);
+              locationRows = fallback.data as LocationRow[] | null;
+              locationsError = fallback.error;
+            }
+          }
 
           if (locationsError) {
             console.log('[AppContext] Supabase fetch locations error:', locationsError.message);
@@ -410,10 +484,23 @@ export const [AppProvider, useApp] = createContextHook(() => {
         let merged = mapped;
 
         if (truckIds.length > 0) {
-          const { data: locationRows, error: locationsError } = await supabase
+          const locationsResult = await supabase
             .from('locations')
-            .select('truck_id, latitude, longitude, label')
+            .select('truck_id, latitude, longitude, label, updated_at')
             .in('truck_id', truckIds);
+          let locationRows = locationsResult.data as LocationRow[] | null;
+          let locationsError = locationsResult.error;
+
+          if (locationsError) {
+            if (locationsError.message.includes('updated_at')) {
+              const fallback = await supabase
+                .from('locations')
+                .select('truck_id, latitude, longitude, label')
+                .in('truck_id', truckIds);
+              locationRows = fallback.data as LocationRow[] | null;
+              locationsError = fallback.error;
+            }
+          }
 
           if (locationsError) {
             console.log('[AppContext] Supabase fetch owned truck locations error:', locationsError.message);
@@ -666,6 +753,17 @@ if (!favoritesError && favoriteRows) {
       
       // Try to fetch from Supabase profiles table
       if (isSupabaseConfigured) {
+        const { data: favoriteRows, error: favoritesError } = await supabase
+          .from('favorites')
+          .select('truck_id')
+          .eq('user_id', authUser.id);
+
+        if (favoritesError) {
+          console.log('[AppContext] Favorites refresh error:', favoritesError.message);
+        } else if (favoriteRows) {
+          currentFavorites = favoriteRows.map((row: any) => row.truck_id).filter(Boolean);
+        }
+
         const { data: profileData, error } = await supabase
           .from('profiles')
           .select('display_name, profile_photo, role, truck_id')
@@ -710,6 +808,162 @@ if (!favoritesError && favoriteRows) {
       console.log('[AppContext] Error refreshing profile:', err?.message);
     }
   }, [isAuthenticated, authUser, authLoading, userProfile, isSupabaseConfigured]);
+
+  const refreshOnForeground = useCallback(async (previousState: string, nextState: string) => {
+    const now = Date.now();
+
+    if (foregroundRefreshInFlightRef.current) {
+      if (__DEV__) {
+        console.log('[AppContext] Foreground refresh skipped - already running:', {
+          previousState,
+          nextState,
+        });
+      }
+      return;
+    }
+
+    if (now - lastForegroundRefreshAtRef.current < FOREGROUND_REFRESH_DEBOUNCE_MS) {
+      if (__DEV__) {
+        console.log('[AppContext] Foreground refresh skipped - debounced:', {
+          previousState,
+          nextState,
+        });
+      }
+      return;
+    }
+
+    lastForegroundRefreshAtRef.current = now;
+    foregroundRefreshInFlightRef.current = true;
+
+    if (__DEV__) {
+      console.log('[AppContext] Foreground refresh started:', {
+        previousState,
+        nextState,
+        authenticated: isAuthenticated,
+      });
+    }
+
+    try {
+      if (isSupabaseConfigured && isAuthenticated && authUser) {
+        const { error } = await supabase.auth.refreshSession();
+        if (error) {
+          console.log('[AppContext] Foreground session refresh error:', error.message);
+        }
+      }
+
+      const refreshTasks: Promise<void>[] = [
+        fetchAllTrucksFromSupabase(),
+        fetchReviewsFromSupabase(),
+      ];
+
+      if (isAuthenticated && authUser) {
+        refreshTasks.push(refreshCustomerProfile());
+        refreshTasks.push(fetchOwnedTrucksFromSupabase());
+      }
+
+      const results = await Promise.allSettled(refreshTasks);
+      const rejected = results.filter((result) => result.status === 'rejected');
+
+      if (rejected.length > 0) {
+        console.log('[AppContext] Foreground refresh errors:', rejected);
+      }
+
+      if (__DEV__) {
+        console.log('[AppContext] Foreground refresh completed:', {
+          previousState,
+          nextState,
+          errors: rejected.length,
+        });
+      }
+    } catch (error) {
+      console.log('[AppContext] Foreground refresh error:', error);
+    } finally {
+      foregroundRefreshInFlightRef.current = false;
+    }
+  }, [
+    authUser,
+    fetchAllTrucksFromSupabase,
+    fetchOwnedTrucksFromSupabase,
+    fetchReviewsFromSupabase,
+    isAuthenticated,
+    refreshCustomerProfile,
+  ]);
+
+  useEffect(() => {
+    const subscription = RNAppState.addEventListener('change', (nextState) => {
+      const previousState = appStateRef.current;
+
+      if (__DEV__) {
+        console.log('[AppContext] AppState changed:', {
+          previousState,
+          nextState,
+        });
+      }
+
+      appStateRef.current = nextState;
+
+      if (/inactive|background/.test(previousState) && nextState === 'active') {
+        void refreshOnForeground(previousState, nextState);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [refreshOnForeground]);
+
+  useEffect(() => {
+    const staleOpenTrucks = foodTrucks.filter((truck) => {
+      if (!isTruckStaleOpen(truck)) return false;
+
+      const timestamp = getTruckLiveTimestamp(truck) ?? 'unknown';
+      const attemptKey = `${truck.id}:${timestamp}`;
+      if (staleOpenAutoCloseAttemptedRef.current.has(attemptKey)) return false;
+
+      staleOpenAutoCloseAttemptedRef.current.add(attemptKey);
+      if (__DEV__) {
+        console.log('[AppContext] Stale open truck detected:', {
+          truckId: truck.id,
+          timestampUsed: timestamp,
+        });
+      }
+      return true;
+    });
+
+    if (staleOpenTrucks.length === 0) return;
+
+    setFoodTrucks(prev => prev.map(truck => (
+      staleOpenTrucks.some(staleTruck => staleTruck.id === truck.id)
+        ? { ...truck, open_now: false }
+        : truck
+    )));
+    setSupabaseOwnedTrucks(prev => prev.map(truck => (
+      staleOpenTrucks.some(staleTruck => staleTruck.id === truck.id)
+        ? { ...truck, open_now: false }
+        : truck
+    )));
+
+    if (!isSupabaseConfigured) return;
+
+    staleOpenTrucks.forEach((truck) => {
+      void supabase
+        .from('trucks')
+        .update({ is_open: false, updated_at: new Date().toISOString() })
+        .eq('id', truck.id)
+        .eq('is_open', true)
+        .then(({ error }) => {
+          if (__DEV__) {
+            console.log('[AppContext] Stale open auto-close update result:', {
+              truckId: truck.id,
+              error: error?.message ?? null,
+            });
+          }
+          if (error) {
+            console.log('[AppContext] Stale open auto-close error:', error.message);
+          }
+        });
+    });
+  }, [foodTrucks]);
 
   const toggleFavorite = useCallback(async (truckId: string) => {
   if (authLoading) {
@@ -866,6 +1120,9 @@ if (error) {
   }, []);
 
    const updateTruckDetails = useCallback(async (truckId: string, updates: Partial<FoodTruck>) => {
+  const isArchiveUpdate = Object.prototype.hasOwnProperty.call(updates, 'archived');
+  const isArchiving = updates.archived === true;
+
   if (!isAuthenticated || !authUser) {
     if (DEBUG) console.log('[AppContext] blocked - not authenticated');
     throw new Error('Not authenticated');
@@ -879,6 +1136,9 @@ if (error) {
   
 
   if (DEBUG) console.log('[AppContext] updateTruckDetails for:', truckId, 'keys:', Object.keys(updates));
+  if (__DEV__ && isArchiving) {
+    console.log('[AppContext] Archiving truck:', { truckId });
+  }
 
   setFoodTrucks(prev =>
     prev.map(truck =>
@@ -890,6 +1150,12 @@ if (error) {
         truck.id === truckId ? { ...truck, ...updates } : truck
       )
     );
+    if (__DEV__ && isArchiveUpdate) {
+      console.log('[AppContext] Archive local optimistic update:', {
+        truckId,
+        archived: updates.archived,
+      });
+    }
 
 
     if (!isSupabaseConfigured) {
@@ -904,12 +1170,26 @@ if (error) {
     if (DEBUG) console.log('[AppContext] DB payload keys:', persistableKeys.join(', '));
 
     if (persistableKeys.length > 0) {
-      const { error, data } = await supabase
+      let updateQuery = supabase
         .from('trucks')
         .update(dbUpdates)
-        .eq('id', truckId)
-        .eq('owner_id', authUser.id)
+        .eq('id', truckId);
+
+      if (userProfile?.role !== 'admin') {
+        updateQuery = updateQuery.eq('owner_id', authUser.id);
+      }
+
+      const { error, data } = await updateQuery
         .select();
+
+      if (__DEV__ && isArchiveUpdate) {
+        console.log('[AppContext] Archive Supabase update result:', {
+          truckId,
+          archived: updates.archived,
+          rows: data?.length ?? 0,
+          error: error?.message ?? null,
+        });
+      }
 
       if (error) {
         console.log('[AppContext] Truck update error:', error.message);
@@ -954,11 +1234,23 @@ if (error) {
     if (refreshedRow) {
       let hydrated = mapSupabaseTruckToLocal(refreshedRow);
 
-      const { data: locationRow, error: locationFetchError } = await supabase
+      const locationResult = await supabase
         .from('locations')
-        .select('truck_id, latitude, longitude, label')
+        .select('truck_id, latitude, longitude, label, updated_at')
         .eq('truck_id', truckId)
         .maybeSingle();
+      let locationRow = locationResult.data as LocationRow | null;
+      let locationFetchError = locationResult.error;
+
+      if (locationFetchError?.message.includes('updated_at')) {
+        const fallback = await supabase
+          .from('locations')
+          .select('truck_id, latitude, longitude, label')
+          .eq('truck_id', truckId)
+          .maybeSingle();
+        locationRow = fallback.data as LocationRow | null;
+        locationFetchError = fallback.error;
+      }
 
       if (locationFetchError) {
         console.log('[AppContext] Post-save location fetch error:', locationFetchError.message);
@@ -978,9 +1270,16 @@ if (error) {
           truck.id === truckId ? { ...truck, ...hydrated } : truck
         )
       );
+      if (__DEV__ && isArchiveUpdate) {
+        console.log('[AppContext] Archive post-update local state change:', {
+          truckId,
+          archived: hydrated.archived,
+          archivedAt: hydrated.archivedAt,
+        });
+      }
 
     }
-  }, [isAuthenticated, authUser, userOwnsTruck, mapSupabaseTruckToLocal, mergeTruckLocations]);
+  }, [isAuthenticated, authUser, userProfile?.role, userOwnsTruck, mapSupabaseTruckToLocal, mergeTruckLocations]);
 
   const addGalleryImage = useCallback((truckId: string, imageUrl: string) => {
     if (!isAuthenticated || !authUser) {
@@ -1277,9 +1576,8 @@ if (error) {
   const isTruckOpenNow = useCallback((truckId: string) => {
     const truck = foodTrucks.find(t => t.id === truckId);
     // canonical open flag = open_now
-    // This field is controlled by the truck dashboard toggle
-    // Discover/Home filters use ONLY this boolean (true = Open Now, false = Closed)
-    return truck?.open_now || false;
+    // Stale live locations are treated as closed to avoid overnight ghost listings.
+    return !!truck?.open_now && !isTruckStaleOpen(truck);
   }, [foodTrucks]);
 
   const incrementView = useCallback((truckId: string) => {

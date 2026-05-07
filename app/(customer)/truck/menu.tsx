@@ -17,7 +17,7 @@ export default function FullMenuScreen() {
   const [showMenuItemModal, setShowMenuItemModal] = useState<boolean>(false);
   
   const truck = useMemo(() => 
-    foodTrucks.find(t => t.id === id && t.is_test !== true),
+    foodTrucks.find(t => t.id === id && t.is_test !== true && t.archived !== true && !t.archivedAt),
     [foodTrucks, id]
   );
 

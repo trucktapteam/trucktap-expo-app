@@ -18,14 +18,18 @@ import { useRouter } from 'expo-router';
 import Toast from '@/components/Toast';
 import Colors from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 type LocationCoords = {
   latitude: number;
   longitude: number;
 };
 
+const SIGHTING_NOTES_MAX_LENGTH = 280;
+
 export default function AddSightingScreen() {
   const router = useRouter();
+  const { user: authUser } = useAuth();
   const [truckName, setTruckName] = useState('');
   const [notes, setNotes] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -147,6 +151,7 @@ export default function AddSightingScreen() {
       const { error } = await supabase.from('sightings').insert({
         truck_name: truckName.trim(),
         photo_url: photoUrl,
+        user_id: authUser?.id ?? null,
         latitude: freshCoords.latitude,
         longitude: freshCoords.longitude,
         notes: notes.trim() || null,
@@ -167,7 +172,7 @@ export default function AddSightingScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [captureLocation, coords, notes, photoUri, router, truckName, uploadPhotoAsync]);
+  }, [authUser?.id, captureLocation, coords, notes, photoUri, router, truckName, uploadPhotoAsync]);
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -230,9 +235,10 @@ export default function AddSightingScreen() {
               style={[styles.input, styles.notesInput]}
               value={notes}
               onChangeText={setNotes}
-              placeholder="Optional details like cross street, event, or time window"
+              placeholder="Add a quick note - tacos, BBQ, coffee, parked by the courthouse..."
               placeholderTextColor={Colors.gray}
               multiline
+              maxLength={SIGHTING_NOTES_MAX_LENGTH}
               textAlignVertical="top"
             />
           </View>
