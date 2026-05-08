@@ -1122,6 +1122,7 @@ if (error) {
    const updateTruckDetails = useCallback(async (truckId: string, updates: Partial<FoodTruck>) => {
   const isArchiveUpdate = Object.prototype.hasOwnProperty.call(updates, 'archived');
   const isArchiving = updates.archived === true;
+  const savedAt = new Date().toISOString();
 
   if (!isAuthenticated || !authUser) {
     if (DEBUG) console.log('[AppContext] blocked - not authenticated');
@@ -1136,18 +1137,28 @@ if (error) {
   
 
   if (DEBUG) console.log('[AppContext] updateTruckDetails for:', truckId, 'keys:', Object.keys(updates));
+  if (__DEV__ && (updates.open_now !== undefined || updates.location)) {
+    console.log('[AppContext] Go Live update requested:', {
+      truckId,
+      openNow: updates.open_now,
+      hasLocation: Boolean(updates.location),
+      latitude: updates.location?.latitude ?? null,
+      longitude: updates.location?.longitude ?? null,
+      hasLabel: Boolean(updates.location?.address?.trim()),
+    });
+  }
   if (__DEV__ && isArchiving) {
     console.log('[AppContext] Archiving truck:', { truckId });
   }
 
   setFoodTrucks(prev =>
     prev.map(truck =>
-      truck.id === truckId ? { ...truck, ...updates } : truck
+      truck.id === truckId ? { ...truck, ...updates, lastLiveUpdatedAt: updates.location ? savedAt : truck.lastLiveUpdatedAt } : truck
     )
   );
     setSupabaseOwnedTrucks(prev =>
       prev.map(truck =>
-        truck.id === truckId ? { ...truck, ...updates } : truck
+        truck.id === truckId ? { ...truck, ...updates, lastLiveUpdatedAt: updates.location ? savedAt : truck.lastLiveUpdatedAt } : truck
       )
     );
     if (__DEV__ && isArchiveUpdate) {
@@ -1164,7 +1175,7 @@ if (error) {
     }
 
     const dbUpdates = mapAppFieldsToDb(updates);
-    dbUpdates.updated_at = new Date().toISOString();
+    dbUpdates.updated_at = savedAt;
 
     const persistableKeys = Object.keys(dbUpdates).filter(k => k !== 'updated_at');
     if (DEBUG) console.log('[AppContext] DB payload keys:', persistableKeys.join(', '));
@@ -1190,6 +1201,14 @@ if (error) {
           error: error?.message ?? null,
         });
       }
+      if (__DEV__ && updates.open_now !== undefined) {
+        console.log('[AppContext] Truck open status update result:', {
+          truckId,
+          openNow: updates.open_now,
+          rows: data?.length ?? 0,
+          error: error?.message ?? null,
+        });
+      }
 
       if (error) {
         console.log('[AppContext] Truck update error:', error.message);
@@ -1199,22 +1218,59 @@ if (error) {
     }
 
     if (updates.location) {
-      if (DEBUG) console.log('[AppContext] Upserting location for truck:', truckId);
-      const { error: locError } = await supabase
+      const locationPayload = {
+        truck_id: truckId,
+        latitude: updates.location.latitude,
+        longitude: updates.location.longitude,
+        label: updates.location.address,
+        updated_at: savedAt,
+      };
+
+      if (__DEV__) {
+        console.log('[AppContext] Upserting live location:', {
+          truckId,
+          latitude: locationPayload.latitude,
+          longitude: locationPayload.longitude,
+          hasLabel: Boolean(locationPayload.label?.trim()),
+          updatedAt: locationPayload.updated_at,
+        });
+      }
+
+      let locationWrite = await supabase
         .from('locations')
         .upsert(
-          {
-            truck_id: truckId,
-            latitude: updates.location.latitude,
-            longitude: updates.location.longitude,
-            label: updates.location.address,
-          },
+          locationPayload,
           { onConflict: 'truck_id' }
-        );
+        )
+        .select('truck_id, latitude, longitude, label, updated_at');
 
-      if (locError) {
-        console.log('[AppContext] Location upsert error:', locError.message);
-        throw new Error(`Failed to update location: ${locError.message}`);
+      if (locationWrite.error?.message.includes('updated_at')) {
+        const legacyLocationPayload = {
+          truck_id: locationPayload.truck_id,
+          latitude: locationPayload.latitude,
+          longitude: locationPayload.longitude,
+          label: locationPayload.label,
+        };
+        locationWrite = await supabase
+          .from('locations')
+          .upsert(
+            legacyLocationPayload,
+            { onConflict: 'truck_id' }
+          )
+          .select('truck_id, latitude, longitude, label');
+      }
+
+      if (__DEV__) {
+        console.log('[AppContext] Supabase location write result:', {
+          truckId,
+          rows: locationWrite.data?.length ?? 0,
+          error: locationWrite.error?.message ?? null,
+        });
+      }
+
+      if (locationWrite.error) {
+        console.log('[AppContext] Location upsert error:', locationWrite.error.message);
+        throw new Error(`Failed to update location: ${locationWrite.error.message}`);
       }
 
     }

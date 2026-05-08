@@ -7,6 +7,21 @@ import { MapPin, ArrowLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 
+const GPS_LOOKUP_TIMEOUT_MS = 15000;
+
+const getCurrentPositionWithTimeout = (
+  options: Parameters<typeof Location.getCurrentPositionAsync>[0],
+  timeoutMs = GPS_LOOKUP_TIMEOUT_MS
+) => new Promise<Awaited<ReturnType<typeof Location.getCurrentPositionAsync>>>((resolve, reject) => {
+  const timeout = setTimeout(() => {
+    reject(new Error(`Location lookup timed out after ${timeoutMs}ms`));
+  }, timeoutMs);
+
+  Location.getCurrentPositionAsync(options)
+    .then(resolve, reject)
+    .finally(() => clearTimeout(timeout));
+});
+
 export default function UpdateLocationScreen() {
   const router = useRouter();
   const { getUserTruck, updateTruckDetails } = useApp();
@@ -35,6 +50,15 @@ export default function UpdateLocationScreen() {
   const saveLiveLocation = async (location: { latitude: number; longitude: number; address: string }) => {
     if (!truck) return;
 
+    if (__DEV__) {
+      console.log('[UpdateLocation] Saving live location:', {
+        truckId: truck.id,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        hasAddress: location.address.trim().length > 0,
+      });
+    }
+
     await updateTruckDetails(truck.id, {
       open_now: true,
       location,
@@ -60,9 +84,28 @@ export default function UpdateLocationScreen() {
       setIsLoading(true);
       setPendingLocation(null);
 
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const existingPermission = await Location.getForegroundPermissionsAsync();
+      if (__DEV__) {
+        console.log('[UpdateLocation] Existing location permission:', {
+          status: existingPermission.status,
+          granted: existingPermission.granted,
+          canAskAgain: existingPermission.canAskAgain,
+        });
+      }
+
+      const permission = existingPermission.granted
+        ? existingPermission
+        : await Location.requestForegroundPermissionsAsync();
+
+      if (__DEV__) {
+        console.log('[UpdateLocation] Location permission result:', {
+          status: permission.status,
+          granted: permission.granted,
+          canAskAgain: permission.canAskAgain,
+        });
+      }
       
-      if (status !== 'granted') {
+      if (permission.status !== 'granted') {
         Alert.alert(
           'Permission Required',
           'Location permission is required to update your truck location.',
@@ -72,11 +115,30 @@ export default function UpdateLocationScreen() {
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      let location: Awaited<ReturnType<typeof Location.getCurrentPositionAsync>>;
+      try {
+        location = await getCurrentPositionWithTimeout({
+          accuracy: Location.Accuracy.High,
+        });
+      } catch (currentLocationError) {
+        if (__DEV__) {
+          console.log('[UpdateLocation] High accuracy GPS lookup failed, retrying balanced accuracy:', currentLocationError);
+        }
+
+        location = await getCurrentPositionWithTimeout({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      }
 
       const { latitude, longitude } = location.coords;
+      if (__DEV__) {
+        console.log('[UpdateLocation] GPS result:', {
+          latitude,
+          longitude,
+          accuracy: location.coords.accuracy,
+          timestamp: location.timestamp,
+        });
+      }
 
       let address = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
       
@@ -88,7 +150,7 @@ export default function UpdateLocationScreen() {
 
         if (geocode && geocode.length > 0) {
           const result = geocode[0];
-          address = [
+          const formatted = [
             result.streetNumber,
             result.street,
             result.city,
@@ -96,17 +158,27 @@ export default function UpdateLocationScreen() {
           ]
             .filter(Boolean)
             .join(', ');
+
+          if (formatted) {
+            address = formatted;
+          }
         }
       } catch (error) {
         console.log('Geocoding error:', error);
       }
 
-      setPendingLocation({
+      const nextLocation = {
         latitude,
         longitude,
         address,
         source: 'gps',
-      });
+      } as const;
+
+      if (__DEV__) {
+        console.log('[UpdateLocation] Selected live location:', nextLocation);
+      }
+
+      setPendingLocation(nextLocation);
     } catch (error) {
       console.error('Error getting location:', error);
       Alert.alert(
@@ -189,11 +261,34 @@ export default function UpdateLocationScreen() {
     setIsLoading(true);
 
     try {
-      await saveLiveLocation({
+      const liveLocation = {
         latitude: pendingLocation.latitude,
         longitude: pendingLocation.longitude,
         address: pendingLocation.address,
-      });
+      };
+
+      const validation = {
+        hasTruckId: Boolean(truck?.id),
+        hasLatitude: Number.isFinite(liveLocation.latitude),
+        hasLongitude: Number.isFinite(liveLocation.longitude),
+        hasAddress: liveLocation.address.trim().length > 0,
+        openNow: true,
+      };
+
+      if (__DEV__) {
+        console.log('[UpdateLocation] Go Live validation:', {
+          source: pendingLocation.source,
+          truckId: truck?.id ?? null,
+          ...validation,
+        });
+      }
+
+      if (!validation.hasTruckId || !validation.hasLatitude || !validation.hasLongitude || !validation.hasAddress) {
+        Alert.alert('Location incomplete', 'Please choose a valid live location and try again.');
+        return;
+      }
+
+      await saveLiveLocation(liveLocation);
     } catch (error) {
       console.error('Error confirming live location:', error);
       Alert.alert(
