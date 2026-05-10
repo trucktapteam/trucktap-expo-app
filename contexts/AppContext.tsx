@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import { AppState as RNAppState } from 'react-native';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, FoodTruck, Review, MenuItem, OperatingHours, Announcement, TeamUpdate } from '@/types';
+import { User, FoodTruck, Review, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType } from '@/types';
 import { teamUpdates } from '@/mocks/data';
 import { DEBUG } from '@/constants/debug';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +18,8 @@ const parseJsonArray = (val: any): any[] => {
 
 const FOREGROUND_REFRESH_DEBOUNCE_MS = 5000;
 const STALE_OPEN_WINDOW_MS = 12 * 60 * 60 * 1000;
+const DEFAULT_HERO_IMAGE = 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=800';
+const DEFAULT_LOGO_IMAGE = 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=200';
 
 type LocationRow = {
   truck_id: string | number;
@@ -69,8 +71,12 @@ const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   const dbUpdates: Record<string, any> = {};
 
   if (updates.name !== undefined) dbUpdates.name = updates.name;
-  if (updates.hero_image !== undefined) dbUpdates.hero_image = updates.hero_image;
-  if (updates.logo !== undefined) dbUpdates.logo = updates.logo;
+  if (typeof updates.hero_image === 'string' && updates.hero_image.trim().length > 0) {
+    dbUpdates.hero_image = updates.hero_image.trim();
+  }
+  if (typeof updates.logo === 'string' && updates.logo.trim().length > 0) {
+    dbUpdates.logo = updates.logo.trim();
+  }
   if (updates.cuisine_type !== undefined) dbUpdates.cuisine_type = updates.cuisine_type;
   if (updates.bio !== undefined) {
     dbUpdates.bio = updates.bio;
@@ -95,6 +101,51 @@ const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   return dbUpdates;
 };
 
+const sanitizeTruckUpdatesForPersistence = (updates: Partial<FoodTruck>): Partial<FoodTruck> => {
+  const sanitized = { ...updates };
+
+  if (Object.prototype.hasOwnProperty.call(sanitized, 'hero_image')) {
+    if (typeof sanitized.hero_image === 'string' && sanitized.hero_image.trim().length > 0) {
+      sanitized.hero_image = sanitized.hero_image.trim();
+    } else {
+      delete sanitized.hero_image;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(sanitized, 'logo')) {
+    if (typeof sanitized.logo === 'string' && sanitized.logo.trim().length > 0) {
+      sanitized.logo = sanitized.logo.trim();
+    } else {
+      delete sanitized.logo;
+    }
+  }
+
+  return sanitized;
+};
+
+const mapTeamUpdateToOwnerMessage = (update: (typeof teamUpdates)[number]): OwnerMessage => ({
+  id: update.id,
+  title: update.title,
+  body: update.body,
+  type: update.important ? 'important' : 'general',
+  created_at: update.date,
+  target_scope: 'all_trucks',
+  target_truck_id: null,
+  read_at: null,
+});
+
+const mapOwnerMessageRow = (row: any, readAt?: string | null): OwnerMessage => ({
+  id: row.id?.toString?.() ?? '',
+  title: row.title ?? '',
+  body: row.body ?? '',
+  type: ['general', 'important', 'maintenance', 'urgent'].includes(row.type) ? row.type : 'general',
+  created_by: row.created_by ?? null,
+  created_at: row.created_at ?? new Date().toISOString(),
+  target_scope: row.target_scope === 'truck' ? 'truck' : 'all_trucks',
+  target_truck_id: row.target_truck_id ?? null,
+  read_at: readAt ?? null,
+});
+
 export type AppState = {
   currentUser: User | null;
   isOnboarded: boolean;
@@ -110,7 +161,10 @@ export type AppState = {
   pendingRedirect: string | null;
   lastViewedOwnerUpdates: string | null;
   selectedAdminTruckId: string | null;
+  ownerMessages: OwnerMessage[];
   setSelectedAdminTruckId: (truckId: string | null) => void;
+  beginImagePickerSession: (source: string) => void;
+  endImagePickerSession: (source: string) => void;
   setShowClosed: (value: boolean) => void;
   setCustomerRadius: (value: number) => void;
   setExploreMode: (value: boolean) => void;
@@ -119,8 +173,8 @@ export type AppState = {
   completeOnboarding: () => void;
   refreshCustomerProfile: () => Promise<void>;
   toggleFavorite: (truckId: string) => void;
-  addMenuImage: (truckId: string, imageUrl: string) => void;
-  removeMenuImage: (truckId: string, imageUrl: string) => void;
+  addMenuImage: (truckId: string, imageUrl: string) => Promise<void>;
+  removeMenuImage: (truckId: string, imageUrl: string) => Promise<void>;
   addTruckImage: (truckId: string, imageUrl: string) => void;
   removeTruckImage: (truckId: string, imageUrl: string) => void;
   updateTruckDetails: (truckId: string, updates: Partial<FoodTruck>) => Promise<void>;
@@ -132,8 +186,8 @@ export type AppState = {
   addReview: (truckId: string, rating: number, text: string) => void;
   getReviews: (truckId: string) => Review[];
   getAverageRating: (truckId: string) => { average: number; count: number };
-  addMenuItem: (item: Omit<MenuItem, 'id'>) => void;
-  updateMenuItem: (itemId: string, updates: Partial<MenuItem>) => void;
+  addMenuItem: (item: Omit<MenuItem, 'id'>) => Promise<MenuItem | null>;
+  updateMenuItem: (itemId: string, updates: Partial<MenuItem>) => Promise<void>;
   deleteMenuItem: (itemId: string) => void;
   updateOperatingHours: (truckId: string, hours: OperatingHours) => Promise<void>;
   getOperatingHours: (truckId: string) => OperatingHours | null;
@@ -172,9 +226,11 @@ export type AppState = {
   refreshAllTrucks: () => Promise<void>;
   setPendingRedirect: (route: string | null) => void;
   consumePendingRedirect: () => string | null;
-  getTeamUpdates: () => TeamUpdate[];
-  markOwnerUpdatesViewed: () => void;
+  getTeamUpdates: () => OwnerMessage[];
+  markOwnerUpdatesViewed: () => Promise<void>;
   hasUnreadOwnerUpdates: () => boolean;
+  refreshOwnerMessages: () => Promise<void>;
+  createOwnerMessage: (message: { title: string; body: string; type: OwnerMessageType }) => Promise<void>;
   formatOperatingHours: (truckId: string) => string;
   supabaseOwnedTrucks: FoodTruck[];
 };
@@ -196,13 +252,47 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [pendingRedirect, setPendingRedirectState] = useState<string | null>(null);
   const [lastViewedOwnerUpdates, setLastViewedOwnerUpdates] = useState<string | null>(null);
   const [selectedAdminTruckId, setSelectedAdminTruckId] = useState<string | null>(null);
+  const [ownerMessages, setOwnerMessages] = useState<OwnerMessage[]>([]);
   const [supabaseOwnedTrucks, setSupabaseOwnedTrucks] = useState<FoodTruck[]>([]);
   const [isOwnerLoading, setIsOwnerLoading] = useState<boolean>(true);
   const [qrShared, setQrShared] = useState<boolean>(false);
   const appStateRef = useRef(RNAppState.currentState);
+  const selectedAdminTruckIdRef = useRef<string | null>(null);
   const lastForegroundRefreshAtRef = useRef(0);
   const foregroundRefreshInFlightRef = useRef(false);
+  const suppressForegroundRefreshRef = useRef(0);
   const staleOpenAutoCloseAttemptedRef = useRef(new Set<string>());
+
+  const beginImagePickerSession = useCallback((source: string) => {
+    suppressForegroundRefreshRef.current += 1;
+    if (__DEV__) {
+      console.log('[AppContext] Foreground refresh suppressed for image picker:', {
+        source,
+        suppressCount: suppressForegroundRefreshRef.current,
+      });
+    }
+  }, []);
+
+  const endImagePickerSession = useCallback((source: string) => {
+    suppressForegroundRefreshRef.current = Math.max(0, suppressForegroundRefreshRef.current - 1);
+    if (__DEV__) {
+      console.log('[AppContext] Foreground refresh suppression released:', {
+        source,
+        suppressCount: suppressForegroundRefreshRef.current,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    selectedAdminTruckIdRef.current = selectedAdminTruckId;
+    if (__DEV__) {
+      console.log('[AppContext] selectedAdminTruckId changed:', {
+        selectedAdminTruckId,
+        currentUserId: userProfile?.id ?? null,
+        role: userProfile?.role ?? null,
+      });
+    }
+  }, [selectedAdminTruckId, userProfile?.id, userProfile?.role]);
 
   // Helper to check if current user owns a truck
   const userOwnsTruck = useCallback((truckId: string): boolean => {
@@ -228,8 +318,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       id: row.id?.toString() ?? '',
       name: row.name ?? '',
       owner_id: row.owner_id ?? '',
-      hero_image: row.hero_image ?? 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=800',
-      logo: row.logo ?? 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=200',
+      hero_image: typeof row.hero_image === 'string' && row.hero_image.trim().length > 0 ? row.hero_image.trim() : DEFAULT_HERO_IMAGE,
+      logo: typeof row.logo === 'string' && row.logo.trim().length > 0 ? row.logo.trim() : DEFAULT_LOGO_IMAGE,
       cuisine_type: row.cuisine_type ?? 'Unspecified',
       menu_images: menuImages,
       images: galleryImages,
@@ -468,6 +558,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
 
     if (DEBUG) console.log('[AppContext] Fetching owned trucks for owner_id:', authUser.id);
+    if (__DEV__) {
+      console.log('[AppContext] owned truck refresh started:', {
+        ownerId: authUser.id,
+        selectedAdminTruckId: selectedAdminTruckIdRef.current,
+      });
+    }
     setIsOwnerLoading(true);
     try {
       const { data, error } = await supabase
@@ -510,6 +606,14 @@ export const [AppProvider, useApp] = createContextHook(() => {
         }
 
         if (DEBUG) console.log('[AppContext] Fetched', merged.length, 'owned trucks');
+        if (__DEV__) {
+          console.log('[AppContext] owned truck refresh result:', {
+            ownerId: authUser.id,
+            count: merged.length,
+            ids: merged.map(truck => truck.id),
+            selectedAdminTruckId: selectedAdminTruckIdRef.current,
+          });
+        }
         setSupabaseOwnedTrucks(merged);
       }
     } catch (err: any) {
@@ -812,6 +916,18 @@ if (!favoritesError && favoriteRows) {
   const refreshOnForeground = useCallback(async (previousState: string, nextState: string) => {
     const now = Date.now();
 
+    if (suppressForegroundRefreshRef.current > 0) {
+      lastForegroundRefreshAtRef.current = now;
+      if (__DEV__) {
+        console.log('[AppContext] Foreground refresh skipped - image picker active:', {
+          previousState,
+          nextState,
+          suppressCount: suppressForegroundRefreshRef.current,
+        });
+      }
+      return;
+    }
+
     if (foregroundRefreshInFlightRef.current) {
       if (__DEV__) {
         console.log('[AppContext] Foreground refresh skipped - already running:', {
@@ -903,6 +1019,17 @@ if (!favoritesError && favoriteRows) {
       appStateRef.current = nextState;
 
       if (/inactive|background/.test(previousState) && nextState === 'active') {
+        if (suppressForegroundRefreshRef.current > 0) {
+          lastForegroundRefreshAtRef.current = Date.now();
+          if (__DEV__) {
+            console.log('[AppContext] AppState active ignored for image picker return:', {
+              previousState,
+              nextState,
+              suppressCount: suppressForegroundRefreshRef.current,
+            });
+          }
+          return;
+        }
         void refreshOnForeground(previousState, nextState);
       }
     });
@@ -1079,26 +1206,6 @@ if (error) {
 
 
 
-  const addMenuImage = useCallback((truckId: string, imageUrl: string) => {
-    setFoodTrucks(prev => 
-      prev.map(truck => 
-        truck.id === truckId 
-          ? { ...truck, menu_images: [...truck.menu_images, imageUrl] } 
-          : truck
-      )
-    );
-  }, []);
-
-  const removeMenuImage = useCallback((truckId: string, imageUrl: string) => {
-    setFoodTrucks(prev => 
-      prev.map(truck => 
-        truck.id === truckId 
-          ? { ...truck, menu_images: truck.menu_images.filter(img => img !== imageUrl) } 
-          : truck
-      )
-    );
-  }, []);
-
   const addTruckImage = useCallback((truckId: string, imageUrl: string) => {
     setFoodTrucks(prev => 
       prev.map(truck => 
@@ -1123,6 +1230,10 @@ if (error) {
   const isArchiveUpdate = Object.prototype.hasOwnProperty.call(updates, 'archived');
   const isArchiving = updates.archived === true;
   const savedAt = new Date().toISOString();
+  const sanitizedUpdates = sanitizeTruckUpdatesForPersistence(updates);
+  const skippedEmptyImageFields = (['hero_image', 'logo'] as const).filter(
+    key => Object.prototype.hasOwnProperty.call(updates, key) && !Object.prototype.hasOwnProperty.call(sanitizedUpdates, key)
+  );
 
   if (!isAuthenticated || !authUser) {
     if (DEBUG) console.log('[AppContext] blocked - not authenticated');
@@ -1137,14 +1248,20 @@ if (error) {
   
 
   if (DEBUG) console.log('[AppContext] updateTruckDetails for:', truckId, 'keys:', Object.keys(updates));
-  if (__DEV__ && (updates.open_now !== undefined || updates.location)) {
+  if (__DEV__ && skippedEmptyImageFields.length > 0) {
+    console.log('[AppContext] Preserving existing truck image fields; skipped empty save values:', {
+      truckId,
+      skippedEmptyImageFields,
+    });
+  }
+  if (__DEV__ && (sanitizedUpdates.open_now !== undefined || sanitizedUpdates.location)) {
     console.log('[AppContext] Go Live update requested:', {
       truckId,
-      openNow: updates.open_now,
-      hasLocation: Boolean(updates.location),
-      latitude: updates.location?.latitude ?? null,
-      longitude: updates.location?.longitude ?? null,
-      hasLabel: Boolean(updates.location?.address?.trim()),
+      openNow: sanitizedUpdates.open_now,
+      hasLocation: Boolean(sanitizedUpdates.location),
+      latitude: sanitizedUpdates.location?.latitude ?? null,
+      longitude: sanitizedUpdates.location?.longitude ?? null,
+      hasLabel: Boolean(sanitizedUpdates.location?.address?.trim()),
     });
   }
   if (__DEV__ && isArchiving) {
@@ -1153,12 +1270,12 @@ if (error) {
 
   setFoodTrucks(prev =>
     prev.map(truck =>
-      truck.id === truckId ? { ...truck, ...updates, lastLiveUpdatedAt: updates.location ? savedAt : truck.lastLiveUpdatedAt } : truck
+      truck.id === truckId ? { ...truck, ...sanitizedUpdates, lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt } : truck
     )
   );
     setSupabaseOwnedTrucks(prev =>
       prev.map(truck =>
-        truck.id === truckId ? { ...truck, ...updates, lastLiveUpdatedAt: updates.location ? savedAt : truck.lastLiveUpdatedAt } : truck
+        truck.id === truckId ? { ...truck, ...sanitizedUpdates, lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt } : truck
       )
     );
     if (__DEV__ && isArchiveUpdate) {
@@ -1174,11 +1291,21 @@ if (error) {
       return;
     }
 
-    const dbUpdates = mapAppFieldsToDb(updates);
+    const dbUpdates = mapAppFieldsToDb(sanitizedUpdates);
     dbUpdates.updated_at = savedAt;
 
     const persistableKeys = Object.keys(dbUpdates).filter(k => k !== 'updated_at');
     if (DEBUG) console.log('[AppContext] DB payload keys:', persistableKeys.join(', '));
+    if (__DEV__) {
+      console.log('[AppContext] Truck Supabase update payload:', {
+        truckId,
+        keys: persistableKeys,
+        heroImage: dbUpdates.hero_image ?? '(preserved)',
+        logo: dbUpdates.logo ?? '(preserved)',
+        galleryImageCount: Array.isArray(dbUpdates.gallery_images) ? dbUpdates.gallery_images.length : undefined,
+        menuImageCount: Array.isArray(dbUpdates.menu_images) ? dbUpdates.menu_images.length : undefined,
+      });
+    }
 
     if (persistableKeys.length > 0) {
       let updateQuery = supabase
@@ -1196,17 +1323,27 @@ if (error) {
       if (__DEV__ && isArchiveUpdate) {
         console.log('[AppContext] Archive Supabase update result:', {
           truckId,
-          archived: updates.archived,
+          archived: sanitizedUpdates.archived,
           rows: data?.length ?? 0,
           error: error?.message ?? null,
         });
       }
-      if (__DEV__ && updates.open_now !== undefined) {
+      if (__DEV__ && sanitizedUpdates.open_now !== undefined) {
         console.log('[AppContext] Truck open status update result:', {
           truckId,
-          openNow: updates.open_now,
+          openNow: sanitizedUpdates.open_now,
           rows: data?.length ?? 0,
           error: error?.message ?? null,
+        });
+      }
+      if (__DEV__) {
+        console.log('[AppContext] Truck Supabase update result:', {
+          truckId,
+          rows: data?.length ?? 0,
+          error: error?.message ?? null,
+          returnedHeroImage: data?.[0]?.hero_image ?? null,
+          returnedLogo: data?.[0]?.logo ?? null,
+          returnedGalleryImageCount: Array.isArray(data?.[0]?.gallery_images) ? data?.[0]?.gallery_images.length : undefined,
         });
       }
 
@@ -1217,12 +1354,12 @@ if (error) {
       if (DEBUG) console.log('[AppContext] Truck update success, rows:', data?.length ?? 0);
     }
 
-    if (updates.location) {
+    if (sanitizedUpdates.location) {
       const locationPayload = {
         truck_id: truckId,
-        latitude: updates.location.latitude,
-        longitude: updates.location.longitude,
-        label: updates.location.address,
+        latitude: sanitizedUpdates.location.latitude,
+        longitude: sanitizedUpdates.location.longitude,
+        label: sanitizedUpdates.location.address,
         updated_at: savedAt,
       };
 
@@ -1326,6 +1463,15 @@ if (error) {
           truck.id === truckId ? { ...truck, ...hydrated } : truck
         )
       );
+      if (__DEV__) {
+        console.log('[AppContext] Post-save truck state refreshed:', {
+          truckId,
+          selectedAdminTruckId: selectedAdminTruckIdRef.current,
+          refreshedOwnerId: hydrated.owner_id,
+          authUserId: authUser.id,
+          role: userProfile?.role ?? null,
+        });
+      }
       if (__DEV__ && isArchiveUpdate) {
         console.log('[AppContext] Archive post-update local state change:', {
           truckId,
@@ -1333,9 +1479,67 @@ if (error) {
           archivedAt: hydrated.archivedAt,
         });
       }
+      if (__DEV__) {
+        console.log('[AppContext] Post-save refreshed truck image data:', {
+          truckId,
+          heroImage: hydrated.hero_image,
+          logo: hydrated.logo,
+          galleryImageCount: hydrated.images.length,
+          menuImageCount: hydrated.menu_images.length,
+        });
+      }
 
     }
   }, [isAuthenticated, authUser, userProfile?.role, userOwnsTruck, mapSupabaseTruckToLocal, mergeTruckLocations]);
+
+  const addMenuImage = useCallback(async (truckId: string, imageUrl: string) => {
+    if (!isAuthenticated || !authUser) {
+      if (DEBUG) console.log('[AppContext] blocked - not authenticated');
+      return;
+    }
+    if (!userOwnsTruck(truckId)) {
+      if (DEBUG) console.log('[AppContext] blocked - user does not own truck:', truckId);
+      return;
+    }
+    const truck = [...supabaseOwnedTrucks, ...foodTrucks].find(t => t.id === truckId);
+    const updatedImages = Array.from(new Set([...(truck?.menu_images || []), imageUrl]));
+    if (__DEV__) {
+      console.log('[AppContext] addMenuImage queued for save:', {
+        truckId,
+        imageUrl,
+        menuImageCount: updatedImages.length,
+      });
+    }
+    await updateTruckDetails(truckId, { menu_images: updatedImages });
+    if (__DEV__) {
+      console.log('[AppContext] addMenuImage persisted:', {
+        truckId,
+        imageUrl,
+        menuImageCount: updatedImages.length,
+      });
+    }
+  }, [isAuthenticated, authUser, userOwnsTruck, foodTrucks, supabaseOwnedTrucks, updateTruckDetails]);
+
+  const removeMenuImage = useCallback(async (truckId: string, imageUrl: string) => {
+    if (!isAuthenticated || !authUser) {
+      if (DEBUG) console.log('[AppContext] blocked - not authenticated');
+      return;
+    }
+    if (!userOwnsTruck(truckId)) {
+      if (DEBUG) console.log('[AppContext] blocked - user does not own truck:', truckId);
+      return;
+    }
+    const truck = [...supabaseOwnedTrucks, ...foodTrucks].find(t => t.id === truckId);
+    const updatedImages = (truck?.menu_images || []).filter(img => img !== imageUrl);
+    if (__DEV__) {
+      console.log('[AppContext] removeMenuImage queued for save:', {
+        truckId,
+        imageUrl,
+        menuImageCount: updatedImages.length,
+      });
+    }
+    await updateTruckDetails(truckId, { menu_images: updatedImages });
+  }, [isAuthenticated, authUser, userOwnsTruck, foodTrucks, supabaseOwnedTrucks, updateTruckDetails]);
 
   const addGalleryImage = useCallback((truckId: string, imageUrl: string) => {
     if (!isAuthenticated || !authUser) {
@@ -1389,13 +1593,17 @@ if (error) {
     const owned = supabaseOwnedTrucks.length > 0
       ? supabaseOwnedTrucks
       : foodTrucks.filter(truck => truck.owner_id === authUser.id);
+    if (userProfile?.role === 'admin' && selectedAdminTruckId) {
+      const selected = [...owned, ...foodTrucks].find(t => t.id === selectedAdminTruckId);
+      if (selected) return selected;
+    }
     if (owned.length === 0) return null;
     if (currentUser?.truck_id) {
       const selected = owned.find(t => t.id === currentUser.truck_id);
       if (selected) return selected;
     }
     return owned[0];
-  }, [isAuthenticated, authUser, currentUser, foodTrucks, supabaseOwnedTrucks]);
+  }, [isAuthenticated, authUser, userProfile?.role, selectedAdminTruckId, currentUser, foodTrucks, supabaseOwnedTrucks]);
 
   const addReview = useCallback(
   async (truckId: string, rating: number, text: string) => {
@@ -1479,7 +1687,7 @@ if (error) {
     return { average: Math.round(average * 10) / 10, count: truckReviews.length };
   }, [reviews]);
 
-  const persistMenuItemsToSupabase = useCallback((truckId: string, items: MenuItem[]) => {
+  const persistMenuItemsToSupabase = useCallback(async (truckId: string, items: MenuItem[]) => {
     if (!isAuthenticated || !authUser) {
       if (DEBUG) console.log('[AppContext] blocked - not authenticated');
       return;
@@ -1490,15 +1698,40 @@ if (error) {
     }
     if (!isSupabaseConfigured) return;
     if (DEBUG) console.log('[AppContext] Persisting menu items for truck:', truckId);
-    supabase
+    if (__DEV__) {
+      console.log('[AppContext] Menu items Supabase save payload:', {
+        truckId,
+        itemCount: items.length,
+        itemsWithImages: items.filter(item => typeof item.image === 'string' && item.image.trim().length > 0).length,
+      });
+    }
+    let updateQuery = supabase
       .from('trucks')
       .update({ menu_items: items, updated_at: new Date().toISOString() })
-      .eq('id', truckId)
-      .eq('owner_id', authUser.id)
-      .then(({ error }) => {
-        if (error) console.log('[AppContext] Error persisting menu items:', error.message);
+      .eq('id', truckId);
+
+    if (userProfile?.role !== 'admin') {
+      updateQuery = updateQuery.eq('owner_id', authUser.id);
+    }
+
+    const { data, error } = await updateQuery.select('id, menu_items');
+
+    if (__DEV__) {
+      const refreshedItems = parseJsonArray(data?.[0]?.menu_items);
+      console.log('[AppContext] Menu items Supabase update result:', {
+        truckId,
+        rows: data?.length ?? 0,
+        error: error?.message ?? null,
+        refreshedItemCount: refreshedItems.length,
+        refreshedItemsWithImages: refreshedItems.filter(item => typeof item?.image === 'string' && item.image.trim().length > 0).length,
       });
-  }, [isAuthenticated, authUser, userOwnsTruck]);
+    }
+
+    if (error) {
+      console.error('[AppContext] Error persisting menu items:', error.message);
+      throw new Error(`Failed to persist menu items: ${error.message}`);
+    }
+  }, [isAuthenticated, authUser, userOwnsTruck, userProfile?.role]);
 
   const persistAnnouncementsToSupabase = useCallback(async (truckId: string, items: Announcement[]) => {
   if (!isAuthenticated || !authUser) {
@@ -1549,48 +1782,74 @@ if (error) {
   }
 }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured]);
 
-  const addMenuItem = useCallback((item: Omit<MenuItem, 'id'>) => {
+  const addMenuItem = useCallback(async (item: Omit<MenuItem, 'id'>): Promise<MenuItem | null> => {
     if (!isAuthenticated || !authUser) {
       if (DEBUG) console.log('[AppContext] blocked - not authenticated');
-      return;
+      return null;
     }
     if (!userOwnsTruck(item.truck_id)) {
       if (DEBUG) console.log('[AppContext] blocked - user does not own truck:', item.truck_id);
-      return;
+      return null;
     }
     const newItem: MenuItem = {
       ...item,
       id: `menu-${Date.now()}`,
     };
-    setMenuItems(prev => {
-      const updated = [...prev, newItem];
-      const truckItems = updated.filter(i => i.truck_id === item.truck_id);
-      persistMenuItemsToSupabase(item.truck_id, truckItems);
-      return updated;
-    });
-  }, [isAuthenticated, authUser, userOwnsTruck, persistMenuItemsToSupabase]);
+    const updated = [...menuItems, newItem];
+    const truckItems = updated.filter(i => i.truck_id === item.truck_id);
+    if (__DEV__) {
+      console.log('[AppContext] addMenuItem local+persist start:', {
+        truckId: item.truck_id,
+        itemId: newItem.id,
+        image: newItem.image ?? null,
+      });
+    }
+    setMenuItems(updated);
+    try {
+      await persistMenuItemsToSupabase(item.truck_id, truckItems);
+      return newItem;
+    } catch (error) {
+      console.error('[AppContext] addMenuItem persist failed:', error);
+      setMenuItems(menuItems);
+      throw error;
+    }
+  }, [isAuthenticated, authUser, userOwnsTruck, persistMenuItemsToSupabase, menuItems]);
 
-  const updateMenuItem = useCallback((itemId: string, updates: Partial<MenuItem>) => {
+  const updateMenuItem = useCallback(async (itemId: string, updates: Partial<MenuItem>): Promise<void> => {
     if (!isAuthenticated || !authUser) {
       if (DEBUG) console.log('[AppContext] blocked - not authenticated');
       return;
     }
-    setMenuItems(prev => {
-      const changedItem = prev.find(i => i.id === itemId);
-      if (changedItem && !userOwnsTruck(changedItem.truck_id)) {
-        if (DEBUG) console.log('[AppContext] blocked - user does not own truck:', changedItem.truck_id);
-        return prev;
-      }
-      const updated = prev.map(item =>
-        item.id === itemId ? { ...item, ...updates } : item
-      );
-      const updatedItem = updated.find(i => i.id === itemId);
-      if (updatedItem) {
-        const truckItems = updated.filter(i => i.truck_id === updatedItem.truck_id);
-        persistMenuItemsToSupabase(updatedItem.truck_id, truckItems);
-      }
-      return updated;
-    });
+
+    const changedItem = menuItems.find(i => i.id === itemId);
+    if (!changedItem) {
+      if (__DEV__) console.error('[AppContext] updateMenuItem blocked - item not found:', { itemId });
+      return;
+    }
+    if (!userOwnsTruck(changedItem.truck_id)) {
+      if (DEBUG) console.log('[AppContext] blocked - user does not own truck:', changedItem.truck_id);
+      return;
+    }
+    const updated = menuItems.map(item =>
+      item.id === itemId ? { ...item, ...updates } : item
+    );
+    const updatedItem = updated.find(i => i.id === itemId);
+    const truckItems = updated.filter(i => i.truck_id === changedItem.truck_id);
+    if (__DEV__) {
+      console.log('[AppContext] updateMenuItem local+persist start:', {
+        truckId: changedItem.truck_id,
+        itemId,
+        image: updatedItem?.image ?? null,
+      });
+    }
+    setMenuItems(updated);
+    try {
+      await persistMenuItemsToSupabase(changedItem.truck_id, truckItems);
+    } catch (error) {
+      console.error('[AppContext] updateMenuItem persist failed:', error);
+      setMenuItems(menuItems);
+      throw error;
+    }
   }, [isAuthenticated, authUser, userOwnsTruck, persistMenuItemsToSupabase, menuItems]);
 
   const deleteMenuItem = useCallback((itemId: string) => {
@@ -1842,31 +2101,165 @@ if (error) {
     return route;
   }, [pendingRedirect]);
 
-  const getTeamUpdates = useCallback(() => {
-    return teamUpdates.sort((a, b) => {
-      if (a.important !== b.important) {
-        return a.important ? -1 : 1;
-      }
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
-  }, []);
+  const refreshOwnerMessages = useCallback(async (): Promise<void> => {
+    if (!isAuthenticated || !authUser || authLoading) {
+      setOwnerMessages([]);
+      return;
+    }
 
-  const markOwnerUpdatesViewed = useCallback(() => {
+    const canViewOwnerMessages = userProfile?.role === 'admin' || isOwner;
+    if (!canViewOwnerMessages) {
+      setOwnerMessages([]);
+      return;
+    }
+
+    if (!isSupabaseConfigured) {
+      setOwnerMessages(teamUpdates.map(mapTeamUpdateToOwnerMessage));
+      return;
+    }
+
+    try {
+      const { data: messageRows, error: messagesError } = await supabase
+        .from('owner_messages')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (messagesError) {
+        console.log('[AppContext] Owner messages fetch error:', messagesError.message);
+        setOwnerMessages(teamUpdates.map(mapTeamUpdateToOwnerMessage));
+        return;
+      }
+
+      const messageIds = (messageRows ?? []).map((row: any) => row.id).filter(Boolean);
+      let readsByMessageId = new Map<string, string>();
+
+      if (messageIds.length > 0) {
+        const { data: readRows, error: readsError } = await supabase
+          .from('owner_message_reads')
+          .select('message_id, read_at')
+          .eq('user_id', authUser.id)
+          .in('message_id', messageIds);
+
+        if (readsError) {
+          console.log('[AppContext] Owner message reads fetch error:', readsError.message);
+        } else {
+          readsByMessageId = new Map(
+            (readRows ?? []).map((row: any) => [row.message_id?.toString?.() ?? '', row.read_at])
+          );
+        }
+      }
+
+      const mapped = (messageRows ?? []).map((row: any) =>
+        mapOwnerMessageRow(row, readsByMessageId.get(row.id?.toString?.() ?? '') ?? null)
+      );
+      setOwnerMessages(mapped);
+    } catch (error: any) {
+      console.log('[AppContext] Unexpected owner messages fetch error:', error?.message ?? error);
+      setOwnerMessages(teamUpdates.map(mapTeamUpdateToOwnerMessage));
+    }
+  }, [authLoading, authUser, isAuthenticated, isOwner, userProfile?.role]);
+
+  useEffect(() => {
+    void refreshOwnerMessages();
+  }, [refreshOwnerMessages]);
+
+  const createOwnerMessage = useCallback(async (message: { title: string; body: string; type: OwnerMessageType }) => {
+    if (!isAuthenticated || !authUser || userProfile?.role !== 'admin') {
+      throw new Error('Only admins can send owner messages.');
+    }
+
+    const title = message.title.trim();
+    const body = message.body.trim();
+    if (!title || !body) {
+      throw new Error('Title and message body are required.');
+    }
+
+    if (!isSupabaseConfigured) {
+      const localMessage: OwnerMessage = {
+        id: `local-owner-message-${Date.now()}`,
+        title,
+        body,
+        type: message.type,
+        created_by: authUser.id,
+        created_at: new Date().toISOString(),
+        target_scope: 'all_trucks',
+        target_truck_id: null,
+        read_at: null,
+      };
+      setOwnerMessages(prev => [localMessage, ...prev]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('owner_messages')
+      .insert({
+        title,
+        body,
+        type: message.type,
+        created_by: authUser.id,
+        target_scope: 'all_trucks',
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      console.log('[AppContext] Owner message create error:', error.message);
+      throw new Error(`Could not send message: ${error.message}`);
+    }
+
+    const created = mapOwnerMessageRow(data, null);
+    setOwnerMessages(prev => [created, ...prev].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ));
+  }, [authUser, isAuthenticated, userProfile?.role]);
+
+  const getTeamUpdates = useCallback(() => {
+    return [...ownerMessages].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }, [ownerMessages]);
+
+  const markOwnerUpdatesViewed = useCallback(async () => {
     const now = new Date().toISOString();
     setLastViewedOwnerUpdates(now);
     void AsyncStorage.setItem('lastViewedOwnerUpdates', JSON.stringify(now));
 
-  }, []);
+    const unreadMessages = ownerMessages.filter(message => !message.read_at);
+    if (unreadMessages.length === 0 || !isAuthenticated || !authUser) {
+      return;
+    }
+
+    setOwnerMessages(prev => prev.map(message =>
+      message.read_at ? message : { ...message, read_at: now }
+    ));
+
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    const rows = unreadMessages.map(message => ({
+      message_id: message.id,
+      user_id: authUser.id,
+      read_at: now,
+    }));
+
+    const { error } = await supabase
+      .from('owner_message_reads')
+      .upsert(rows, { onConflict: 'message_id,user_id' });
+
+    if (error) {
+      console.log('[AppContext] Owner message read receipt error:', error.message);
+    }
+  }, [authUser, isAuthenticated, ownerMessages]);
 
   const hasUnreadOwnerUpdates = useCallback(() => {
-    if (!lastViewedOwnerUpdates) return teamUpdates.length > 0;
-    
-    const lastViewed = new Date(lastViewedOwnerUpdates);
-    return teamUpdates.some(update => {
-      const updateDate = new Date(update.date);
-      return updateDate > lastViewed;
-    });
-  }, [lastViewedOwnerUpdates]);
+    if (ownerMessages.some(message => !message.read_at)) return true;
+    if (!lastViewedOwnerUpdates && ownerMessages.length > 0) return true;
+
+    if (!lastViewedOwnerUpdates) return false;
+    const lastViewed = new Date(lastViewedOwnerUpdates).getTime();
+    return ownerMessages.some(message => new Date(message.created_at).getTime() > lastViewed);
+  }, [lastViewedOwnerUpdates, ownerMessages]);
 
   const formatTime = (timeStr: string): string => {
     const [hours, minutes] = timeStr.split(':').map(Number);
@@ -1925,7 +2318,10 @@ if (error) {
     pendingRedirect,
     lastViewedOwnerUpdates,
     selectedAdminTruckId,
+    ownerMessages,
     setSelectedAdminTruckId,
+    beginImagePickerSession,
+    endImagePickerSession,
     setShowClosed,
     setCustomerRadius,
     setExploreMode,
@@ -1982,11 +2378,14 @@ if (error) {
     getTeamUpdates,
     markOwnerUpdatesViewed,
     hasUnreadOwnerUpdates,
+    refreshOwnerMessages,
+    createOwnerMessage,
     formatOperatingHours,
   }), [
     currentUser, isOnboarded, foodTrucks, reviews, menuItems, announcements,
     checklistDismissed, showClosed, customerRadius, exploreMode, exploreCenter,
-    pendingRedirect, lastViewedOwnerUpdates, selectedAdminTruckId, setSelectedAdminTruckId,
+    pendingRedirect, lastViewedOwnerUpdates, selectedAdminTruckId, ownerMessages, setSelectedAdminTruckId,
+    beginImagePickerSession, endImagePickerSession,
     setShowClosed, setCustomerRadius, setExploreMode, setExploreCenter, setCurrentUser, completeOnboarding,
     toggleFavorite, addMenuImage,
     removeMenuImage, addTruckImage, addGalleryImage, removeGalleryImage,
@@ -1999,7 +2398,7 @@ if (error) {
     deleteAnnouncement, getAnnouncements, setTruckVerified, logout,
     incrementQrScan, getQrScanStats, allTrucksLoading, fetchAllTrucksFromSupabase, isProfileComplete,
     getDaysAgoText, setPendingRedirect, consumePendingRedirect, getTeamUpdates,
-    markOwnerUpdatesViewed, hasUnreadOwnerUpdates, formatOperatingHours,
+    markOwnerUpdatesViewed, hasUnreadOwnerUpdates, refreshOwnerMessages, createOwnerMessage, formatOperatingHours,
   ]);
 });
 

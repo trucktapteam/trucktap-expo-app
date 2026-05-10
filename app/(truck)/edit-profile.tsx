@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter, useSegments } from 'expo-router';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { ChevronLeft, Camera, MapPin, Phone, Globe } from 'lucide-react-native';
@@ -21,6 +21,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Toast from '@/components/Toast';
 import AuthPromptModal from '@/components/AuthPromptModal';
 import { supabase } from '@/lib/supabase';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const CUISINES = [
   'Mexican',
@@ -39,7 +40,9 @@ const CUISINES = [
 
 export default function EditProfile() {
   const router = useRouter();
-  const { getUserTruck, updateTruckDetails } = useApp();
+  const pathname = usePathname();
+  const segments = useSegments();
+  const { getUserTruck, updateTruckDetails, beginImagePickerSession, endImagePickerSession } = useApp();
   const { isAuthenticated } = useAuth();
   const truck = getUserTruck();
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
@@ -58,6 +61,9 @@ export default function EditProfile() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; visible: boolean }>({ message: '', type: 'success', visible: false });
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const hydratedTruckIdRef = useRef<string | null>(null);
+
+  useTruckLifecycleLogger('EditProfile');
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -66,16 +72,24 @@ export default function EditProfile() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (truck) {
-      setName(truck.name || '');
-      setCuisineType(truck.cuisine_type || '');
-      setPhone(truck.phone || '');
-      setBio(truck.bio || '');
-      setWebsite(truck.website || '');
-      setAddress(truck.location?.address || '');
-      setHeroImage(truck.hero_image || '');
-      setLogo(truck.logo || '');
+    if (!truck) {
+      hydratedTruckIdRef.current = null;
+      return;
     }
+
+    if (hydratedTruckIdRef.current === truck.id) {
+      return;
+    }
+
+    hydratedTruckIdRef.current = truck.id;
+    setName(truck.name || '');
+    setCuisineType(truck.cuisine_type || '');
+    setPhone(truck.phone || '');
+    setBio(truck.bio || '');
+    setWebsite(truck.website || '');
+    setAddress(truck.location?.address || '');
+    setHeroImage(truck.hero_image || '');
+    setLogo(truck.logo || '');
   }, [truck]);
 
   useEffect(() => {
@@ -201,15 +215,19 @@ export default function EditProfile() {
         };
       }
 
-      console.log('[EditProfile] Save payload:', JSON.stringify(updates, null, 2));
+      if (__DEV__) {
+        console.log('[EditProfile] Save payload:', {
+          truckId: truck.id,
+          keys: Object.keys(updates),
+          heroImage: updates.hero_image || '(preserved if empty)',
+          logo: updates.logo || '(preserved if empty)',
+          hasLocation: Boolean(updates.location),
+        });
+      }
       await updateTruckDetails(truck.id, updates);
-      console.log('[EditProfile] Save completed successfully');
+      if (__DEV__) console.log('[EditProfile] Save completed successfully');
 
-      setToast({ message: 'Profile updated successfully!', type: 'success', visible: true });
-      
-      setTimeout(() => {
-        router.back();
-      }, 1500);
+      setToast({ message: 'Saved successfully.', type: 'success', visible: true });
     } catch (error: any) {
       console.error('Error saving profile:', error);
       const message = error?.message || 'Failed to save profile. Please try again.';
@@ -229,7 +247,6 @@ export default function EditProfile() {
     heroImage,
     logo,
     updateTruckDetails,
-    router,
     isAuthenticated,
   ]);
 
@@ -237,13 +254,13 @@ export default function EditProfile() {
   const uploadImageAsync = useCallback(
   async (uri: string, truckId: string, type: 'hero' | 'logo'): Promise<string> => {
     try {
-      console.log('[EditProfile] uploading image', uri);
+      if (__DEV__) console.log('[EditProfile] uploading image', { type, uri });
 
       const response = await fetch(uri);
       const arrayBuffer = await response.arrayBuffer();
       const filePath = `${truckId}/${type}-${Date.now()}.jpg`;
 
-      console.log('[EditProfile] storage path:', filePath);
+      if (__DEV__) console.log('[EditProfile] storage path:', filePath);
 
       const { error: uploadError } = await supabase.storage
         .from('truck-images')
@@ -260,7 +277,13 @@ export default function EditProfile() {
         data: { publicUrl },
       } = supabase.storage.from('truck-images').getPublicUrl(filePath);
 
-      console.log('[EditProfile] public url retrieved', publicUrl);
+      if (__DEV__) {
+        console.log('[EditProfile] upload success URL:', {
+          type,
+          truckId,
+          publicUrl,
+        });
+      }
       return publicUrl;
     } catch (err) {
       console.error('[EditProfile] uploadImageAsync error:', err);
@@ -272,6 +295,13 @@ export default function EditProfile() {
 
   const pickImage = useCallback(
     async (type: 'hero' | 'logo') => {
+      if (__DEV__) {
+        console.log('[EditProfile] pickImage pressed:', {
+          type,
+          truckId: truck?.id ?? null,
+        });
+      }
+
       if (Platform.OS === 'web') {
         const url = prompt('Enter the URL of your image:');
         if (url) {
@@ -284,42 +314,95 @@ export default function EditProfile() {
         return;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: type === 'hero' ? [16, 9] : [1, 1],
-        quality: 0.8,
-      });
+      beginImagePickerSession(`EditProfile:${type}`);
 
-      if (!result.canceled && result.assets[0]) {
-        const localUri = result.assets[0].uri;
-        if (truck && truck.id) {
-          try {
-            const publicUrl = await uploadImageAsync(localUri, truck.id, type);
-            if (type === 'hero') {
-              setHeroImage(publicUrl);
-            } else {
-              setLogo(publicUrl);
+      try {
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: type === 'hero' ? [16, 9] : [1, 1],
+          quality: 0.8,
+        });
+
+        if (__DEV__) {
+          console.log('[EditProfile] image picker result:', {
+            type,
+            canceled: result.canceled,
+            assetCount: result.canceled ? 0 : result.assets.length,
+            firstUri: !result.canceled ? result.assets[0]?.uri ?? null : null,
+          });
+        }
+
+        if (!result.canceled && result.assets[0]) {
+          const localUri = result.assets[0].uri;
+          if (truck && truck.id) {
+            try {
+              const publicUrl = await uploadImageAsync(localUri, truck.id, type);
+              if (type === 'hero') {
+                setHeroImage(publicUrl);
+                if (__DEV__) {
+                  console.log('[EditProfile] Persisting hero upload immediately:', {
+                    truckId: truck.id,
+                    publicUrl,
+                  });
+                }
+                await updateTruckDetails(truck.id, { hero_image: publicUrl });
+                if (__DEV__) {
+                  console.log('[EditProfile] Hero upload persisted without navigation');
+                  console.log('[EditProfile] route immediately after hero persist:', {
+                    pathname,
+                    segments: [...segments],
+                    truckId: truck.id,
+                  });
+                  setTimeout(() => {
+                    console.log('[EditProfile] route after hero persist tick:', {
+                      pathname,
+                      segments: [...segments],
+                      truckId: truck.id,
+                    });
+                  }, 0);
+                }
+              } else {
+                setLogo(publicUrl);
+                if (__DEV__) {
+                  console.log('[EditProfile] Persisting logo upload immediately:', {
+                    truckId: truck.id,
+                    publicUrl,
+                  });
+                }
+                await updateTruckDetails(truck.id, { logo: publicUrl });
+                if (__DEV__) {
+                  console.log('[EditProfile] Logo upload persisted without navigation');
+                  console.log('[EditProfile] route immediately after logo persist:', {
+                    pathname,
+                    segments: [...segments],
+                    truckId: truck.id,
+                  });
+                }
+              }
+              setToast({ message: 'Saved successfully.', type: 'success', visible: true });
+            } catch (error) {
+              console.error('[EditProfile] image upload failed:', error);
+              setToast({
+                message: 'Image upload failed. Please try again before saving.',
+                type: 'error',
+                visible: true,
+              });
             }
-          } catch (error) {
-            console.error('[EditProfile] image upload failed, falling back to local uri', error);
+          } else {
+            // no truck context, just use the local URI
             if (type === 'hero') {
               setHeroImage(localUri);
             } else {
               setLogo(localUri);
             }
           }
-        } else {
-          // no truck context, just use the local URI
-          if (type === 'hero') {
-            setHeroImage(localUri);
-          } else {
-            setLogo(localUri);
-          }
         }
+      } finally {
+        endImagePickerSession(`EditProfile:${type}`);
       }
     },
-    [truck, uploadImageAsync]
+    [truck, uploadImageAsync, updateTruckDetails, pathname, segments, beginImagePickerSession, endImagePickerSession]
   );
 
   if (!truck) {

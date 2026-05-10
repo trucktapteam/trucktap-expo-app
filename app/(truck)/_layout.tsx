@@ -1,48 +1,52 @@
-import { Stack, usePathname, useRouter } from 'expo-router';
+import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
 import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 export default function TruckLayout() {
   const { colors } = useTheme();
   const { isAuthenticated, isLoading } = useAuth();
-  const { currentUser, getUserTruck, isOwner, isOwnerLoading } = useApp();
+  const { currentUser, isOwner, isOwnerLoading } = useApp();
   const router = useRouter();
   const pathname = usePathname();
-  const isAdminExternalRoute =
-    pathname === '/admin-truck-picker' || pathname === '/truck-setup';
+  const segments = useSegments();
 
   const loading = isLoading || isOwnerLoading || (isAuthenticated && !currentUser);
 
+  useTruckLifecycleLogger('TruckLayout');
+
   useEffect(() => {
+    if (__DEV__) {
+      console.log('[TruckLayout] auth gate evaluated:', {
+        pathname,
+        segments: [...segments],
+        loading,
+        isAuthenticated,
+        isOwner,
+        hasCurrentUser: Boolean(currentUser),
+      });
+    }
     if (loading) return;
     if (!isAuthenticated) {
-      console.log('[TruckLayout] Not authenticated, redirecting to login');
+      console.log('[TruckLayout] Not authenticated, redirecting to login', {
+        pathname,
+        segments: [...segments],
+      });
       router.replace('/truck-login' as any);
       return;
     }
     if (!isOwner) {
-      console.log('[TruckLayout] Authenticated but no owned trucks, redirecting to login');
+      console.log('[TruckLayout] Authenticated but no owned trucks, redirecting to login', {
+        pathname,
+        segments: [...segments],
+      });
       router.replace('/truck-login' as any);
       return;
     }
-    if (
-      currentUser?.role === 'admin' &&
-      !getUserTruck() &&
-      !pathname.includes('/dashboard') &&
-      !isAdminExternalRoute
-    ) {
-      if (__DEV__) {
-        console.log('[TruckLayout] Admin without owned truck redirected to dashboard:', {
-          pathname,
-          targetRoute: '/(truck)/(tabs)/dashboard',
-        });
-      }
-      router.replace('/(truck)/(tabs)/dashboard' as any);
-    }
-  }, [currentUser?.role, getUserTruck, isAdminExternalRoute, isAuthenticated, loading, isOwner, pathname, router]);
+  }, [currentUser, isAuthenticated, loading, isOwner, pathname, router, segments]);
 
   if (loading) {
     return (
@@ -81,7 +85,7 @@ export default function TruckLayout() {
       <Stack.Screen name="poster" options={{ title: 'Poster' }} />
       <Stack.Screen name="poster-video" options={{ title: 'Video Poster' }} />
       <Stack.Screen name="settings" options={{ title: 'Settings' }} />
-      <Stack.Screen name="owner-updates" options={{ title: 'Owner Updates' }} />
+      <Stack.Screen name="owner-updates" options={{ title: 'Message Center' }} />
     </Stack>
   );
 }

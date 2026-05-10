@@ -8,6 +8,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import FullImageModal from '@/components/FullImageModal';
 import { supabase } from '@/lib/supabase';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const { width } = Dimensions.get('window');
 const SPACING = 12;
@@ -16,11 +17,19 @@ const IMAGE_SIZE = (width - (SPACING * (COLUMNS + 1))) / COLUMNS;
 
 export default function TruckGalleryScreen() {
   const router = useRouter();
-  const { getUserTruck, addGalleryImage, removeGalleryImage } = useApp();
+  const {
+    getUserTruck,
+    addGalleryImage,
+    removeGalleryImage,
+    beginImagePickerSession,
+    endImagePickerSession,
+  } = useApp();
 
   const truck = getUserTruck();
   const [loading, setLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  useTruckLifecycleLogger('TruckGallery');
 
   // helper to upload a gallery image to Supabase storage and return a public URL
   const uploadGalleryImageAsync = useCallback(
@@ -51,7 +60,12 @@ export default function TruckGalleryScreen() {
           .from('truck-images')
           .getPublicUrl(filePath);
 
-        console.log('[TruckGallery] public url retrieved', publicUrl);
+        if (__DEV__) {
+          console.log('[TruckGallery] upload success URL:', {
+            truckId,
+            publicUrl,
+          });
+        }
         return publicUrl;
       } catch (err) {
         console.error('[TruckGallery] uploadGalleryImageAsync error:', err);
@@ -70,25 +84,36 @@ export default function TruckGalleryScreen() {
   }
 
   const handleAddPhoto = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-    });
+    beginImagePickerSession('TruckGallery');
 
-    if (!result.canceled && result.assets.length > 0) {
-      const localUri = result.assets[0].uri;
-      setLoading(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+      });
 
-      try {
-        const publicUrl = await uploadGalleryImageAsync(localUri, truck.id);
-        addGalleryImage(truck.id, publicUrl);
-        console.log('[TruckGallery] gallery image added successfully');
-      } catch (error) {
-        console.error('[TruckGallery] failed to upload gallery image:', error);
-        Alert.alert('Upload Failed', 'Failed to upload image. Please try again.');
-      } finally {
-        setLoading(false);
+      if (!result.canceled && result.assets.length > 0) {
+        const localUri = result.assets[0].uri;
+        setLoading(true);
+
+        try {
+          const publicUrl = await uploadGalleryImageAsync(localUri, truck.id);
+          addGalleryImage(truck.id, publicUrl);
+          if (__DEV__) {
+            console.log('[TruckGallery] gallery image queued for save:', {
+              truckId: truck.id,
+              publicUrl,
+            });
+          }
+        } catch (error) {
+          console.error('[TruckGallery] failed to upload gallery image:', error);
+          Alert.alert('Upload Failed', 'Failed to upload image. Please try again.');
+        } finally {
+          setLoading(false);
+        }
       }
+    } finally {
+      endImagePickerSession('TruckGallery');
     }
   };
 

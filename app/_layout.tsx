@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack, useRouter } from "expo-router";
+import { Stack, usePathname, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useRef } from "react";
 import { Platform } from "react-native";
@@ -78,6 +78,15 @@ const getNormalizedDeepLinkPath = (url: string, parsedPath?: string | null): str
 
 function RootLayoutNav() {
   const { colors } = useTheme();
+  const pathname = usePathname();
+  const segments = useSegments();
+
+  useEffect(() => {
+    devLog('[RootLayoutNav] route changed:', {
+      pathname,
+      segments: [...segments],
+    });
+  }, [pathname, segments]);
   
   return (
     <Stack screenOptions={{

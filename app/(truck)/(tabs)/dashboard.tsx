@@ -11,6 +11,7 @@ import DashboardCard from '@/components/DashboardCard';
 import Toast from '@/components/Toast';
 import { DEBUG } from '@/constants/debug';
 import { getTruckShareUrl } from '@/lib/truckShare';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -61,6 +62,7 @@ const formatServingLocation = (truck: any): string => {
 export default function TruckDashboard() {
   const router = useRouter();
   const pathname = usePathname();
+  useTruckLifecycleLogger('TruckDashboard');
   const {
     currentUser,
     foodTrucks,
@@ -788,7 +790,7 @@ export default function TruckDashboard() {
           <View style={styles.cardWithBadge}>
             <DashboardCard 
               icon={Bell}
-              label="Owner Updates"
+              label="Message Center"
               onPress={() => router.push('/(truck)/owner-updates' as any)}
             />
             {hasUnread && (

@@ -7,6 +7,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { OperatingHours } from '@/types';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -18,6 +19,7 @@ export default function OperatingHoursScreen() {
   const router = useRouter();
   const { getUserTruck, updateOperatingHours, getOperatingHours, isTruckOpenNow } = useApp();
   const truck = getUserTruck();
+  useTruckLifecycleLogger('OperatingHoursScreen');
 
   const defaultHours: OperatingHours = DAYS.reduce((acc, day) => {
     acc[day] = { open: '09:00', close: '17:00', closed: false };

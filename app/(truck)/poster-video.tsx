@@ -22,6 +22,7 @@ import PromoVideoTemplateB from '@/components/posters/video/PromoVideoTemplateB'
 import PromoVideoTemplateC from '@/components/posters/video/PromoVideoTemplateC';
 import { captureRef } from 'react-native-view-shot';
 import { getTruckDeepLink, getTruckShareUrl } from '@/lib/truckShare';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 type VideoTemplate = 'clean' | 'neon' | 'graffiti';
 
@@ -54,6 +55,7 @@ export default function PosterVideoScreen() {
   const [duration, setDuration] = useState<number>(8);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const videoRef = useRef<View>(null);
+  useTruckLifecycleLogger('PosterVideoScreen');
 
   const generateQRCode = useCallback(async () => {
     if (!truck) return;

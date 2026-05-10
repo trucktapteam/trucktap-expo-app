@@ -27,6 +27,7 @@ import AnimatedNeonPoster from '@/components/posters/animated/AnimatedNeonPoster
 import AnimatedGraffitiPoster from '@/components/posters/animated/AnimatedGraffitiPoster';
 import { captureRef } from 'react-native-view-shot';
 import { getTruckDeepLink, getTruckShareUrl } from '@/lib/truckShare';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 export default function PosterScreen() {
   const { getUserTruck } = useApp();
@@ -39,6 +40,7 @@ export default function PosterScreen() {
   const [isAnimated, setIsAnimated] = useState<boolean>(false);
   const posterRef = useRef<View>(null);
   const animatedPosterRef = useRef<View>(null);
+  useTruckLifecycleLogger('PosterScreen');
 
   const generateQRCode = useCallback(async () => {
     if (!truck) return;

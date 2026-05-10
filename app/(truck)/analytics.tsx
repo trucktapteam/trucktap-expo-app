@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { Eye, Heart, Star, Phone, Navigation, Image as ImageIcon, ChevronLeft, Menu, TrendingUp } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckRating } from '@/contexts/AppContext';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 type StatCardProps = {
   icon: React.ComponentType<any>;
@@ -71,6 +72,8 @@ export default function AnalyticsDashboard() {
   const rating = useTruckRating(truck?.id || '');
 
   const headerAnim = useRef(new Animated.Value(0)).current;
+
+  useTruckLifecycleLogger('AnalyticsDashboard');
 
   useEffect(() => {
     Animated.timing(headerAnim, {

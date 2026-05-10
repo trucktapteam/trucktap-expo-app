@@ -25,6 +25,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { MenuItem } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -61,7 +62,16 @@ type SortOption = 'name-asc' | 'name-desc' | 'price-asc' | 'price-desc';
 
 export default function MenuEditor() {
   const router = useRouter();
-  const { getUserTruck, menuItems, addMenuItem, updateMenuItem, deleteMenuItem } = useApp();
+  const {
+    getUserTruck,
+    menuItems,
+    addMenuItem,
+    updateMenuItem,
+    deleteMenuItem,
+    addMenuImage,
+    beginImagePickerSession,
+    endImagePickerSession,
+  } = useApp();
   const truck = getUserTruck();
 
   const [modalVisible, setModalVisible] = useState<boolean>(false);
@@ -79,6 +89,7 @@ export default function MenuEditor() {
   const [showBulkMenu, setShowBulkMenu] = useState<boolean>(false);
   const [savedItemId, setSavedItemId] = useState<string | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const [isPickingImage, setIsPickingImage] = useState<boolean>(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const modalSlideAnim = useRef(new Animated.Value(300)).current;
 
@@ -86,6 +97,8 @@ export default function MenuEditor() {
     if (!truck) return [];
     return menuItems.filter(item => item.truck_id === truck.id);
   }, [menuItems, truck]);
+
+  useTruckLifecycleLogger('MenuEditor');
 
   const filteredAndSortedMenu = useMemo(() => {
     let filtered = [...truckMenu];
@@ -166,7 +179,16 @@ export default function MenuEditor() {
     setModalVisible(true);
   };
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
+    if (__DEV__) {
+      console.log('[MenuEditor] handleSave pressed:', {
+        truckId: truck?.id ?? null,
+        editingItemId: editingItem?.id ?? null,
+        hasFormImage: Boolean(formImage.trim()),
+        formImage: formImage.trim() || null,
+      });
+    }
+
     if (!formName.trim() || !formDescription.trim() || !formPrice.trim()) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
@@ -181,27 +203,65 @@ export default function MenuEditor() {
     if (!truck) return;
 
     if (editingItem) {
-      updateMenuItem(editingItem.id, {
-        name: formName.trim(),
-        description: formDescription.trim(),
-        price,
-        category: formCategory.trim() || undefined,
-        image: formImage.trim() || undefined,
-        available: formAvailable,
-      });
-      setSavedItemId(editingItem.id);
+      if (__DEV__) {
+        console.log('[MenuEditor] updateMenuItem payload:', {
+          itemId: editingItem.id,
+          truckId: truck.id,
+          image: formImage.trim() || null,
+        });
+      }
+      try {
+        await updateMenuItem(editingItem.id, {
+          name: formName.trim(),
+          description: formDescription.trim(),
+          price,
+          category: formCategory.trim() || undefined,
+          image: formImage.trim() || undefined,
+          available: formAvailable,
+        });
+        if (__DEV__) {
+          console.log('[MenuEditor] updateMenuItem completed:', {
+            itemId: editingItem.id,
+            image: formImage.trim() || null,
+          });
+        }
+        setSavedItemId(editingItem.id);
+      } catch (error) {
+        console.error('[MenuEditor] updateMenuItem failed:', error);
+        Alert.alert('Save Failed', 'Could not save this menu item. Please try again.');
+        return;
+      }
     } else {
       const newId = `menu-${Date.now()}`;
-      addMenuItem({
-        truck_id: truck.id,
-        name: formName.trim(),
-        description: formDescription.trim(),
-        price,
-        category: formCategory.trim() || undefined,
-        image: formImage.trim() || undefined,
-        available: formAvailable,
-      });
-      setSavedItemId(newId);
+      if (__DEV__) {
+        console.log('[MenuEditor] addMenuItem payload:', {
+          temporaryItemId: newId,
+          truckId: truck.id,
+          image: formImage.trim() || null,
+        });
+      }
+      try {
+        const savedItem = await addMenuItem({
+          truck_id: truck.id,
+          name: formName.trim(),
+          description: formDescription.trim(),
+          price,
+          category: formCategory.trim() || undefined,
+          image: formImage.trim() || undefined,
+          available: formAvailable,
+        });
+        if (__DEV__) {
+          console.log('[MenuEditor] addMenuItem completed:', {
+            itemId: savedItem?.id ?? null,
+            image: savedItem?.image ?? null,
+          });
+        }
+        setSavedItemId(savedItem?.id ?? newId);
+      } catch (error) {
+        console.error('[MenuEditor] addMenuItem failed:', error);
+        Alert.alert('Save Failed', 'Could not save this menu item. Please try again.');
+        return;
+      }
     }
 
     setModalVisible(false);
@@ -258,11 +318,17 @@ export default function MenuEditor() {
   const uploadMenuImageAsync = useCallback(
     async (uri: string, truckId: string): Promise<string> => {
       try {
-        console.log('[MenuEditor] uploading menu image', uri);
+        if (__DEV__) console.log('[MenuEditor] upload start:', { truckId, uri });
         const response = await fetch(uri);
         const arrayBuffer = await response.arrayBuffer();
         const filePath = `${truckId}/menu-${Date.now()}.jpg`;
-        console.log('[MenuEditor] storage path:', filePath);
+        if (__DEV__) {
+          console.log('[MenuEditor] upload file prepared:', {
+            truckId,
+            filePath,
+            byteLength: arrayBuffer.byteLength,
+          });
+        }
 
         const { error: uploadError } = await supabase
           .storage
@@ -283,7 +349,12 @@ export default function MenuEditor() {
           .from('truck-images')
           .getPublicUrl(filePath);
 
-        console.log('[MenuEditor] public url retrieved', publicUrl);
+        if (__DEV__) {
+          console.log('[MenuEditor] upload success URL:', {
+            truckId,
+            publicUrl,
+          });
+        }
         return publicUrl;
       } catch (err) {
         console.error('[MenuEditor] uploadMenuImageAsync error:', err);
@@ -294,25 +365,98 @@ export default function MenuEditor() {
   );
 
   const pickImage = useCallback(async () => {
+    if (isPickingImage) {
+      if (__DEV__) console.log('[MenuEditor] pickImage ignored - picker already open');
+      return;
+    }
+
+    if (__DEV__) {
+      console.log('[MenuEditor] pickImage pressed:', {
+        truckId: truck?.id ?? null,
+        editingItemId: editingItem?.id ?? null,
+      });
+    }
+
     if (Platform.OS === 'web') {
       Alert.alert('Image Upload', 'Please paste an image URL in the field below');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
+    setIsPickingImage(true);
+    beginImagePickerSession('MenuEditor');
 
-    if (!result.canceled && result.assets[0]) {
-      const localUri = result.assets[0].uri;
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      const asset = result.canceled ? null : result.assets?.[0] ?? null;
+      const localUri = asset?.uri ?? null;
+
+      if (__DEV__) {
+        console.log('[MenuEditor] crop OK/image picker returned:', {
+          canceled: result.canceled,
+          assetCount: result.canceled ? 0 : result.assets?.length ?? 0,
+          firstUri: localUri,
+          hasUri: Boolean(localUri),
+        });
+      }
+
+      if (result.canceled) {
+        if (__DEV__) console.log('[MenuEditor] crop canceled before upload');
+        return;
+      }
+
+      if (!localUri) {
+        console.error('[MenuEditor] crop OK returned no URI; upload cannot start', result);
+        Alert.alert('Upload Failed', 'The cropped image did not return a usable file. Please try again.');
+        return;
+      }
+
+      if (__DEV__) {
+        console.log('[MenuEditor] starting upload after crop OK:', {
+          truckId: truck?.id ?? null,
+          editingItemId: editingItem?.id ?? null,
+          localUri,
+        });
+      }
+
       if (truck && truck.id) {
         try {
           const publicUrl = await uploadMenuImageAsync(localUri, truck.id);
+          if (__DEV__) {
+            console.log('[MenuEditor] assigning publicUrl to formImage:', {
+              truckId: truck.id,
+              publicUrl,
+            });
+          }
           setFormImage(publicUrl);
-          console.log('[MenuEditor] menu image uploaded successfully');
+          await addMenuImage(truck.id, publicUrl);
+          if (editingItem) {
+            await updateMenuItem(editingItem.id, { image: publicUrl });
+            if (__DEV__) {
+              console.log('[MenuEditor] existing item image persisted after crop:', {
+                truckId: truck.id,
+                itemId: editingItem.id,
+                publicUrl,
+              });
+            }
+          } else if (__DEV__) {
+            console.log('[MenuEditor] new item image stored in form state; item-level save waits for Add Item:', {
+              truckId: truck.id,
+              publicUrl,
+            });
+          }
+          if (__DEV__) {
+            console.log('[MenuEditor] menu image uploaded successfully:', {
+              truckId: truck.id,
+              itemId: editingItem?.id ?? null,
+              publicUrl,
+            });
+          }
         } catch (error) {
           console.error('[MenuEditor] failed to upload menu image:', error);
           Alert.alert('Upload Failed', 'Failed to upload image. Please try again.');
@@ -321,8 +465,23 @@ export default function MenuEditor() {
         // no truck context, just use the local URI
         setFormImage(localUri);
       }
+    } catch (error) {
+      console.error('[MenuEditor] image picker/crop callback failed:', error);
+      Alert.alert('Upload Failed', 'Could not finish selecting the image. Please try again.');
+    } finally {
+      setIsPickingImage(false);
+      endImagePickerSession('MenuEditor');
     }
-  }, [truck, uploadMenuImageAsync]);
+  }, [
+    truck,
+    editingItem,
+    uploadMenuImageAsync,
+    addMenuImage,
+    updateMenuItem,
+    isPickingImage,
+    beginImagePickerSession,
+    endImagePickerSession,
+  ]);
 
 
   const formatPriceInput = useCallback((text: string) => {
@@ -798,7 +957,7 @@ export default function MenuEditor() {
           <View style={styles.modalFooter}>
             <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
               <Text style={styles.saveButtonText}>
-                {editingItem ? 'Update Item' : 'Add Item'}
+                {editingItem ? 'Update Item' : formImage.trim() ? 'Add Item with Photo' : 'Add Item'}
               </Text>
             </TouchableOpacity>
           </View>

@@ -3,9 +3,11 @@ import { LayoutDashboard } from 'lucide-react-native';
 import React from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 import LogoHeader from '@/components/LogoHeader';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 export default function TruckTabsLayout() {
   const { colors } = useTheme();
+  useTruckLifecycleLogger('TruckTabsLayout');
   
   return (
     <Tabs

@@ -638,7 +638,13 @@ export default function CustomerHomeScreen() {
         </View>
       </View>
 
-      <View style={styles.filterContainer}>
+      <ScrollView
+        horizontal
+        style={styles.filterScroller}
+        contentContainerStyle={styles.filterContainer}
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <TouchableOpacity
           style={[styles.filterChip, showClosed && styles.filterChipActive]}
           onPress={() => setShowClosed(!showClosed)}
@@ -674,7 +680,7 @@ export default function CustomerHomeScreen() {
             <Text style={[styles.filterChipText, styles.exploreBadgeText]}>Exploring • Back to Local</Text>
           </TouchableOpacity>
         )}
-      </View>
+      </ScrollView>
 
       <View style={[styles.mapContainer, isMapExpanded && styles.mapContainerExpanded]}>
         {Platform.OS === 'web' ? (
@@ -955,7 +961,11 @@ export default function CustomerHomeScreen() {
                 <Text style={styles.sightingBadgeText}>Recently Spotted</Text>
               </View>
             </View>
-            <View style={styles.sightingInfoHalf}>
+            <ScrollView
+              style={styles.sightingInfoHalf}
+              contentContainerStyle={styles.sightingInfoContent}
+              showsVerticalScrollIndicator={false}
+            >
               <Text style={styles.sightingName} numberOfLines={2}>{selectedSighting?.truck_name}</Text>
               <Text style={styles.sightingTimestamp}>
                 {formatSightingLastSeen(selectedSighting?.created_at)}
@@ -987,7 +997,7 @@ export default function CustomerHomeScreen() {
                   </Text>
                 </>
               ) : selectedSighting?.notes ? (
-                <Text style={styles.sightingNotes} numberOfLines={3}>{selectedSighting.notes}</Text>
+                <Text style={styles.sightingNotes}>{selectedSighting.notes}</Text>
               ) : (
                 <Text style={styles.sightingNotesMuted}>Community photo sighting</Text>
               )}
@@ -1056,7 +1066,7 @@ export default function CustomerHomeScreen() {
                   </TouchableOpacity>
                 )}
               </View>
-            </View>
+            </ScrollView>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -1192,20 +1202,24 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 15,
     color: colors.text,
   },
-  filterContainer: {
-    flexDirection: 'row',
-    flexWrap: 'nowrap' as const,
-    paddingLeft: 20,
-    paddingRight: 16,
+  filterScroller: {
+    flexGrow: 0,
     marginBottom: 6,
+  },
+  filterContainer: {
+    paddingLeft: 20,
+    paddingRight: 20,
     gap: 8,
+    alignItems: 'center',
   },
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
+    minHeight: 34,
     backgroundColor: colors.secondaryBackground,
     borderRadius: 18,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 7,
     gap: 6,
   },
@@ -1746,6 +1760,9 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   sightingInfoHalf: {
     padding: 16,
+  },
+  sightingInfoContent: {
+    paddingBottom: 2,
   },
   sightingName: {
     fontSize: 20,

@@ -6,6 +6,7 @@ import * as Location from 'expo-location';
 import { MapPin, ArrowLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const GPS_LOOKUP_TIMEOUT_MS = 15000;
 
@@ -26,6 +27,7 @@ export default function UpdateLocationScreen() {
   const router = useRouter();
   const { getUserTruck, updateTruckDetails } = useApp();
   const truck = getUserTruck();
+  useTruckLifecycleLogger('UpdateLocationScreen');
 
   const [isLoading, setIsLoading] = useState(false);
   const [manualAddress, setManualAddress] = useState('');

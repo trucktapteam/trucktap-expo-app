@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
-import { AppState as RNAppState, View, Text, StyleSheet, TextInput, TouchableOpacity, Platform, Alert, Animated, PanResponder, Dimensions, Linking } from 'react-native';
+import { AppState as RNAppState, View, Text, StyleSheet, TextInput, TouchableOpacity, Platform, Alert, Animated, PanResponder, Dimensions, Linking, ScrollView } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { Target, ChevronRight, Heart, Star, Navigation, Eye, EyeOff } from 'lucide-react-native';
@@ -773,7 +773,11 @@ function SightingBottomSheet({
         </View>
       </View>
 
-      <View style={styles.sightingSheetInfoHalf}>
+      <ScrollView
+        style={styles.sightingSheetInfoHalf}
+        contentContainerStyle={styles.sightingSheetInfoContent}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.sheetName} numberOfLines={2}>{sighting.truck_name}</Text>
         <Text style={styles.sightingTimestamp}>{formatSightingLastSeen(sighting.created_at)}</Text>
         <Text style={styles.sightingSpotter}>{formatSightingSpotter(sighting)}</Text>
@@ -801,7 +805,7 @@ function SightingBottomSheet({
             </Text>
           </>
         ) : sighting.notes ? (
-          <Text style={styles.sightingNotes} numberOfLines={3}>{sighting.notes}</Text>
+          <Text style={styles.sightingNotes}>{sighting.notes}</Text>
         ) : (
           <Text style={styles.sightingNotesMuted}>Community photo sighting</Text>
         )}
@@ -856,7 +860,7 @@ function SightingBottomSheet({
             </TouchableOpacity>
           )}
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -1120,6 +1124,9 @@ const createStyles = (colors: any) => StyleSheet.create({
   sightingSheetInfoHalf: {
     flex: 1,
     padding: 16,
+  },
+  sightingSheetInfoContent: {
+    paddingBottom: 2,
   },
   sightingPill: {
     position: 'absolute',

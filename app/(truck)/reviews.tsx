@@ -7,12 +7,14 @@ import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ReviewerAvatar from '@/components/ReviewerAvatar';
 import ExpandableText from '@/components/ExpandableText';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 export default function TruckReviewsScreen() {
   const router = useRouter();
   const { getUserTruck } = useApp();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [fadeAnim] = useState(new Animated.Value(0));
+  useTruckLifecycleLogger('TruckReviewsScreen');
   
   const truck = getUserTruck();
   const reviews = useTruckReviews(truck?.id || '');

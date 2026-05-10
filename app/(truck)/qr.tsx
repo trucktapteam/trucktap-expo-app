@@ -18,10 +18,12 @@ import { useApp } from '@/contexts/AppContext';
 import { DEBUG } from '@/constants/debug';
 import QRCodeSVG from 'react-native-qrcode-svg';
 import { getTruckDeepLink, getTruckShareUrl } from '@/lib/truckShare';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 export default function QRCodeScreen() {
   const { getUserTruck, isProfileComplete, markQrShared } = useApp();
   const truck = getUserTruck();
+  useTruckLifecycleLogger('QRCodeScreen');
 
   const truckId = useMemo(() => {
     return truck?.id || '';

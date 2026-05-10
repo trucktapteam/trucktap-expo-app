@@ -9,6 +9,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAccountDeletion } from '@/hooks/useAccountDeletion';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { supabase } from '@/lib/supabase';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 type OwnerNotificationPreferences = {
   favorites: boolean;
@@ -34,6 +35,7 @@ export default function TruckSettings() {
   const { isDeletingAccount, confirmDeleteAccount } = useAccountDeletion({
     source: 'truck-settings',
   });
+  useTruckLifecycleLogger('TruckSettings');
 
   useEffect(() => {
     checkLocationPermission();
@@ -214,7 +216,7 @@ setCurrentUser(customerUser);
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Updates</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Messages</Text>
           <TouchableOpacity 
             style={[styles.settingItem, { backgroundColor: colors.cardBackground }]} 
             onPress={() => router.push('/(truck)/owner-updates' as any)}
@@ -223,7 +225,7 @@ setCurrentUser(customerUser);
               <View style={[styles.iconContainer, { backgroundColor: `${colors.primary}15` }]}>
                 <Bell size={20} color={colors.primary} />
               </View>
-              <Text style={[styles.settingText, { color: colors.text }]}>Owner Updates</Text>
+              <Text style={[styles.settingText, { color: colors.text }]}>Message Center</Text>
             </View>
             <ChevronRight size={20} color={colors.secondaryText} />
           </TouchableOpacity>

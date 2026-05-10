@@ -22,6 +22,7 @@ import { useApp } from '@/contexts/AppContext';
 import PosterRenderer from '@/components/posters/PosterRenderer';
 import type { PosterTemplate, PosterConfig } from '@/types/poster';
 import { getTruckDeepLink, getTruckShareUrl } from '@/lib/truckShare';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const TEMPLATES: { id: PosterTemplate; label: string; description: string }[] = [
   { id: 'simple', label: 'Simple', description: 'Clean white background, centered QR' },
@@ -42,6 +43,7 @@ export default function PosterMaker() {
   const { getUserTruck } = useApp();
   const truck = getUserTruck();
   const posterRef = useRef<View>(null);
+  useTruckLifecycleLogger('PosterMaker');
 
   const [config, setConfig] = useState<PosterConfig>({
     template: 'simple',

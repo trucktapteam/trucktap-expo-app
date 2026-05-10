@@ -5,11 +5,13 @@ import { CheckCircle, Circle, Award } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 export default function VerificationScreen() {
   const router = useRouter();
   const { getUserTruck, setTruckVerified } = useApp();
   const truck = getUserTruck();
+  useTruckLifecycleLogger('VerificationScreen');
 
   const requirements = useMemo(() => {
     if (!truck) return [];

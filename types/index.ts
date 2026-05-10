@@ -108,3 +108,17 @@ export type TeamUpdate = {
   date: string;
   important: boolean;
 };
+
+export type OwnerMessageType = 'general' | 'important' | 'maintenance' | 'urgent';
+
+export type OwnerMessage = {
+  id: string;
+  title: string;
+  body: string;
+  type: OwnerMessageType;
+  created_by?: string | null;
+  created_at: string;
+  target_scope: 'all_trucks' | 'truck';
+  target_truck_id?: string | null;
+  read_at?: string | null;
+};

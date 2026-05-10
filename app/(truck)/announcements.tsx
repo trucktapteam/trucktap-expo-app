@@ -5,6 +5,7 @@ import { ArrowLeft, Megaphone, Trash2, Send } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const MAX_MESSAGE_LENGTH = 200;
 
@@ -12,6 +13,7 @@ export default function AnnouncementsScreen() {
   const router = useRouter();
   const { getUserTruck, getAnnouncements, addAnnouncement, deleteAnnouncement } = useApp();
   const truck = getUserTruck();
+  useTruckLifecycleLogger('AnnouncementsScreen');
   
   const [message, setMessage] = useState<string>('');
   const scrollViewRef = useRef<ScrollView>(null);
