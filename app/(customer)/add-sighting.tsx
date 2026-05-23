@@ -29,7 +29,7 @@ const SIGHTING_NOTES_MAX_LENGTH = 280;
 
 export default function AddSightingScreen() {
   const router = useRouter();
-  const { user: authUser } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const [truckName, setTruckName] = useState('');
   const [notes, setNotes] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -127,6 +127,16 @@ export default function AddSightingScreen() {
   }, []);
 
   const handleSubmit = useCallback(async () => {
+    if (authLoading) {
+      setToast({ visible: true, message: 'Checking your login. Please try again in a moment.', type: 'error' });
+      return;
+    }
+
+    if (!isAuthenticated || !user) {
+      setToast({ visible: true, message: 'Please log in to submit a truck sighting.', type: 'error' });
+      return;
+    }
+
     if (!truckName.trim()) {
       setToast({ visible: true, message: 'Truck name is required.', type: 'error' });
       return;
@@ -151,7 +161,7 @@ export default function AddSightingScreen() {
       const { error } = await supabase.from('sightings').insert({
         truck_name: truckName.trim(),
         photo_url: photoUrl,
-        user_id: authUser?.id ?? null,
+        user_id: user.id,
         latitude: freshCoords.latitude,
         longitude: freshCoords.longitude,
         notes: notes.trim() || null,
@@ -167,12 +177,12 @@ export default function AddSightingScreen() {
         router.back();
       }, 900);
     } catch (error: any) {
-      const message = error?.message || 'Unable to submit your sighting right now.';
-      setToast({ visible: true, message, type: 'error' });
+      console.log('[AddSighting] Failed to submit sighting:', error?.message ?? error);
+      setToast({ visible: true, message: 'Unable to submit your sighting right now. Please try again.', type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
-  }, [authUser?.id, captureLocation, coords, notes, photoUri, router, truckName, uploadPhotoAsync]);
+  }, [authLoading, captureLocation, coords, isAuthenticated, notes, photoUri, router, truckName, uploadPhotoAsync, user]);
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -194,6 +204,18 @@ export default function AddSightingScreen() {
               Snap it. Drop it on the map.
             </Text>
           </View>
+
+          {!authLoading && !isAuthenticated ? (
+            <View style={styles.loginNotice}>
+              <Text style={styles.loginNoticeText}>Please log in to submit a truck sighting.</Text>
+              <TouchableOpacity
+                style={styles.loginNoticeButton}
+                onPress={() => router.push('/customer-login' as any)}
+              >
+                <Text style={styles.loginNoticeButtonText}>Log In</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <View style={styles.section}>
             <Text style={styles.label}>Truck Name</Text>
@@ -313,6 +335,32 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 20,
+  },
+  loginNotice: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FFD9BF',
+    padding: 14,
+    marginBottom: 20,
+    gap: 10,
+  },
+  loginNoticeText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.dark,
+  },
+  loginNoticeButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  loginNoticeButtonText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#fff',
   },
   label: {
     fontSize: 15,

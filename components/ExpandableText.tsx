@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Text, TouchableOpacity, StyleSheet, View } from 'react-native';
+import { Text, TouchableOpacity, StyleSheet, View, StyleProp, TextStyle } from 'react-native';
 import Colors from '@/constants/colors';
 
 type ExpandableTextProps = {
   text: string;
   numberOfLines?: number;
-  style?: any;
+  style?: StyleProp<TextStyle>;
 };
 
 export default function ExpandableText({
@@ -17,7 +17,7 @@ export default function ExpandableText({
   const [showReadMore, setShowReadMore] = useState(false);
 
   const onTextLayout = (e: any) => {
-    if (!showReadMore && e.nativeEvent.lines.length > numberOfLines) {
+    if (!showReadMore && e.nativeEvent.lines.length >= numberOfLines) {
       setShowReadMore(true);
     }
   };
@@ -26,7 +26,7 @@ export default function ExpandableText({
     <View>
       <Text
         style={[styles.text, style]}
-        numberOfLines={isExpanded ? 0 : numberOfLines}
+        numberOfLines={isExpanded ? undefined : numberOfLines}
         onTextLayout={onTextLayout}
       >
         {text}
@@ -35,7 +35,7 @@ export default function ExpandableText({
       {showReadMore && (
         <TouchableOpacity onPress={() => setIsExpanded(prev => !prev)}>
           <Text style={styles.readMore}>
-            {isExpanded ? 'Read less' : 'Read more'}
+            {isExpanded ? 'Show less' : 'Read more'}
           </Text>
         </TouchableOpacity>
       )}

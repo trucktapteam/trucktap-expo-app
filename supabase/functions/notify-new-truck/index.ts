@@ -34,7 +34,7 @@ serve(async (req) => {
       sound: "default",
       title: "New food truck added 🚚",
       body: `${truckName} just joined TruckTap`,
-      data: { truckId },
+      data: { truckId, truck_id: truckId },
     }));
 
     const res = await fetch("https://exp.host/--/api/v2/push/send", {

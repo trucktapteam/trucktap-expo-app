@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TruckTap</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --orange: #ff6b00;
+        --ink: #111111;
+        --muted: #4a4a4a;
+        --line: #e5e2dc;
+        --paper: #ffffff;
+        --wash: #f7f7f4;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--wash);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(760px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 20px 0;
+      }
+
+      .shell {
+        overflow: hidden;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .hero {
+        min-height: 340px;
+        display: flex;
+        align-items: flex-end;
+        padding: 28px;
+        background:
+          linear-gradient(rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.58)),
+          var(--hero-image, url("https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=1200")) center / cover;
+      }
+
+      .brand {
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 800;
+        margin: 0 0 12px;
+      }
+
+      h1 {
+        color: #ffffff;
+        font-size: clamp(30px, 7vw, 42px);
+        line-height: 1.08;
+        margin: 0 0 10px;
+      }
+
+      .subtitle {
+        max-width: 620px;
+        color: #f8f4ee;
+        font-size: 17px;
+        line-height: 1.5;
+        margin: 0;
+      }
+
+      .details,
+      .download {
+        padding: 28px;
+      }
+
+      .details:empty {
+        display: none;
+      }
+
+      .bio {
+        color: var(--ink);
+        font-size: 16px;
+        line-height: 1.5;
+        margin: 0 0 14px;
+      }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        border-top: 1px solid var(--line);
+        padding-top: 14px;
+        margin-top: 14px;
+      }
+
+      .label {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .value {
+        flex: 1;
+        text-align: right;
+        color: var(--ink);
+        font-size: 14px;
+      }
+
+      .open {
+        color: #4caf50;
+        font-weight: 800;
+      }
+
+      .link {
+        display: inline-block;
+        color: var(--orange);
+        font-size: 15px;
+        font-weight: 700;
+        margin-top: 14px;
+        overflow-wrap: anywhere;
+      }
+
+      .download {
+        background: var(--ink);
+        color: #ffffff;
+      }
+
+      .download h2 {
+        font-size: 24px;
+        line-height: 1.15;
+        margin: 0 0 10px;
+      }
+
+      .download p {
+        color: #ededed;
+        font-size: 15px;
+        line-height: 1.45;
+        margin: 0 0 20px;
+      }
+
+      .buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .store-button {
+        min-width: 180px;
+        border-radius: 8px;
+        background: #ffffff;
+        color: var(--ink);
+        padding: 12px 18px;
+        text-decoration: none;
+      }
+
+      .store-button span {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .store-button strong {
+        display: block;
+        color: var(--ink);
+        font-size: 19px;
+        line-height: 1.2;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="shell" aria-live="polite">
+        <div class="hero" id="hero">
+          <div>
+            <p class="brand">TruckTap</p>
+            <h1 id="title">Find this food truck on TruckTap</h1>
+            <p class="subtitle" id="subtitle">Install TruckTap to see live food truck details, menus, photos, and updates.</p>
+          </div>
+        </div>
+        <div class="details" id="details"></div>
+        <div class="download">
+          <h2>Get TruckTap</h2>
+          <p>Open this truck in the app for live location, menus, photos, and favorites.</p>
+          <div class="buttons">
+            <a class="store-button" href="https://apps.apple.com/us/search?term=TruckTap">
+              <span>Download on the</span>
+              <strong>App Store</strong>
+            </a>
+            <a class="store-button" href="https://play.google.com/store/apps/details?id=app.rork.trucktap_food_truck_finder_cqgko70">
+              <span>Get it on</span>
+              <strong>Google Play</strong>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const SUPABASE_URL = "https://spspobqzhdvsbeefecby.supabase.co";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwc3BvYnF6aGR2c2JlZWZlY2J5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk0NzEzMDIsImV4cCI6MjA4NTA0NzMwMn0.OODMEohkPkRdz12qhslkG8-c6-46RUgdnaIkh2XuiCU";
+
+      const title = document.getElementById("title");
+      const subtitle = document.getElementById("subtitle");
+      const hero = document.getElementById("hero");
+      const details = document.getElementById("details");
+
+      const escapeHtml = (value) =>
+        String(value || "").replace(/[&<>"']/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[char]));
+
+      const getTruckIdFromPath = () => {
+        const parts = window.location.pathname.split("/").filter(Boolean);
+        if ((parts[0] === "truck" || parts[0] === "trucks") && parts[1]) {
+          return decodeURIComponent(parts[1]);
+        }
+        return "";
+      };
+
+      const normalizeUrl = (value) => {
+        if (!value) return "";
+        if (/^https?:\/\//i.test(value)) return value;
+        return `https://${value}`;
+      };
+
+      const renderTruck = (truck) => {
+        const isHidden = truck?.is_test === true || truck?.archived === true || !!truck?.archived_at;
+        if (!truck || isHidden) return;
+
+        const image = truck.hero_image || truck.logo;
+        const location = truck.address || truck.label || "";
+        const cuisine = truck.cuisine_type || "";
+        const detailBits = [cuisine, location].filter(Boolean);
+        const website = normalizeUrl(truck.website);
+
+        title.textContent = truck.name || "Find this food truck on TruckTap";
+        subtitle.textContent = detailBits.length > 0
+          ? detailBits.join(" - ")
+          : "Install TruckTap to see live food truck details, menus, photos, and updates.";
+
+        if (image) {
+          hero.style.setProperty("--hero-image", `url("${String(image).replace(/"/g, "%22")}")`);
+        }
+
+        details.innerHTML = `
+          ${truck.bio || truck.description ? `<p class="bio">${escapeHtml(truck.bio || truck.description)}</p>` : ""}
+          <div class="row">
+            <span class="label">Status</span>
+            <span class="value ${truck.is_open ? "open" : ""}">${truck.is_open ? "Open now" : "Check the app for current hours"}</span>
+          </div>
+          ${truck.phone ? `<div class="row"><span class="label">Phone</span><span class="value">${escapeHtml(truck.phone)}</span></div>` : ""}
+          ${website ? `<a class="link" href="${escapeHtml(website)}">${escapeHtml(truck.website)}</a>` : ""}
+        `;
+      };
+
+      const loadTruck = async () => {
+        const truckId = getTruckIdFromPath();
+        if (!truckId) return;
+
+        try {
+          const params = new URLSearchParams({
+            id: `eq.${truckId}`,
+            select: "*",
+            limit: "1",
+          });
+          const response = await fetch(`${SUPABASE_URL}/rest/v1/trucks?${params.toString()}`, {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+          });
+
+          if (!response.ok) return;
+          const rows = await response.json();
+          renderTruck(rows[0]);
+        } catch {
+          details.textContent = "";
+        }
+      };
+
+      void loadTruck();
+    </script>
+  </body>
+</html>

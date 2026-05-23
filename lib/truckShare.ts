@@ -1,5 +1,7 @@
 const DEFAULT_PUBLIC_WEB_BASE_URL = 'https://gettrucktap.com';
 const DEFAULT_APP_SCHEME = 'trucktap';
+const PUBLIC_TRUCK_ROUTE_SEGMENT = 'truck';
+const LEGACY_PUBLIC_TRUCK_ROUTE_SEGMENT = 'trucks';
 
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, '');
 
@@ -9,8 +11,7 @@ const sanitizeTruckId = (truckId?: string | null): string => {
 };
 
 export function getTruckPublicBaseUrl(): string {
-  const configuredBaseUrl = process.env.EXPO_PUBLIC_TRUCK_PUBLIC_BASE_URL?.trim();
-  return normalizeBaseUrl(configuredBaseUrl || DEFAULT_PUBLIC_WEB_BASE_URL);
+  return normalizeBaseUrl(DEFAULT_PUBLIC_WEB_BASE_URL);
 }
 
 export function getTruckAppScheme(): string {
@@ -20,7 +21,7 @@ export function getTruckAppScheme(): string {
 
 export function getTruckAppPath(truckId?: string | null): string {
   const normalizedTruckId = sanitizeTruckId(truckId);
-  return normalizedTruckId ? `/truck/${encodeURIComponent(normalizedTruckId)}` : '';
+  return normalizedTruckId ? `/${PUBLIC_TRUCK_ROUTE_SEGMENT}/${encodeURIComponent(normalizedTruckId)}` : '';
 }
 
 export function getTruckDeepLink(truckId?: string | null): string {
@@ -37,9 +38,16 @@ export function getTruckShareUrl(truckId?: string | null): string {
   return getTruckWebUrl(truckId);
 }
 
+export function getTruckPublicUrl(truckId?: string | null): string {
+  return getTruckShareUrl(truckId);
+}
+
 export function buildTruckPublicUrl(truckId?: string | null): string {
   return getTruckShareUrl(truckId);
 }
+
+const isTruckRouteSegment = (segment?: string): boolean =>
+  segment === PUBLIC_TRUCK_ROUTE_SEGMENT || segment === LEGACY_PUBLIC_TRUCK_ROUTE_SEGMENT;
 
 export function getTruckRouteFromUrl(url?: string | null): string | null {
   if (!url) return null;
@@ -55,12 +63,12 @@ export function getTruckRouteFromUrl(url?: string | null): string | null {
         return `/truck/${decodeURIComponent(pathSegments[0])}`;
       }
 
-      if (pathSegments[0] === 'truck' && pathSegments[1]) {
+      if (isTruckRouteSegment(pathSegments[0]) && pathSegments[1]) {
         return `/truck/${decodeURIComponent(pathSegments[1])}`;
       }
     }
 
-    if ((host === 'gettrucktap.com' || host === 'www.gettrucktap.com') && pathSegments[0] === 'truck' && pathSegments[1]) {
+    if ((host === 'gettrucktap.com' || host === 'www.gettrucktap.com') && isTruckRouteSegment(pathSegments[0]) && pathSegments[1]) {
       return `/truck/${decodeURIComponent(pathSegments[1])}`;
     }
 
@@ -68,7 +76,7 @@ export function getTruckRouteFromUrl(url?: string | null): string | null {
       return `/truck/${decodeURIComponent(pathSegments[1])}`;
     }
 
-    if (pathSegments[0] === 'truck' && pathSegments[1]) {
+    if (isTruckRouteSegment(pathSegments[0]) && pathSegments[1]) {
       return `/truck/${decodeURIComponent(pathSegments[1])}`;
     }
   } catch {
@@ -78,7 +86,7 @@ export function getTruckRouteFromUrl(url?: string | null): string | null {
   const normalized = url.replace(/^[a-z]+:\/*/i, '/').replace(/\/+$/, '');
   const segments = normalized.split('/').filter(Boolean);
 
-  if (segments[0] === 'truck' && segments[1]) {
+  if (isTruckRouteSegment(segments[0]) && segments[1]) {
     return `/truck/${decodeURIComponent(segments[1])}`;
   }
 

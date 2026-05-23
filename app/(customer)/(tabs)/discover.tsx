@@ -1750,7 +1750,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   sightingPhotoHalf: {
     width: '100%',
-    height: 170,
+    height: 150,
     backgroundColor: colors.secondaryBackground,
   },
   sightingImage: {
@@ -1762,7 +1762,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     padding: 16,
   },
   sightingInfoContent: {
-    paddingBottom: 2,
+    paddingBottom: 16,
   },
   sightingName: {
     fontSize: 20,
@@ -1798,9 +1798,9 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   sightingNotes: {
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 21,
     color: colors.text,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   sightingNotesMuted: {
     fontSize: 14,

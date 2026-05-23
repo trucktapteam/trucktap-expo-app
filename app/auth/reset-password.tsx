@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Eye, EyeOff } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +21,8 @@ export default function ResetPasswordScreen() {
   const { updatePassword } = useAuth();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const hasRecoveryError = routeError === 'recovery_failed';
@@ -75,36 +78,64 @@ export default function ResetPasswordScreen() {
             <>
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>New password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter a new password"
-                  placeholderTextColor={Colors.gray}
-                  value={password}
-                  onChangeText={(value) => {
-                    setPassword(value);
-                    setFormError(null);
-                  }}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoComplete="password-new"
-                />
+                <View style={styles.passwordInputWrapper}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Enter a new password"
+                    placeholderTextColor={Colors.gray}
+                    value={password}
+                    onChangeText={(value) => {
+                      setPassword(value);
+                      setFormError(null);
+                    }}
+                    secureTextEntry={!isPasswordVisible}
+                    autoCapitalize="none"
+                    autoComplete="password-new"
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => setIsPasswordVisible(prev => !prev)}
+                    accessibilityRole="button"
+                    accessibilityLabel={isPasswordVisible ? 'Hide new password' : 'Show new password'}
+                  >
+                    {isPasswordVisible ? (
+                      <EyeOff size={20} color={Colors.gray} />
+                    ) : (
+                      <Eye size={20} color={Colors.gray} />
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Confirm password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Re-enter your new password"
-                  placeholderTextColor={Colors.gray}
-                  value={confirmPassword}
-                  onChangeText={(value) => {
-                    setConfirmPassword(value);
-                    setFormError(null);
-                  }}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoComplete="password-new"
-                />
+                <View style={styles.passwordInputWrapper}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Re-enter your new password"
+                    placeholderTextColor={Colors.gray}
+                    value={confirmPassword}
+                    onChangeText={(value) => {
+                      setConfirmPassword(value);
+                      setFormError(null);
+                    }}
+                    secureTextEntry={!isConfirmPasswordVisible}
+                    autoCapitalize="none"
+                    autoComplete="password-new"
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => setIsConfirmPasswordVisible(prev => !prev)}
+                    accessibilityRole="button"
+                    accessibilityLabel={isConfirmPasswordVisible ? 'Hide confirmation password' : 'Show confirmation password'}
+                  >
+                    {isConfirmPasswordVisible ? (
+                      <EyeOff size={20} color={Colors.gray} />
+                    ) : (
+                      <Eye size={20} color={Colors.gray} />
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             </>
           )}
@@ -179,6 +210,27 @@ const styles = StyleSheet.create({
     color: Colors.dark,
     borderWidth: 1,
     borderColor: Colors.lightGray,
+  },
+  passwordInputWrapper: {
+    backgroundColor: Colors.lightGray,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingLeft: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: Colors.dark,
+  },
+  passwordToggle: {
+    width: 48,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   button: {
     backgroundColor: Colors.primary,

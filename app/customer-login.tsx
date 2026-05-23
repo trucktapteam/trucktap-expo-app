@@ -12,7 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Truck, ArrowLeft, Mail, } from 'lucide-react-native';
+import { Truck, ArrowLeft, Mail, Eye, EyeOff } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -37,6 +37,7 @@ export default function CustomerLoginScreen() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const { mode } = useLocalSearchParams();
  const [isSignUp, setIsSignUp] = useState(mode === 'signup');
 
@@ -220,17 +221,31 @@ export default function CustomerLoginScreen() {
 
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={[styles.input, passwordTouched && !password.trim() && styles.inputError]}
-                placeholder="Enter your password"
-                placeholderTextColor={Colors.gray}
-                value={password}
-                onChangeText={(t) => { setPassword(t); setError(null); setSuccessMessage(null); }}
-                onBlur={() => setPasswordTouched(true)}
-                secureTextEntry
-                autoCapitalize="none"
-                autoComplete="password"
-              />
+              <View style={[styles.passwordInputWrapper, passwordTouched && !password.trim() && styles.inputError]}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Enter your password"
+                  placeholderTextColor={Colors.gray}
+                  value={password}
+                  onChangeText={(t) => { setPassword(t); setError(null); setSuccessMessage(null); }}
+                  onBlur={() => setPasswordTouched(true)}
+                  secureTextEntry={!isPasswordVisible}
+                  autoCapitalize="none"
+                  autoComplete="password"
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggle}
+                  onPress={() => setIsPasswordVisible(prev => !prev)}
+                  accessibilityRole="button"
+                  accessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
+                >
+                  {isPasswordVisible ? (
+                    <EyeOff size={20} color={Colors.gray} />
+                  ) : (
+                    <Eye size={20} color={Colors.gray} />
+                  )}
+                </TouchableOpacity>
+              </View>
               {passwordTouched && !password.trim() ? (
                 <Text style={styles.fieldError}>Password is required</Text>
               ) : null}
@@ -427,6 +442,27 @@ elevation: 5,
     color: Colors.dark,
     borderWidth: 1,
     borderColor: Colors.lightGray,
+  },
+  passwordInputWrapper: {
+    backgroundColor: Colors.lightGray,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingLeft: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: Colors.dark,
+  },
+  passwordToggle: {
+    width: 48,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   forgotPassword: {
     alignSelf: 'flex-end',

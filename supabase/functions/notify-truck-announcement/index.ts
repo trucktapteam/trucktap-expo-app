@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
       sound: 'default',
       title: 'New Truck Update 🚛',
       body: message,
+      data: { truckId, truck_id: truckId },
     }));
 
     const expoRes = await fetch('https://exp.host/--/api/v2/push/send', {

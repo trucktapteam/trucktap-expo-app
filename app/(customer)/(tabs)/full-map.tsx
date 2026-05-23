@@ -20,7 +20,7 @@ const FOREGROUND_SCREEN_REFRESH_DEBOUNCE_MS = 5000;
 const SIGHTING_NOTES_MAX_LENGTH = 280;
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.45;
+const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.65;
 const SNAP_THRESHOLD = 50;
 
 const hasMapLocation = (truck: FoodTruck) =>
@@ -1113,7 +1113,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     backgroundColor: colors.cardBackground,
   },
   sightingSheetPhotoHalf: {
-    height: 130,
+    height: 120,
     backgroundColor: colors.secondaryBackground,
   },
   sightingSheetImage: {
@@ -1126,7 +1126,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     padding: 16,
   },
   sightingSheetInfoContent: {
-    paddingBottom: 2,
+    paddingBottom: 18,
   },
   sightingPill: {
     position: 'absolute',
@@ -1156,7 +1156,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   sightingNotes: {
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 21,
     color: colors.text,
     marginBottom: 18,
   },

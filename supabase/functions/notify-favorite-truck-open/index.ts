@@ -71,7 +71,7 @@ if (!isOpenNow || wasOpen === true) {
       sound: "default",
       title: `${truckName} is open`,
       body: `${truckName} just opened`,
-      data: { truckId },
+      data: { truckId, truck_id: truckId },
     }));
 
     console.log("Sending messages:", messages);

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import * as Notifications from 'expo-notifications';
 import React, { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -23,6 +24,8 @@ void SplashScreen.preventAutoHideAsync().catch((e) => {
 const queryClient = new QueryClient();
 const VERIFICATION_LINK_TYPES = new Set(['signup', 'invite', 'magiclink', 'email', 'email_change']);
 const RECOVERY_LINK_TYPE = 'recovery';
+
+type NotificationData = Record<string, unknown>;
 
 const devLog = (...args: unknown[]) => {
   if (__DEV__) console.log(...args);
@@ -76,6 +79,39 @@ const getNormalizedDeepLinkPath = (url: string, parsedPath?: string | null): str
   }
 };
 
+const getStringDataValue = (data: NotificationData, keys: string[]): string => {
+  for (const key of keys) {
+    const value = data[key];
+
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+
+  return '';
+};
+
+const getTruckRouteFromNotificationData = (
+  data?: Notifications.NotificationContent['data']
+): string | null => {
+  if (!data) return null;
+
+  const notificationData = data as NotificationData;
+  const url = getStringDataValue(notificationData, ['url', 'deepLink', 'deep_link', 'link']);
+  const routeFromUrl = getTruckRouteFromUrl(url);
+
+  if (routeFromUrl) {
+    return routeFromUrl;
+  }
+
+  const truckId = getStringDataValue(notificationData, ['truck_id', 'truckId']);
+  return truckId ? `/truck/${encodeURIComponent(truckId)}` : null;
+};
+
 function RootLayoutNav() {
   const { colors } = useTheme();
   const pathname = usePathname();
@@ -117,6 +153,7 @@ function RootLayoutNav() {
 export default function RootLayout() {
   const router = useRouter();
   const handledAuthUrls = useRef(new Set<string>());
+  const handledNotificationResponseIds = useRef(new Set<string>());
 
   useEffect(() => {
     void SplashScreen.hideAsync().catch((e) => {
@@ -269,6 +306,63 @@ export default function RootLayout() {
     });
 
     const subscription = Linking.addEventListener('url', handleDeepLink);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      devLog('[RootLayout] Skipping notification response setup on web');
+      return;
+    }
+
+    const handleNotificationResponse = (
+      response: Notifications.NotificationResponse,
+      source: 'initial' | 'listener'
+    ) => {
+      const responseId = response.notification.request.identifier;
+
+      if (handledNotificationResponseIds.current.has(responseId)) {
+        devLog('[RootLayout] Notification response already handled; ignoring duplicate');
+        return;
+      }
+
+      const route = getTruckRouteFromNotificationData(response.notification.request.content.data);
+
+      if (!route) {
+        devLog('[RootLayout] Notification response has no truck route:', {
+          source,
+          data: response.notification.request.content.data,
+        });
+        return;
+      }
+
+      handledNotificationResponseIds.current.add(responseId);
+      devLog('[RootLayout] Routing to truck screen from notification:', {
+        source,
+        route,
+      });
+      router.replace(route as any);
+      void Notifications.clearLastNotificationResponseAsync().catch((error) => {
+        devLog('[RootLayout] Error clearing handled notification response:', error);
+      });
+    };
+
+    void Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) {
+          handleNotificationResponse(response, 'initial');
+        }
+      })
+      .catch((error) => {
+        devLog('[RootLayout] Error handling initial notification response:', error);
+      });
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleNotificationResponse(response, 'listener');
+    });
 
     return () => {
       subscription.remove();
