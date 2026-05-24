@@ -6,6 +6,7 @@ import { User, FoodTruck, Review, MenuItem, OperatingHours, Announcement, OwnerM
 import { teamUpdates } from '@/mocks/data';
 import { DEBUG } from '@/constants/debug';
 import { useAuth } from '@/contexts/AuthContext';
+import { trackEvent } from '@/lib/analytics';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 const parseJsonArray = (val: any): any[] => {
@@ -1140,6 +1141,12 @@ if (!favoritesError && favoriteRows) {
 
       if (error) throw error;
 
+      void trackEvent({
+        event_type: 'favorite_removed',
+        truck_id: truckId,
+        user_id: userId,
+      });
+
       if (DEBUG) console.log('[AppContext] favorite removed from Supabase:', { userId, truckId });
     } else {
      const { error } = await supabase
@@ -1161,6 +1168,12 @@ if (error) {
     throw error;
   }
 }
+
+      void trackEvent({
+        event_type: 'favorite_added',
+        truck_id: truckId,
+        user_id: userId,
+      });
 
       if (DEBUG) console.log('[AppContext] favorite added to Supabase:', { userId, truckId });
     }

@@ -12,6 +12,7 @@ import TruckSectionCard from '@/components/TruckSectionCard';
 import ReviewerAvatar from '@/components/ReviewerAvatar';
 import ExpandableText from '@/components/ExpandableText';
 import AuthPromptModal from '@/components/AuthPromptModal';
+import { trackEvent } from '@/lib/analytics';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { MenuItem } from '@/types';
 
@@ -68,6 +69,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
+  const trackedProfileViewTruckIdRef = useRef<string | null>(null);
 
   React.useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -80,6 +82,19 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
       incrementView(truckId);
     }
   }, [fadeAnim, truckId, incrementView, mode]);
+
+  React.useEffect(() => {
+    if (!truckId || mode !== 'customer' || trackedProfileViewTruckIdRef.current === truckId) {
+      return;
+    }
+
+    trackedProfileViewTruckIdRef.current = truckId;
+    void trackEvent({
+      event_type: 'truck_profile_view',
+      truck_id: truckId,
+      user_id: authUser?.id ?? currentUser?.id ?? null,
+    });
+  }, [authUser?.id, currentUser?.id, mode, truckId]);
 
   const handleOwnerAction = useCallback((action: string) => {
     if (!isAuthenticated || !authUser) {
@@ -143,6 +158,11 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
       return;
     }
     incrementNavigation(truck.id);
+    void trackEvent({
+      event_type: 'navigate_click',
+      truck_id: truck.id,
+      user_id: authUser?.id ?? currentUser?.id ?? null,
+    });
     const { latitude, longitude } = truck.location;
     const url = Platform.select({
       ios: `http://maps.apple.com/?daddr=${latitude},${longitude}`,
@@ -166,6 +186,11 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
 
   const handleShare = async () => {
     try {
+      void trackEvent({
+        event_type: 'share_click',
+        truck_id: truck.id,
+        user_id: authUser?.id ?? currentUser?.id ?? null,
+      });
       await Share.share({
         message: `Check out ${truck.name} on TruckTap! ${getTruckShareUrl(truck.id)}`,
         title: truck.name,

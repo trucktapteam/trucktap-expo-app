@@ -1,15 +1,17 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { ArrowLeft, MessageSquare } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
+import { trackEvent } from '@/lib/analytics';
 
 export default function TruckAnnouncementsScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { colors } = useTheme();
-  const { foodTrucks, getAnnouncements, getDaysAgoText } = useApp();
+  const { foodTrucks, getAnnouncements, currentUser } = useApp();
+  const trackedAnnouncementViewTruckIdRef = useRef<string | null>(null);
 
   const truck = useMemo(() =>
     foodTrucks.find(t => t.id === id && t.is_test !== true && t.archived !== true && !t.archivedAt),
@@ -20,6 +22,19 @@ export default function TruckAnnouncementsScreen() {
     truck ? getAnnouncements(truck.id) : [],
     [truck, getAnnouncements]
   );
+
+  useEffect(() => {
+    if (!truck || trackedAnnouncementViewTruckIdRef.current === truck.id) {
+      return;
+    }
+
+    trackedAnnouncementViewTruckIdRef.current = truck.id;
+    void trackEvent({
+      event_type: 'announcement_view',
+      truck_id: truck.id,
+      user_id: currentUser?.id ?? null,
+    });
+  }, [currentUser?.id, truck]);
 
   const styles = createStyles(colors);
 

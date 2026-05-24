@@ -1,17 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, Stack } from 'expo-router';
 import { Image } from 'expo-image';
 import { Utensils, X } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
+import { trackEvent } from '@/lib/analytics';
 import { MenuItem } from '@/types';
 
 export default function FullMenuScreen() {
   const { id } = useLocalSearchParams();
-  const router = useRouter();
   const { colors } = useTheme();
-  const { menuItems, foodTrucks } = useApp();
+  const { menuItems, foodTrucks, currentUser } = useApp();
+  const trackedMenuViewTruckIdRef = useRef<string | null>(null);
   
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
   const [showMenuItemModal, setShowMenuItemModal] = useState<boolean>(false);
@@ -25,6 +26,19 @@ export default function FullMenuScreen() {
     menuItems.filter(item => item.truck_id === id && item.available),
     [menuItems, id]
   );
+
+  useEffect(() => {
+    if (!truck || trackedMenuViewTruckIdRef.current === truck.id) {
+      return;
+    }
+
+    trackedMenuViewTruckIdRef.current = truck.id;
+    void trackEvent({
+      event_type: 'menu_view',
+      truck_id: truck.id,
+      user_id: currentUser?.id ?? null,
+    });
+  }, [currentUser?.id, truck]);
 
   const styles = createStyles(colors);
 

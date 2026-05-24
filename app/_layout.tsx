@@ -14,6 +14,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import * as Linking from 'expo-linking';
 import { trpc, trpcClient } from "@/lib/trpc";
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { trackEvent } from '@/lib/analytics';
 import { getTruckRouteFromUrl } from '@/lib/truckShare';
 import { PASSWORD_RECOVERY_PATH } from '@/lib/authRedirect';
 
@@ -110,6 +111,16 @@ const getTruckRouteFromNotificationData = (
 
   const truckId = getStringDataValue(notificationData, ['truck_id', 'truckId']);
   return truckId ? `/truck/${encodeURIComponent(truckId)}` : null;
+};
+
+const getTruckIdFromNotificationData = (
+  data?: Notifications.NotificationContent['data']
+): string | null => {
+  if (!data) return null;
+
+  const notificationData = data as NotificationData;
+  const truckId = getStringDataValue(notificationData, ['truck_id', 'truckId']);
+  return truckId || null;
 };
 
 function RootLayoutNav() {
@@ -329,17 +340,26 @@ export default function RootLayout() {
         return;
       }
 
-      const route = getTruckRouteFromNotificationData(response.notification.request.content.data);
+      const notificationData = response.notification.request.content.data;
+      const route = getTruckRouteFromNotificationData(notificationData);
 
       if (!route) {
         devLog('[RootLayout] Notification response has no truck route:', {
           source,
-          data: response.notification.request.content.data,
+          data: notificationData,
         });
         return;
       }
 
       handledNotificationResponseIds.current.add(responseId);
+      const truckId = getTruckIdFromNotificationData(notificationData);
+      if (truckId) {
+        void trackEvent({
+          event_type: 'notification_tap',
+          truck_id: truckId,
+          metadata: { source },
+        });
+      }
       devLog('[RootLayout] Routing to truck screen from notification:', {
         source,
         route,
