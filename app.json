@@ -42,7 +42,7 @@
       },
       "package": "app.rork.trucktap_food_truck_finder_cqgko70",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 39,
+      "versionCode": 40,
       "intentFilters": [
         {
           "action": "VIEW",

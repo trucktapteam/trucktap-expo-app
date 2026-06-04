@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -67,6 +67,13 @@ const formatTimeButton = (date: Date) =>
     minute: '2-digit',
   });
 
+const getUpcomingStopReminderTime = (stop: UpcomingStop, minutesBefore: number) => {
+  const startsAtTime = Date.parse(stop.starts_at);
+  if (!Number.isFinite(startsAtTime)) return null;
+
+  return new Date(startsAtTime - minutesBefore * 60 * 1000);
+};
+
 type PickerTarget = 'date' | 'start' | 'end' | null;
 
 type ReminderSettings = {
@@ -121,11 +128,21 @@ export default function UpcomingStopsScreen() {
   });
   const [reminderIds, setReminderIds] = useState<ReminderIds>({});
   const [reminderSettingsLoaded, setReminderSettingsLoaded] = useState(false);
+  const reminderSettingsRef = useRef(reminderSettings);
+  const reminderIdsRef = useRef(reminderIds);
 
   const stops = useMemo(
     () => truck ? getUpcomingStops(truck.id) : [],
     [getUpcomingStops, truck]
   );
+
+  React.useEffect(() => {
+    reminderSettingsRef.current = reminderSettings;
+  }, [reminderSettings]);
+
+  React.useEffect(() => {
+    reminderIdsRef.current = reminderIds;
+  }, [reminderIds]);
 
   React.useEffect(() => {
     const loadReminderState = async () => {
@@ -137,17 +154,20 @@ export default function UpcomingStopsScreen() {
 
         if (storedSettings) {
           const parsed = JSON.parse(storedSettings);
-          setReminderSettings({
+          const nextSettings = {
             enabled: parsed?.enabled !== false,
             minutesBefore: typeof parsed?.minutesBefore === 'number'
               ? parsed.minutesBefore
               : DEFAULT_REMINDER_MINUTES,
-          });
+          };
+          reminderSettingsRef.current = nextSettings;
+          setReminderSettings(nextSettings);
         }
 
         if (storedIds) {
           const parsedIds = JSON.parse(storedIds);
           if (parsedIds && typeof parsedIds === 'object') {
+            reminderIdsRef.current = parsedIds;
             setReminderIds(parsedIds);
           }
         }
@@ -162,11 +182,13 @@ export default function UpcomingStopsScreen() {
   }, []);
 
   const persistReminderSettings = async (settings: ReminderSettings) => {
+    reminderSettingsRef.current = settings;
     await AsyncStorage.setItem(REMINDER_SETTINGS_KEY, JSON.stringify(settings));
     setReminderSettings(settings);
   };
 
   const persistReminderIds = async (ids: ReminderIds) => {
+    reminderIdsRef.current = ids;
     await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids));
     setReminderIds(ids);
   };
@@ -221,7 +243,7 @@ export default function UpcomingStopsScreen() {
     ]);
   };
 
-  const cancelReminderForStop = async (stopId: string, ids: ReminderIds = reminderIds) => {
+  const cancelReminderForStop = async (stopId: string, ids: ReminderIds = reminderIdsRef.current) => {
     const notificationId = ids[stopId];
     if (!notificationId) return ids;
 
@@ -239,15 +261,14 @@ export default function UpcomingStopsScreen() {
 
   const scheduleReminderForStop = async (
     stop: UpcomingStop,
-    ids: ReminderIds = reminderIds,
-    settings: ReminderSettings = reminderSettings
+    ids: ReminderIds = reminderIdsRef.current,
+    settings: ReminderSettings = reminderSettingsRef.current
   ) => {
     if (!settings.enabled) return ids;
 
-    const reminderAt = new Date(stop.starts_at);
-    reminderAt.setMinutes(reminderAt.getMinutes() - settings.minutesBefore);
+    const reminderAt = getUpcomingStopReminderTime(stop, settings.minutesBefore);
 
-    if (Number.isNaN(reminderAt.getTime()) || reminderAt.getTime() <= Date.now()) {
+    if (!reminderAt || reminderAt.getTime() <= Date.now()) {
       return cancelReminderForStop(stop.id, ids);
     }
 
@@ -290,10 +311,9 @@ export default function UpcomingStopsScreen() {
       return false;
     }
 
-    const reminderAt = new Date(stop.starts_at);
-    reminderAt.setMinutes(reminderAt.getMinutes() - reminderSettings.minutesBefore);
+    const reminderAt = getUpcomingStopReminderTime(stop, reminderSettings.minutesBefore);
 
-    return Number.isFinite(reminderAt.getTime()) && reminderAt.getTime() > Date.now();
+    return !!reminderAt && reminderAt.getTime() > Date.now();
   };
 
   const handleReminderToggle = async (enabled: boolean) => {
@@ -309,7 +329,7 @@ export default function UpcomingStopsScreen() {
       };
       await persistReminderSettings(nextSettings);
 
-      let nextIds = reminderIds;
+      let nextIds = reminderIdsRef.current;
       for (const stop of stops) {
         if (stop.status === 'completed') continue;
         nextIds = await scheduleReminderForStop(stop, nextIds, nextSettings);
@@ -323,7 +343,7 @@ export default function UpcomingStopsScreen() {
     };
     await persistReminderSettings(nextSettings);
 
-    for (const notificationId of Object.values(reminderIds)) {
+    for (const notificationId of Object.values(reminderIdsRef.current)) {
       try {
         await Notifications.cancelScheduledNotificationAsync(notificationId);
       } catch (error) {
@@ -402,6 +422,9 @@ export default function UpcomingStopsScreen() {
       if (!trimmedLocation) {
         throw new Error('Location name or address is required.');
       }
+      if (!reminderSettingsLoaded) {
+        throw new Error('Reminder settings are still loading. Please try again.');
+      }
 
       const { startsAt, endsAt } = buildDateRange();
       setIsSaving(true);
@@ -415,8 +438,9 @@ export default function UpcomingStopsScreen() {
         status: 'scheduled',
       });
 
-      if (reminderSettings.enabled) {
-        await scheduleReminderForStop(createdStop);
+      const currentSettings = reminderSettingsRef.current;
+      if (currentSettings.enabled) {
+        await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
       }
 
       resetForm();
@@ -455,7 +479,7 @@ export default function UpcomingStopsScreen() {
 
             try {
               await deleteUpcomingStop(stop.id);
-              await cancelReminderForStop(stop.id);
+              await cancelReminderForStop(stop.id, reminderIdsRef.current);
             } catch (error: any) {
               setErrorMessage(error?.message ?? 'Could not delete upcoming stop.');
             } finally {
@@ -614,9 +638,9 @@ export default function UpcomingStopsScreen() {
             ) : null}
 
             <TouchableOpacity
-              style={[styles.saveButton, isSaving && styles.buttonDisabled]}
+              style={[styles.saveButton, (isSaving || !reminderSettingsLoaded) && styles.buttonDisabled]}
               onPress={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || !reminderSettingsLoaded}
               activeOpacity={0.75}
             >
               {isSaving ? (
