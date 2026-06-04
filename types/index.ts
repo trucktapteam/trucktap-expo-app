@@ -101,6 +101,20 @@ export type Announcement = {
   timestamp: string;
 };
 
+export type UpcomingStopStatus = 'scheduled' | 'delayed' | 'cancelled' | 'sold_out' | 'completed';
+
+export type UpcomingStop = {
+  id: string;
+  truck_id: string;
+  starts_at: string;
+  ends_at: string;
+  location_text: string;
+  note?: string | null;
+  status: UpcomingStopStatus;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type TeamUpdate = {
   id: string;
   title: string;

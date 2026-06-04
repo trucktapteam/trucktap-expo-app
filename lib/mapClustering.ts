@@ -1,5 +1,5 @@
 import { FoodTruck } from '@/types';
-import { getValidatedCoordinate, isValidMapRegion } from '@/lib/mapValidation';
+import { getValidatedCoordinate, getValidatedTruckMarkerCoordinate, isValidMapRegion } from '@/lib/mapValidation';
 
 export const CLUSTER_BREAKPOINT_DELTA = 0.035;
 const GRID_DIVISOR = 12;
@@ -30,7 +30,7 @@ export function clusterTruckMarkers(
   region: MapRegionLike
 ): TruckMarkerCluster[] {
   const validTrucks = trucks.filter((truck) =>
-    !!getValidatedCoordinate(`truck ${truck.id}`, truck.location)
+    !!getValidatedTruckMarkerCoordinate(`cluster truck ${truck.id}`, truck.location)
   );
 
   if (!isValidMapRegion(region)) {

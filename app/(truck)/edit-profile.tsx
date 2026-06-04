@@ -207,10 +207,14 @@ export default function EditProfile() {
         website: website.trim(),
       };
 
-      if (address.trim() !== (truck.location?.address || '')) {
+      if (
+        address.trim() !== (truck.location?.address || '') &&
+        Number.isFinite(truck.location?.latitude) &&
+        Number.isFinite(truck.location?.longitude)
+      ) {
         updates.location = {
-          latitude: truck.location?.latitude || 37.7749,
-          longitude: truck.location?.longitude || -122.4194,
+          latitude: truck.location.latitude,
+          longitude: truck.location.longitude,
           address: address.trim(),
         };
       }

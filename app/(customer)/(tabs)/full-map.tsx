@@ -13,7 +13,7 @@ import { Image } from 'expo-image';
 import { FoodTruck, Sighting } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, hasSightingCoordinates } from '@/lib/sightings';
-import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
+import { getValidatedCoordinate, getValidatedTruckMarkerCoordinate } from '@/lib/mapValidation';
 
 const TRUCK_MARKER_COLOR = '#f97316';
 const FOREGROUND_SCREEN_REFRESH_DEBOUNCE_MS = 5000;
@@ -24,7 +24,7 @@ const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.65;
 const SNAP_THRESHOLD = 50;
 
 const hasMapLocation = (truck: FoodTruck) =>
-  isValidCoordinate(truck.location);
+  !!getValidatedTruckMarkerCoordinate(`full-map truck ${truck.id}`, truck.location);
 
 export default function FullMapScreen() {
   const router = useRouter();
@@ -506,7 +506,7 @@ export default function FullMapScreen() {
           >
             
             {trucksForMap.map((truck) => {
-              const truckCoordinate = getValidatedCoordinate(`full-map truck ${truck.id}`, truck.location);
+              const truckCoordinate = getValidatedTruckMarkerCoordinate(`full-map truck ${truck.id}`, truck.location);
               const openNow = isTruckOpenNow(truck.id);
 
               if (!truckCoordinate) {

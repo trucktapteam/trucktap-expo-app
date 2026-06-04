@@ -10,7 +10,7 @@ import { Image } from 'expo-image';
 import { supabase } from '@/lib/supabase';
 import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, getSafeSpotterDisplayName, hasSightingCoordinates } from '@/lib/sightings';
 import { Sighting } from '@/types';
-import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
+import { getValidatedCoordinate, getValidatedTruckMarkerCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { getTruckDisplayLocation } from '@/lib/truckLocation';
 
 const TRUCK_MARKER_COLOR = '#f97316';
@@ -30,7 +30,7 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 };
 
 const hasMapLocation = (truck: any) =>
-  isValidCoordinate(truck?.location);
+  !!getValidatedTruckMarkerCoordinate(`discover truck ${truck?.id ?? 'unknown'}`, truck?.location);
 
 const hasCoordinates = (truck: any) =>
   isValidCoordinate(truck?.location);
@@ -707,7 +707,7 @@ export default function CustomerHomeScreen() {
               provider={PROVIDER_GOOGLE}
             >
               {mapTrucks.map((truck) => {
-                const truckCoordinate = getValidatedCoordinate(`discover truck ${truck.id}`, truck.location);
+                const truckCoordinate = getValidatedTruckMarkerCoordinate(`discover truck ${truck.id}`, truck.location);
 
                 if (!truckCoordinate) {
                   return null;

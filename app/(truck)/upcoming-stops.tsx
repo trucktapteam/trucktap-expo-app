@@ -1,0 +1,1078 @@
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { ArrowLeft, CalendarDays, ChevronDown, Clock, MapPin, RefreshCw, Trash2 } from 'lucide-react-native';
+import Colors from '@/constants/colors';
+import { useApp } from '@/contexts/AppContext';
+import { UpcomingStop, UpcomingStopStatus } from '@/types';
+import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+
+const STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
+const REMINDER_SETTINGS_KEY = 'upcomingStopReminderSettings';
+const REMINDER_IDS_KEY = 'upcomingStopReminderIds';
+const UPCOMING_STOP_REMINDER_CATEGORY = 'upcoming-stop-reminder';
+const DEFAULT_REMINDER_MINUTES = 30;
+
+const statusLabels: Record<UpcomingStopStatus, string> = {
+  scheduled: 'Scheduled',
+  delayed: 'Delayed',
+  cancelled: 'Cancelled',
+  sold_out: 'Sold out',
+  completed: 'Completed',
+};
+
+const formatDateTime = (iso: string) => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Time not set';
+
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const atTime = (hour: number, minute: number) => {
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return date;
+};
+
+const combineDateAndTime = (dateValue: Date, timeValue: Date) =>
+  new Date(
+    dateValue.getFullYear(),
+    dateValue.getMonth(),
+    dateValue.getDate(),
+    timeValue.getHours(),
+    timeValue.getMinutes(),
+    0,
+    0
+  );
+
+const formatDateButton = (date: Date) =>
+  date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+
+const formatTimeButton = (date: Date) =>
+  date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+type PickerTarget = 'date' | 'start' | 'end' | null;
+
+type ReminderSettings = {
+  enabled: boolean;
+  minutesBefore: number;
+};
+
+type ReminderIds = Record<string, string>;
+
+const getStatusColor = (status: UpcomingStopStatus) => {
+  switch (status) {
+    case 'delayed':
+      return Colors.warning;
+    case 'cancelled':
+      return Colors.danger;
+    case 'sold_out':
+      return '#7C3AED';
+    case 'completed':
+      return Colors.gray;
+    default:
+      return Colors.success;
+  }
+};
+
+export default function UpcomingStopsScreen() {
+  const router = useRouter();
+  const {
+    getUserTruck,
+    getUpcomingStops,
+    addUpcomingStop,
+    updateUpcomingStop,
+    deleteUpcomingStop,
+    refreshUpcomingStops,
+    upcomingStopsLoading,
+  } = useApp();
+  const truck = getUserTruck();
+  useTruckLifecycleLogger('UpcomingStopsScreen');
+
+  const [dateValue, setDateValue] = useState(() => new Date());
+  const [startTime, setStartTime] = useState(() => atTime(11, 0));
+  const [endTime, setEndTime] = useState(() => atTime(14, 0));
+  const [endsNextDay, setEndsNextDay] = useState(false);
+  const [locationText, setLocationText] = useState('');
+  const [note, setNote] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [busyStopId, setBusyStopId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activePicker, setActivePicker] = useState<PickerTarget>(null);
+  const [reminderSettings, setReminderSettings] = useState<ReminderSettings>({
+    enabled: true,
+    minutesBefore: DEFAULT_REMINDER_MINUTES,
+  });
+  const [reminderIds, setReminderIds] = useState<ReminderIds>({});
+  const [reminderSettingsLoaded, setReminderSettingsLoaded] = useState(false);
+
+  const stops = useMemo(
+    () => truck ? getUpcomingStops(truck.id) : [],
+    [getUpcomingStops, truck]
+  );
+
+  React.useEffect(() => {
+    const loadReminderState = async () => {
+      try {
+        const [storedSettings, storedIds] = await Promise.all([
+          AsyncStorage.getItem(REMINDER_SETTINGS_KEY),
+          AsyncStorage.getItem(REMINDER_IDS_KEY),
+        ]);
+
+        if (storedSettings) {
+          const parsed = JSON.parse(storedSettings);
+          setReminderSettings({
+            enabled: parsed?.enabled !== false,
+            minutesBefore: typeof parsed?.minutesBefore === 'number'
+              ? parsed.minutesBefore
+              : DEFAULT_REMINDER_MINUTES,
+          });
+        }
+
+        if (storedIds) {
+          const parsedIds = JSON.parse(storedIds);
+          if (parsedIds && typeof parsedIds === 'object') {
+            setReminderIds(parsedIds);
+          }
+        }
+      } catch (error) {
+        console.log('[UpcomingStops] Failed to load reminder settings:', error);
+      } finally {
+        setReminderSettingsLoaded(true);
+      }
+    };
+
+    void loadReminderState();
+  }, []);
+
+  const persistReminderSettings = async (settings: ReminderSettings) => {
+    await AsyncStorage.setItem(REMINDER_SETTINGS_KEY, JSON.stringify(settings));
+    setReminderSettings(settings);
+  };
+
+  const persistReminderIds = async (ids: ReminderIds) => {
+    await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids));
+    setReminderIds(ids);
+  };
+
+  const requestLocalNotificationPermission = async () => {
+    if (Platform.OS === 'web') {
+      setErrorMessage('Local stop reminders are not available on web.');
+      return false;
+    }
+
+    const existing = await Notifications.getPermissionsAsync();
+    if (existing.status === 'granted') {
+      return true;
+    }
+
+    const requested = await Notifications.requestPermissionsAsync(
+      Platform.OS === 'ios'
+        ? {
+            ios: {
+              allowAlert: true,
+              allowBadge: true,
+              allowSound: true,
+            },
+          }
+        : {}
+    );
+
+    if (requested.status !== 'granted') {
+      setErrorMessage('Notifications are off, so reminders cannot be scheduled.');
+      return false;
+    }
+
+    return true;
+  };
+
+  const ensureReminderNotificationSetup = async () => {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+      });
+    }
+
+    await Notifications.setNotificationCategoryAsync(UPCOMING_STOP_REMINDER_CATEGORY, [
+      {
+        identifier: 'snooze-upcoming-stop',
+        buttonTitle: 'Snooze',
+        options: {
+          opensAppToForeground: false,
+        },
+      },
+    ]);
+  };
+
+  const cancelReminderForStop = async (stopId: string, ids: ReminderIds = reminderIds) => {
+    const notificationId = ids[stopId];
+    if (!notificationId) return ids;
+
+    try {
+      await Notifications.cancelScheduledNotificationAsync(notificationId);
+    } catch (error) {
+      console.log('[UpcomingStops] Failed to cancel stop reminder:', error);
+    }
+
+    const nextIds = { ...ids };
+    delete nextIds[stopId];
+    await persistReminderIds(nextIds);
+    return nextIds;
+  };
+
+  const scheduleReminderForStop = async (
+    stop: UpcomingStop,
+    ids: ReminderIds = reminderIds,
+    settings: ReminderSettings = reminderSettings
+  ) => {
+    if (!settings.enabled) return ids;
+
+    const reminderAt = new Date(stop.starts_at);
+    reminderAt.setMinutes(reminderAt.getMinutes() - settings.minutesBefore);
+
+    if (Number.isNaN(reminderAt.getTime()) || reminderAt.getTime() <= Date.now()) {
+      return cancelReminderForStop(stop.id, ids);
+    }
+
+    const hasPermission = await requestLocalNotificationPermission();
+    if (!hasPermission) return ids;
+
+    await ensureReminderNotificationSetup();
+
+    const idsWithoutOldReminder = await cancelReminderForStop(stop.id, ids);
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Time to Go Live soon',
+        body: `${stop.location_text} starts in about ${settings.minutesBefore} minutes. Open TruckTap and go live when you're ready.`,
+        categoryIdentifier: UPCOMING_STOP_REMINDER_CATEGORY,
+        data: {
+          type: 'upcoming_stop_reminder',
+          route: '/(truck)/upcoming-stops',
+          truck_id: stop.truck_id,
+          stop_id: stop.id,
+          location_text: stop.location_text,
+          minutes_before: String(settings.minutesBefore),
+        },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: reminderAt,
+      },
+    });
+
+    const nextIds = {
+      ...idsWithoutOldReminder,
+      [stop.id]: notificationId,
+    };
+    await persistReminderIds(nextIds);
+    return nextIds;
+  };
+
+  const hasActiveReminder = (stop: UpcomingStop) => {
+    if (!reminderSettings.enabled || !reminderIds[stop.id] || stop.status === 'completed') {
+      return false;
+    }
+
+    const reminderAt = new Date(stop.starts_at);
+    reminderAt.setMinutes(reminderAt.getMinutes() - reminderSettings.minutesBefore);
+
+    return Number.isFinite(reminderAt.getTime()) && reminderAt.getTime() > Date.now();
+  };
+
+  const handleReminderToggle = async (enabled: boolean) => {
+    setErrorMessage(null);
+
+    if (enabled) {
+      const hasPermission = await requestLocalNotificationPermission();
+      if (!hasPermission) return;
+
+      const nextSettings = {
+        ...reminderSettings,
+        enabled: true,
+      };
+      await persistReminderSettings(nextSettings);
+
+      let nextIds = reminderIds;
+      for (const stop of stops) {
+        if (stop.status === 'completed') continue;
+        nextIds = await scheduleReminderForStop(stop, nextIds, nextSettings);
+      }
+      return;
+    }
+
+    const nextSettings = {
+      ...reminderSettings,
+      enabled: false,
+    };
+    await persistReminderSettings(nextSettings);
+
+    for (const notificationId of Object.values(reminderIds)) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(notificationId);
+      } catch (error) {
+        console.log('[UpcomingStops] Failed to cancel reminder while disabling:', error);
+      }
+    }
+    await persistReminderIds({});
+  };
+
+  if (!truck) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Truck not found</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const resetForm = () => {
+    setDateValue(new Date());
+    setStartTime(atTime(11, 0));
+    setEndTime(atTime(14, 0));
+    setEndsNextDay(false);
+    setLocationText('');
+    setNote('');
+    setActivePicker(null);
+  };
+
+  const buildDateRange = () => {
+    const startsAt = combineDateAndTime(dateValue, startTime);
+    const endsAt = combineDateAndTime(dateValue, endTime);
+
+    if (endsNextDay) {
+      endsAt.setDate(endsAt.getDate() + 1);
+    }
+
+    if (endsAt <= startsAt) {
+      throw new Error('End time must be after start time. Turn on "Ends next day" for overnight stops.');
+    }
+
+    return { startsAt, endsAt };
+  };
+
+  const handlePickerChange = (_event: any, selectedDate?: Date) => {
+    if (Platform.OS !== 'ios') {
+      setActivePicker(null);
+    }
+
+    if (!selectedDate || !activePicker) {
+      return;
+    }
+
+    if (activePicker === 'date') {
+      setDateValue(selectedDate);
+    } else if (activePicker === 'start') {
+      setStartTime(selectedDate);
+    } else if (activePicker === 'end') {
+      setEndTime(selectedDate);
+    }
+  };
+
+  const pickerValue =
+    activePicker === 'date' ? dateValue :
+    activePicker === 'start' ? startTime :
+    activePicker === 'end' ? endTime :
+    dateValue;
+
+  const pickerMode = activePicker === 'date' ? 'date' : 'time';
+
+  const handleSave = async () => {
+    setErrorMessage(null);
+
+    try {
+      const trimmedLocation = locationText.trim();
+      if (!trimmedLocation) {
+        throw new Error('Location name or address is required.');
+      }
+
+      const { startsAt, endsAt } = buildDateRange();
+      setIsSaving(true);
+
+      const createdStop = await addUpcomingStop({
+        truck_id: truck.id,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        location_text: trimmedLocation,
+        note: note.trim() || null,
+        status: 'scheduled',
+      });
+
+      if (reminderSettings.enabled) {
+        await scheduleReminderForStop(createdStop);
+      }
+
+      resetForm();
+    } catch (error: any) {
+      setErrorMessage(error?.message ?? 'Could not save upcoming stop.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleStatusChange = async (stop: UpcomingStop, status: UpcomingStopStatus) => {
+    setErrorMessage(null);
+    setBusyStopId(stop.id);
+
+    try {
+      await updateUpcomingStop(stop.id, { status });
+    } catch (error: any) {
+      setErrorMessage(error?.message ?? 'Could not update stop status.');
+    } finally {
+      setBusyStopId(null);
+    }
+  };
+
+  const handleDelete = (stop: UpcomingStop) => {
+    Alert.alert(
+      'Delete stop?',
+      'This removes the upcoming stop from your customer profile.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setErrorMessage(null);
+            setBusyStopId(stop.id);
+
+            try {
+              await deleteUpcomingStop(stop.id);
+              await cancelReminderForStop(stop.id);
+            } catch (error: any) {
+              setErrorMessage(error?.message ?? 'Could not delete upcoming stop.');
+            } finally {
+              setBusyStopId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRefresh = async () => {
+    setErrorMessage(null);
+
+    try {
+      await refreshUpcomingStops();
+    } catch (error: any) {
+      setErrorMessage(error?.message ?? 'Could not refresh upcoming stops.');
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.flex}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <ArrowLeft size={24} color={Colors.dark} />
+          </TouchableOpacity>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Upcoming Stops</Text>
+            <Text style={styles.subtitle}>Plan future stops without going live</Text>
+          </View>
+          <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton} disabled={upcomingStopsLoading}>
+            {upcomingStopsLoading ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : (
+              <RefreshCw size={20} color={Colors.primary} />
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.reminderCard}>
+            <View style={styles.reminderHeader}>
+              <View style={styles.reminderTextContainer}>
+                <Text style={styles.reminderTitle}>Remind me before upcoming stops</Text>
+                <Text style={styles.reminderSubtitle}>
+                  {reminderSettings.minutesBefore} minutes before each new stop
+                </Text>
+              </View>
+              <Switch
+                value={reminderSettings.enabled}
+                onValueChange={handleReminderToggle}
+                disabled={!reminderSettingsLoaded}
+                trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
+                thumbColor={reminderSettings.enabled ? Colors.primary : Colors.gray}
+              />
+            </View>
+          </View>
+
+          <View style={styles.formCard}>
+            <View style={styles.formHeader}>
+              <CalendarDays size={24} color={Colors.primary} />
+              <Text style={styles.formTitle}>Add planned stop</Text>
+            </View>
+
+            <Text style={styles.label}>Date</Text>
+            <PickerButton
+              icon={CalendarDays}
+              value={formatDateButton(dateValue)}
+              onPress={() => setActivePicker(activePicker === 'date' ? null : 'date')}
+            />
+
+            <View style={styles.timeRow}>
+              <View style={styles.timeInputGroup}>
+                <Text style={styles.label}>Start</Text>
+                <PickerButton
+                  icon={Clock}
+                  value={formatTimeButton(startTime)}
+                  onPress={() => setActivePicker(activePicker === 'start' ? null : 'start')}
+                />
+              </View>
+              <View style={styles.timeInputGroup}>
+                <Text style={styles.label}>End</Text>
+                <PickerButton
+                  icon={Clock}
+                  value={formatTimeButton(endTime)}
+                  onPress={() => setActivePicker(activePicker === 'end' ? null : 'end')}
+                />
+              </View>
+            </View>
+
+            {activePicker && (
+              <View style={styles.pickerContainer}>
+                <DateTimePicker
+                  value={pickerValue}
+                  mode={pickerMode}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handlePickerChange}
+                />
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={styles.pickerDoneButton}
+                    onPress={() => setActivePicker(null)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.pickerDoneText}>Done</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.nextDayToggle, endsNextDay && styles.nextDayToggleOn]}
+              onPress={() => setEndsNextDay(value => !value)}
+              activeOpacity={0.75}
+            >
+              <Clock size={18} color={endsNextDay ? Colors.light : Colors.primary} />
+              <Text style={[styles.nextDayText, endsNextDay && styles.nextDayTextOn]}>
+                Ends next day
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.label}>Location name or address</Text>
+            <TextInput
+              style={styles.input}
+              value={locationText}
+              onChangeText={setLocationText}
+              placeholder="Downtown farmers market"
+              placeholderTextColor={Colors.gray}
+              autoCapitalize="words"
+            />
+
+            <Text style={styles.label}>Note</Text>
+            <TextInput
+              style={[styles.input, styles.noteInput]}
+              value={note}
+              onChangeText={setNote}
+              placeholder="Optional note"
+              placeholderTextColor={Colors.gray}
+              multiline
+              textAlignVertical="top"
+            />
+
+            {errorMessage ? (
+              <Text style={styles.errorMessage}>{errorMessage}</Text>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.saveButton, isSaving && styles.buttonDisabled]}
+              onPress={handleSave}
+              disabled={isSaving}
+              activeOpacity={0.75}
+            >
+              {isSaving ? (
+                <ActivityIndicator color={Colors.light} />
+              ) : (
+                <Text style={styles.saveButtonText}>Save Stop</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.listHeader}>
+            <Text style={styles.listTitle}>Your Stops</Text>
+            <Text style={styles.listCount}>{stops.length}</Text>
+          </View>
+
+          {stops.length === 0 ? (
+            <View style={styles.emptyState}>
+              <MapPin size={56} color={Colors.lightGray} />
+              <Text style={styles.emptyTitle}>No upcoming stops yet</Text>
+              <Text style={styles.emptySubtitle}>Add the stops you already know about so customers can plan ahead.</Text>
+            </View>
+          ) : (
+            stops.map(stop => (
+              <StopCard
+                key={stop.id}
+                stop={stop}
+                busy={busyStopId === stop.id}
+                reminderOn={hasActiveReminder(stop)}
+                onStatusChange={handleStatusChange}
+                onDelete={handleDelete}
+              />
+            ))
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+type StopCardProps = {
+  stop: UpcomingStop;
+  busy: boolean;
+  reminderOn: boolean;
+  onStatusChange: (stop: UpcomingStop, status: UpcomingStopStatus) => void;
+  onDelete: (stop: UpcomingStop) => void;
+};
+
+type PickerButtonProps = {
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+  value: string;
+  onPress: () => void;
+};
+
+function PickerButton({ icon: Icon, value, onPress }: PickerButtonProps) {
+  return (
+    <TouchableOpacity style={styles.pickerButton} onPress={onPress} activeOpacity={0.75}>
+      <Icon size={18} color={Colors.primary} />
+      <Text style={styles.pickerButtonText}>{value}</Text>
+      <ChevronDown size={18} color={Colors.gray} />
+    </TouchableOpacity>
+  );
+}
+
+function StopCard({ stop, busy, reminderOn, onStatusChange, onDelete }: StopCardProps) {
+  const statusColor = getStatusColor(stop.status);
+  const ended = Date.parse(stop.ends_at) <= Date.now();
+
+  return (
+    <View style={styles.stopCard}>
+      <View style={styles.stopHeader}>
+        <View style={[styles.statusBadge, { backgroundColor: `${statusColor}18` }]}>
+          <Text style={[styles.statusText, { color: statusColor }]}>
+            {statusLabels[stop.status]}
+          </Text>
+        </View>
+        <View style={[styles.reminderBadge, reminderOn ? styles.reminderBadgeOn : styles.reminderBadgeOff]}>
+          <Text style={[styles.reminderBadgeText, reminderOn ? styles.reminderBadgeTextOn : styles.reminderBadgeTextOff]}>
+            {reminderOn ? 'Reminder On' : 'Reminder Off'}
+          </Text>
+        </View>
+        {ended ? <Text style={styles.endedText}>Ended</Text> : null}
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => onDelete(stop)}
+          disabled={busy}
+          activeOpacity={0.75}
+        >
+          {busy ? <ActivityIndicator size="small" color={Colors.gray} /> : <Trash2 size={18} color={Colors.danger} />}
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.stopTime}>{formatDateTime(stop.starts_at)} - {formatDateTime(stop.ends_at)}</Text>
+      <Text style={styles.stopLocation}>{stop.location_text}</Text>
+      {stop.note ? <Text style={styles.stopNote}>{stop.note}</Text> : null}
+
+      <View style={styles.statusRow}>
+        {STATUSES.map(status => (
+          <TouchableOpacity
+            key={status}
+            style={[styles.statusChip, stop.status === status && styles.statusChipActive]}
+            onPress={() => onStatusChange(stop, status)}
+            disabled={busy || stop.status === status}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.statusChipText, stop.status === status && styles.statusChipTextActive]}>
+              {statusLabels[status]}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.lightGray,
+  },
+  flex: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.light,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.lightGray,
+  },
+  backButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  titleContainer: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: Colors.gray,
+    marginTop: 2,
+  },
+  refreshButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    flex: 1,
+  },
+  contentContainer: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  reminderCard: {
+    backgroundColor: Colors.light,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}18`,
+  },
+  reminderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  reminderTextContainer: {
+    flex: 1,
+  },
+  reminderTitle: {
+    fontSize: 16,
+    fontWeight: '800' as const,
+    color: Colors.dark,
+    marginBottom: 4,
+  },
+  reminderSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.gray,
+  },
+  formCard: {
+    backgroundColor: Colors.light,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: Colors.dark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  formHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 18,
+  },
+  formTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.gray,
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: Colors.lightGray,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 15,
+    color: Colors.dark,
+    marginBottom: 14,
+  },
+  noteInput: {
+    minHeight: 82,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  timeInputGroup: {
+    flex: 1,
+  },
+  pickerButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.lightGray,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
+  pickerButtonText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  pickerContainer: {
+    backgroundColor: Colors.lightGray,
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  pickerDoneButton: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  pickerDoneText: {
+    color: Colors.primary,
+    fontSize: 15,
+    fontWeight: '800' as const,
+  },
+  nextDayToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}35`,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+  nextDayToggleOn: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  nextDayText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  nextDayTextOn: {
+    color: Colors.light,
+  },
+  saveButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 15,
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.light,
+  },
+  buttonDisabled: {
+    opacity: 0.65,
+  },
+  errorMessage: {
+    color: Colors.danger,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  listTitle: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  listCount: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.gray,
+    backgroundColor: Colors.light,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 52,
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: Colors.gray,
+    textAlign: 'center',
+  },
+  stopCard: {
+    backgroundColor: Colors.light,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}18`,
+  },
+  stopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase' as const,
+  },
+  reminderBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  reminderBadgeOn: {
+    backgroundColor: `${Colors.success}18`,
+  },
+  reminderBadgeOff: {
+    backgroundColor: `${Colors.gray}18`,
+  },
+  reminderBadgeText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  reminderBadgeTextOn: {
+    color: Colors.success,
+  },
+  reminderBadgeTextOff: {
+    color: Colors.gray,
+  },
+  endedText: {
+    fontSize: 12,
+    color: Colors.gray,
+    fontWeight: '700' as const,
+  },
+  deleteButton: {
+    marginLeft: 'auto',
+    padding: 6,
+  },
+  stopTime: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 6,
+  },
+  stopLocation: {
+    fontSize: 15,
+    lineHeight: 21,
+    color: Colors.dark,
+    marginBottom: 6,
+  },
+  stopNote: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.gray,
+    marginBottom: 12,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  statusChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  statusChipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: `${Colors.primary}12`,
+  },
+  statusChipText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.gray,
+  },
+  statusChipTextActive: {
+    color: Colors.primary,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    color: Colors.gray,
+  },
+});

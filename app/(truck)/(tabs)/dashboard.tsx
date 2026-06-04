@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, X, AlertCircle, Eye, Link, Sparkles, Bell, Archive, ArchiveRestore, Truck } from 'lucide-react-native';
+import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, X, AlertCircle, Eye, Link, Sparkles, Bell, Archive, ArchiveRestore, Truck, CalendarDays } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckMenu, useTruckRating } from '@/contexts/AppContext';
 import * as Clipboard from 'expo-clipboard';
@@ -798,27 +798,35 @@ export default function TruckDashboard() {
             )}
           </View>
           <DashboardCard 
-            icon={Megaphone}
-            label="Announcements"
-            onPress={() => router.push('/(truck)/announcements' as any)}
+            icon={CalendarDays}
+            label="Upcoming Stops"
+            onPress={() => router.push('/(truck)/upcoming-stops' as any)}
           />
         </View>
 
         <View style={styles.gridContainer}>
           <DashboardCard 
+            icon={Megaphone}
+            label="Announcements"
+            onPress={() => router.push('/(truck)/announcements' as any)}
+          />
+          <DashboardCard 
             icon={Settings}
             label="Settings"
             onPress={() => router.push('/(truck)/settings' as any)}
           />
-          {!isArchived && (
+        </View>
+
+        {!isArchived && (
+          <View style={styles.gridContainer}>
             <DashboardCard 
               icon={Archive}
               label="Archive Truck"
               onPress={handleArchiveTruck}
             />
-          )}
-          {isArchived && <View style={{ flex: 1, marginHorizontal: 6 }} />}
-        </View>
+            <View style={{ flex: 1, marginHorizontal: 6 }} />
+          </View>
+        )}
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Your Profile</Text>

@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import { AppState as RNAppState } from 'react-native';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, FoodTruck, Review, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType } from '@/types';
+import { User, FoodTruck, Review, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType, UpcomingStop, UpcomingStopStatus } from '@/types';
 import { teamUpdates } from '@/mocks/data';
 import { DEBUG } from '@/constants/debug';
 import { useAuth } from '@/contexts/AuthContext';
@@ -147,6 +147,25 @@ const mapOwnerMessageRow = (row: any, readAt?: string | null): OwnerMessage => (
   read_at: readAt ?? null,
 });
 
+const UPCOMING_STOP_STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
+
+const normalizeUpcomingStopStatus = (status: unknown): UpcomingStopStatus =>
+  UPCOMING_STOP_STATUSES.includes(status as UpcomingStopStatus)
+    ? status as UpcomingStopStatus
+    : 'scheduled';
+
+const mapUpcomingStopRow = (row: any): UpcomingStop => ({
+  id: row.id?.toString?.() ?? '',
+  truck_id: row.truck_id?.toString?.() ?? '',
+  starts_at: row.starts_at ?? new Date().toISOString(),
+  ends_at: row.ends_at ?? new Date().toISOString(),
+  location_text: row.location_text ?? '',
+  note: row.note ?? null,
+  status: normalizeUpcomingStopStatus(row.status),
+  created_at: row.created_at ?? undefined,
+  updated_at: row.updated_at ?? undefined,
+});
+
 export type AppState = {
   currentUser: User | null;
   isOnboarded: boolean;
@@ -154,6 +173,8 @@ export type AppState = {
   reviews: Review[];
   menuItems: MenuItem[];
   announcements: Announcement[];
+  upcomingStops: UpcomingStop[];
+  upcomingStopsLoading: boolean;
   checklistDismissed: boolean;
   showClosed: boolean;
   customerRadius: number;
@@ -213,6 +234,11 @@ export type AppState = {
   addAnnouncement: (truckId: string, message: string) => void;
   deleteAnnouncement: (announcementId: string) => void;
   getAnnouncements: (truckId: string) => Announcement[];
+  getUpcomingStops: (truckId: string) => UpcomingStop[];
+  addUpcomingStop: (stop: Omit<UpcomingStop, 'id' | 'created_at' | 'updated_at'>) => Promise<UpcomingStop>;
+  updateUpcomingStop: (stopId: string, updates: Partial<Omit<UpcomingStop, 'id' | 'truck_id' | 'created_at' | 'updated_at'>>) => Promise<UpcomingStop>;
+  deleteUpcomingStop: (stopId: string) => Promise<void>;
+  refreshUpcomingStops: () => Promise<void>;
   setTruckVerified: (truckId: string, value: boolean) => void;
   dismissChecklist: () => void;
   hasHoursSet: (truckId: string) => boolean;
@@ -245,6 +271,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [allTrucksLoading, setAllTrucksLoading] = useState<boolean>(true);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [upcomingStops, setUpcomingStops] = useState<UpcomingStop[]>([]);
+  const [upcomingStopsLoading, setUpcomingStopsLoading] = useState<boolean>(true);
   const [checklistDismissed, setChecklistDismissed] = useState<boolean>(false);
   const [showClosed, setShowClosedState] = useState<boolean>(false);
   const [customerRadius, setCustomerRadiusState] = useState<number>(25);
@@ -453,6 +481,38 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }
 }, []);
 
+  const fetchUpcomingStopsFromSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      if (DEBUG) console.log('[AppContext] Supabase not configured, no upcoming stops to fetch');
+      setUpcomingStops([]);
+      setUpcomingStopsLoading(false);
+      return;
+    }
+
+    if (DEBUG) console.log('[AppContext] Fetching upcoming stops from Supabase');
+    setUpcomingStopsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('upcoming_stops')
+        .select('*')
+        .order('starts_at', { ascending: true });
+
+      if (error) {
+        console.log('[AppContext] Supabase fetch upcoming stops error:', error.message);
+        setUpcomingStops([]);
+        return;
+      }
+
+      setUpcomingStops((data ?? []).map(mapUpcomingStopRow));
+      if (DEBUG) console.log('[AppContext] Fetched', data?.length ?? 0, 'upcoming stops');
+    } catch (err: any) {
+      console.log('[AppContext] Unexpected error fetching upcoming stops:', err?.message);
+      setUpcomingStops([]);
+    } finally {
+      setUpcomingStopsLoading(false);
+    }
+  }, []);
+
   const fetchAllTrucksFromSupabase = useCallback(async () => {
     if (!isSupabaseConfigured) {
       if (DEBUG) console.log('[AppContext] Supabase not configured, no trucks to fetch');
@@ -656,6 +716,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
   useEffect(() => {
     void fetchAllTrucksFromSupabase();
   }, [fetchAllTrucksFromSupabase]);
+
+  useEffect(() => {
+    void fetchUpcomingStopsFromSupabase();
+  }, [fetchUpcomingStopsFromSupabase]);
 
   useEffect(() => {
     void fetchOwnedTrucksFromSupabase();
@@ -971,6 +1035,7 @@ if (!favoritesError && favoriteRows) {
       const refreshTasks: Promise<void>[] = [
         fetchAllTrucksFromSupabase(),
         fetchReviewsFromSupabase(),
+        fetchUpcomingStopsFromSupabase(),
       ];
 
       if (isAuthenticated && authUser) {
@@ -1002,6 +1067,7 @@ if (!favoritesError && favoriteRows) {
     fetchAllTrucksFromSupabase,
     fetchOwnedTrucksFromSupabase,
     fetchReviewsFromSupabase,
+    fetchUpcomingStopsFromSupabase,
     isAuthenticated,
     refreshCustomerProfile,
   ]);
@@ -2044,6 +2110,170 @@ if (error) {
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [announcements]);
 
+  const getUpcomingStops = useCallback((truckId: string) => {
+    const requestedId = truckId?.toString() ?? '';
+
+    return upcomingStops
+      .filter(stop => stop.truck_id?.toString() === requestedId)
+      .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
+  }, [upcomingStops]);
+
+  const addUpcomingStop = useCallback(async (
+    stop: Omit<UpcomingStop, 'id' | 'created_at' | 'updated_at'>
+  ): Promise<UpcomingStop> => {
+    if (!isAuthenticated || !authUser) {
+      throw new Error('Not authenticated');
+    }
+
+    if (!userOwnsTruck(stop.truck_id)) {
+      throw new Error(`User does not own truck ${stop.truck_id}`);
+    }
+
+    const locationText = stop.location_text.trim();
+    const startsAt = new Date(stop.starts_at);
+    const endsAt = new Date(stop.ends_at);
+
+    if (!locationText) {
+      throw new Error('Location is required');
+    }
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt <= startsAt) {
+      throw new Error('End time must be after start time');
+    }
+
+    const payload = {
+      truck_id: stop.truck_id,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      location_text: locationText,
+      note: stop.note?.trim() || null,
+      status: normalizeUpcomingStopStatus(stop.status),
+    };
+
+    if (!isSupabaseConfigured) {
+      const localStop: UpcomingStop = {
+        id: `upcoming-stop-${Date.now()}`,
+        ...payload,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setUpcomingStops(prev => [...prev, localStop].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)));
+      return localStop;
+    }
+
+    const { data, error } = await supabase
+      .from('upcoming_stops')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.log('[AppContext] Add upcoming stop error:', error.message);
+      throw new Error(`Could not add upcoming stop: ${error.message}`);
+    }
+
+    const created = mapUpcomingStopRow(data);
+    setUpcomingStops(prev => [...prev, created].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)));
+    return created;
+  }, [authUser, isAuthenticated, userOwnsTruck]);
+
+  const updateUpcomingStop = useCallback(async (
+    stopId: string,
+    updates: Partial<Omit<UpcomingStop, 'id' | 'truck_id' | 'created_at' | 'updated_at'>>
+  ): Promise<UpcomingStop> => {
+    const existing = upcomingStops.find(stop => stop.id === stopId);
+
+    if (!existing) {
+      throw new Error('Upcoming stop not found');
+    }
+    if (!isAuthenticated || !authUser) {
+      throw new Error('Not authenticated');
+    }
+    if (!userOwnsTruck(existing.truck_id)) {
+      throw new Error(`User does not own truck ${existing.truck_id}`);
+    }
+
+    const nextStartsAt = updates.starts_at ?? existing.starts_at;
+    const nextEndsAt = updates.ends_at ?? existing.ends_at;
+    const startsAt = new Date(nextStartsAt);
+    const endsAt = new Date(nextEndsAt);
+
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt <= startsAt) {
+      throw new Error('End time must be after start time');
+    }
+
+    const payload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (updates.starts_at !== undefined) payload.starts_at = startsAt.toISOString();
+    if (updates.ends_at !== undefined) payload.ends_at = endsAt.toISOString();
+    if (updates.location_text !== undefined) {
+      const locationText = updates.location_text.trim();
+      if (!locationText) throw new Error('Location is required');
+      payload.location_text = locationText;
+    }
+    if (updates.note !== undefined) payload.note = updates.note?.trim() || null;
+    if (updates.status !== undefined) payload.status = normalizeUpcomingStopStatus(updates.status);
+
+    if (!isSupabaseConfigured) {
+      const updated: UpcomingStop = {
+        ...existing,
+        ...payload,
+        starts_at: payload.starts_at ?? existing.starts_at,
+        ends_at: payload.ends_at ?? existing.ends_at,
+        location_text: payload.location_text ?? existing.location_text,
+        note: Object.prototype.hasOwnProperty.call(payload, 'note') ? payload.note : existing.note,
+        status: payload.status ?? existing.status,
+      };
+      setUpcomingStops(prev => prev.map(stop => stop.id === stopId ? updated : stop));
+      return updated;
+    }
+
+    const { data, error } = await supabase
+      .from('upcoming_stops')
+      .update(payload)
+      .eq('id', stopId)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.log('[AppContext] Update upcoming stop error:', error.message);
+      throw new Error(`Could not update upcoming stop: ${error.message}`);
+    }
+
+    const updated = mapUpcomingStopRow(data);
+    setUpcomingStops(prev => prev.map(stop => stop.id === stopId ? updated : stop));
+    return updated;
+  }, [authUser, isAuthenticated, upcomingStops, userOwnsTruck]);
+
+  const deleteUpcomingStop = useCallback(async (stopId: string): Promise<void> => {
+    const existing = upcomingStops.find(stop => stop.id === stopId);
+
+    if (!existing) {
+      throw new Error('Upcoming stop not found');
+    }
+    if (!isAuthenticated || !authUser) {
+      throw new Error('Not authenticated');
+    }
+    if (!userOwnsTruck(existing.truck_id)) {
+      throw new Error(`User does not own truck ${existing.truck_id}`);
+    }
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase
+        .from('upcoming_stops')
+        .delete()
+        .eq('id', stopId);
+
+      if (error) {
+        console.log('[AppContext] Delete upcoming stop error:', error.message);
+        throw new Error(`Could not delete upcoming stop: ${error.message}`);
+      }
+    }
+
+    setUpcomingStops(prev => prev.filter(stop => stop.id !== stopId));
+  }, [authUser, isAuthenticated, upcomingStops, userOwnsTruck]);
+
   const setTruckVerified = useCallback((truckId: string, value: boolean) => {
     setFoodTrucks(prev => 
       prev.map(truck => 
@@ -2323,6 +2553,8 @@ if (error) {
     reviews,
     menuItems,
     announcements,
+    upcomingStops,
+    upcomingStopsLoading,
     checklistDismissed,
     showClosed,
     customerRadius,
@@ -2378,6 +2610,11 @@ if (error) {
     addAnnouncement,
     deleteAnnouncement,
     getAnnouncements,
+    getUpcomingStops,
+    addUpcomingStop,
+    updateUpcomingStop,
+    deleteUpcomingStop,
+    refreshUpcomingStops: fetchUpcomingStopsFromSupabase,
     setTruckVerified,
     logout,
     incrementQrScan,
@@ -2395,11 +2632,12 @@ if (error) {
     createOwnerMessage,
     formatOperatingHours,
   }), [
-    currentUser, isOnboarded, foodTrucks, reviews, menuItems, announcements,
+    currentUser, isOnboarded, foodTrucks, reviews, menuItems, announcements, upcomingStops, upcomingStopsLoading,
     checklistDismissed, showClosed, customerRadius, exploreMode, exploreCenter,
     pendingRedirect, lastViewedOwnerUpdates, selectedAdminTruckId, ownerMessages, setSelectedAdminTruckId,
     beginImagePickerSession, endImagePickerSession,
     setShowClosed, setCustomerRadius, setExploreMode, setExploreCenter, setCurrentUser, completeOnboarding,
+    refreshCustomerProfile,
     toggleFavorite, addMenuImage,
     removeMenuImage, addTruckImage, addGalleryImage, removeGalleryImage,
     removeTruckImage, updateTruckDetails, getUserTruck, getOwnedTrucks,
@@ -2408,7 +2646,9 @@ if (error) {
     updateOperatingHours, getOperatingHours, isTruckOpenNow, hasHoursSet,
     qrShared, markQrShared, dismissChecklist, incrementView, incrementMenuView, incrementCall,
     incrementNavigation, incrementPhotoView, getTruckAnalytics, addAnnouncement,
-    deleteAnnouncement, getAnnouncements, setTruckVerified, logout,
+    deleteAnnouncement, getAnnouncements, getUpcomingStops, addUpcomingStop,
+    updateUpcomingStop, deleteUpcomingStop, fetchUpcomingStopsFromSupabase,
+    setTruckVerified, logout,
     incrementQrScan, getQrScanStats, allTrucksLoading, fetchAllTrucksFromSupabase, isProfileComplete,
     getDaysAgoText, setPendingRedirect, consumePendingRedirect, getTeamUpdates,
     markOwnerUpdatesViewed, hasUnreadOwnerUpdates, refreshOwnerMessages, createOwnerMessage, formatOperatingHours,

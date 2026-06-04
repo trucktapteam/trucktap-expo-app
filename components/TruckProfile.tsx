@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, TextInput, Modal, Alert, Platform, Animated, Share, KeyboardAvoidingView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, TextInput, Modal, Alert, Platform, Animated, Share, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MapPin, Clock, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -12,6 +12,7 @@ import TruckSectionCard from '@/components/TruckSectionCard';
 import ReviewerAvatar from '@/components/ReviewerAvatar';
 import ExpandableText from '@/components/ExpandableText';
 import AuthPromptModal from '@/components/AuthPromptModal';
+import UpcomingStopsRow from '@/components/UpcomingStopsRow';
 import { trackEvent } from '@/lib/analytics';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { MenuItem } from '@/types';
@@ -24,7 +25,7 @@ interface TruckProfileProps {
 
 export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProps) {
   const router = useRouter();
-  const { foodTrucks, currentUser, toggleFavorite, addReview, isTruckOpenNow, incrementView, incrementNavigation, incrementMenuView, incrementPhotoView, getAnnouncements, isProfileComplete, getDaysAgoText, menuItems, formatOperatingHours } = useApp();
+  const { foodTrucks, currentUser, toggleFavorite, addReview, isTruckOpenNow, incrementView, incrementNavigation, incrementMenuView, incrementPhotoView, getAnnouncements, getUpcomingStops, isProfileComplete, getDaysAgoText, menuItems, formatOperatingHours, allTrucksLoading, isOwnerLoading } = useApp();
   const { colors } = useTheme();
   const { isAuthenticated, user: authUser, isLoading: authLoading } = useAuth();
   
@@ -126,6 +127,23 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
         break;
     }
   }, [isAuthenticated, authUser, isOwnerOfTruck, router]);
+
+  const isWaitingForTruck = !truck && (allTrucksLoading || authLoading || isOwnerLoading);
+  const isWaitingForVisibility =
+    !!truck &&
+    mode === 'customer' &&
+    (authLoading || isOwnerLoading) &&
+    ((truck.is_test === true && !canViewTestTruck) ||
+      ((truck.archived === true || !!truck.archivedAt) && !canViewArchivedTruck));
+
+  if (isWaitingForTruck || isWaitingForVisibility) {
+    const styles = createStyles(colors);
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   if (
     !truck ||
@@ -519,6 +537,8 @@ console.log('[FORMAT DATE]', dateInput);
             )
           )}
 
+          <UpcomingStopsRow stops={getUpcomingStops(truck.id)} />
+
           <TruckSectionCard>
             <View style={styles.sectionHeaderRow}>
               <Text style={{ color: '#111111', fontSize: 20, fontWeight: '700' }}>Announcements</Text>
@@ -776,6 +796,12 @@ console.log('[FORMAT DATE]', dateInput);
 const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.secondaryBackground,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.secondaryBackground,
   },
   errorText: {
