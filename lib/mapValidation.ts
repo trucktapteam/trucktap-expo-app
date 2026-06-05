@@ -12,12 +12,6 @@ export type MapRegionLike = {
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && !Number.isNaN(value);
-const loggedInvalidCoordinateLabels = new Set<string>();
-const loggedSkippedTruckMarkerLabels = new Set<string>();
-const FALLBACK_TRUCK_COORDINATES = [
-  { latitude: 37.7749, longitude: -122.4194, label: 'San Francisco fallback' },
-];
-const FALLBACK_COORDINATE_EPSILON = 0.00001;
 
 export const isValidLatitude = (value: unknown): value is number =>
   isFiniteNumber(value) && value >= -90 && value <= 90;
@@ -33,7 +27,7 @@ export const isValidCoordinate = (
   isValidLongitude(coordinate.longitude);
 
 export const getValidatedCoordinate = (
-  label: string,
+  _label: string,
   coordinate: MapCoordinateLike | null | undefined
 ) => {
   if (isValidCoordinate(coordinate)) {
@@ -43,45 +37,7 @@ export const getValidatedCoordinate = (
     };
   }
 
-  if (__DEV__) {
-    if (!loggedInvalidCoordinateLabels.has(label)) {
-      loggedInvalidCoordinateLabels.add(label);
-      console.log(`[Map] Skipping invalid coordinate for ${label}`, coordinate);
-    }
-  }
-
   return null;
-};
-
-const isFallbackTruckCoordinate = (coordinate: { latitude: number; longitude: number }) =>
-  FALLBACK_TRUCK_COORDINATES.some(fallback =>
-    Math.abs(coordinate.latitude - fallback.latitude) < FALLBACK_COORDINATE_EPSILON &&
-    Math.abs(coordinate.longitude - fallback.longitude) < FALLBACK_COORDINATE_EPSILON
-  );
-
-export const getValidatedTruckMarkerCoordinate = (
-  label: string,
-  coordinate: MapCoordinateLike | null | undefined
-) => {
-  const validated = getValidatedCoordinate(label, coordinate);
-
-  if (!validated) {
-    if (__DEV__ && !loggedSkippedTruckMarkerLabels.has(label)) {
-      loggedSkippedTruckMarkerLabels.add(label);
-      console.warn(`[Map] Skipping truck marker without valid coordinates for ${label}`, coordinate);
-    }
-    return null;
-  }
-
-  if (isFallbackTruckCoordinate(validated)) {
-    if (__DEV__ && !loggedSkippedTruckMarkerLabels.has(label)) {
-      loggedSkippedTruckMarkerLabels.add(label);
-      console.warn(`[Map] Skipping truck marker with fallback coordinates for ${label}`, coordinate);
-    }
-    return null;
-  }
-
-  return validated;
 };
 
 export const isValidMapRegion = (

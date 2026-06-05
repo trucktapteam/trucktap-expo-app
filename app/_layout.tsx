@@ -27,7 +27,7 @@ const VERIFICATION_LINK_TYPES = new Set(['signup', 'invite', 'magiclink', 'email
 const RECOVERY_LINK_TYPE = 'recovery';
 const UPCOMING_STOP_REMINDER_CATEGORY = 'upcoming-stop-reminder';
 const UPCOMING_STOP_SNOOZE_ACTION = 'snooze-upcoming-stop';
-const UPCOMING_STOP_SNOOZE_MINUTES = 10;
+const UPCOMING_STOP_SNOOZE_MINUTES = 15;
 
 type NotificationData = Record<string, unknown>;
 
@@ -158,6 +158,7 @@ const scheduleUpcomingStopSnooze = async (
         stop_id: stopId,
         route: '/(truck)/upcoming-stops',
         snoozed: 'true',
+        snooze_minutes: String(UPCOMING_STOP_SNOOZE_MINUTES),
       },
     },
     trigger: {

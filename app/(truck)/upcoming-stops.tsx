@@ -61,6 +61,12 @@ const formatDateButton = (date: Date) =>
     day: 'numeric',
   });
 
+const formatSelectedDate = (date: Date) =>
+  date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+
 const formatTimeButton = (date: Date) =>
   date.toLocaleTimeString(undefined, {
     hour: 'numeric',
@@ -74,7 +80,20 @@ const getUpcomingStopReminderTime = (stop: UpcomingStop, minutesBefore: number) 
   return new Date(startsAtTime - minutesBefore * 60 * 1000);
 };
 
+const getDateKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+const startOfSelectedDate = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+
+const devLog = (label: string, details?: Record<string, unknown>) => {
+  if (__DEV__) {
+    console.log(`[UpcomingStops][debug] ${label}`, details ?? {});
+  }
+};
+
 type PickerTarget = 'date' | 'start' | 'end' | null;
+type TimePeriod = 'AM' | 'PM';
 
 type ReminderSettings = {
   enabled: boolean;
@@ -82,6 +101,11 @@ type ReminderSettings = {
 };
 
 type ReminderIds = Record<string, string>;
+
+const normalizeReminderSettings = (settings?: Partial<ReminderSettings> | null): ReminderSettings => ({
+  enabled: settings?.enabled !== false,
+  minutesBefore: DEFAULT_REMINDER_MINUTES,
+});
 
 const getStatusColor = (status: UpcomingStopStatus) => {
   switch (status) {
@@ -96,6 +120,22 @@ const getStatusColor = (status: UpcomingStopStatus) => {
     default:
       return Colors.success;
   }
+};
+
+const getTimePeriod = (date: Date): TimePeriod =>
+  date.getHours() >= 12 ? 'PM' : 'AM';
+
+const withTimePeriod = (date: Date, period: TimePeriod) => {
+  const nextDate = new Date(date);
+  const hours = nextDate.getHours();
+
+  if (period === 'AM' && hours >= 12) {
+    nextDate.setHours(hours - 12);
+  } else if (period === 'PM' && hours < 12) {
+    nextDate.setHours(hours + 12);
+  }
+
+  return nextDate;
 };
 
 export default function UpcomingStopsScreen() {
@@ -113,6 +153,7 @@ export default function UpcomingStopsScreen() {
   useTruckLifecycleLogger('UpcomingStopsScreen');
 
   const [dateValue, setDateValue] = useState(() => new Date());
+  const [selectedDates, setSelectedDates] = useState<Date[]>(() => [startOfSelectedDate(new Date())]);
   const [startTime, setStartTime] = useState(() => atTime(11, 0));
   const [endTime, setEndTime] = useState(() => atTime(14, 0));
   const [endsNextDay, setEndsNextDay] = useState(false);
@@ -121,11 +162,11 @@ export default function UpcomingStopsScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [busyStopId, setBusyStopId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [activePicker, setActivePicker] = useState<PickerTarget>(null);
-  const [reminderSettings, setReminderSettings] = useState<ReminderSettings>({
-    enabled: true,
-    minutesBefore: DEFAULT_REMINDER_MINUTES,
-  });
+  const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() =>
+    normalizeReminderSettings()
+  );
   const [reminderIds, setReminderIds] = useState<ReminderIds>({});
   const [reminderSettingsLoaded, setReminderSettingsLoaded] = useState(false);
   const reminderSettingsRef = useRef(reminderSettings);
@@ -154,12 +195,7 @@ export default function UpcomingStopsScreen() {
 
         if (storedSettings) {
           const parsed = JSON.parse(storedSettings);
-          const nextSettings = {
-            enabled: parsed?.enabled !== false,
-            minutesBefore: typeof parsed?.minutesBefore === 'number'
-              ? parsed.minutesBefore
-              : DEFAULT_REMINDER_MINUTES,
-          };
+          const nextSettings = normalizeReminderSettings(parsed);
           reminderSettingsRef.current = nextSettings;
           setReminderSettings(nextSettings);
         }
@@ -171,6 +207,12 @@ export default function UpcomingStopsScreen() {
             setReminderIds(parsedIds);
           }
         }
+
+        devLog('loaded reminder settings', {
+          remindersEnabled: reminderSettingsRef.current.enabled,
+          reminderLeadMinutes: reminderSettingsRef.current.minutesBefore,
+          reminderIds: reminderIdsRef.current,
+        });
       } catch (error) {
         console.log('[UpcomingStops] Failed to load reminder settings:', error);
       } finally {
@@ -182,24 +224,41 @@ export default function UpcomingStopsScreen() {
   }, []);
 
   const persistReminderSettings = async (settings: ReminderSettings) => {
-    reminderSettingsRef.current = settings;
-    await AsyncStorage.setItem(REMINDER_SETTINGS_KEY, JSON.stringify(settings));
-    setReminderSettings(settings);
+    const normalizedSettings = normalizeReminderSettings(settings);
+    reminderSettingsRef.current = normalizedSettings;
+    await AsyncStorage.setItem(REMINDER_SETTINGS_KEY, JSON.stringify(normalizedSettings));
+    setReminderSettings(normalizedSettings);
   };
 
   const persistReminderIds = async (ids: ReminderIds) => {
+    devLog('persist reminder ids before saving', {
+      previousReminderIds: reminderIdsRef.current,
+      nextReminderIds: ids,
+    });
     reminderIdsRef.current = ids;
     await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids));
     setReminderIds(ids);
+    devLog('persist reminder ids after saving', {
+      savedReminderIds: ids,
+    });
   };
 
   const requestLocalNotificationPermission = async () => {
     if (Platform.OS === 'web') {
+      devLog('notification permission result', {
+        platform: Platform.OS,
+        granted: false,
+        reason: 'web',
+      });
       setErrorMessage('Local stop reminders are not available on web.');
       return false;
     }
 
     const existing = await Notifications.getPermissionsAsync();
+    devLog('notification permission existing status', {
+      status: existing.status,
+      granted: existing.status === 'granted',
+    });
     if (existing.status === 'granted') {
       return true;
     }
@@ -215,6 +274,11 @@ export default function UpcomingStopsScreen() {
           }
         : {}
     );
+
+    devLog('notification permission requested status', {
+      status: requested.status,
+      granted: requested.status === 'granted',
+    });
 
     if (requested.status !== 'granted') {
       setErrorMessage('Notifications are off, so reminders cannot be scheduled.');
@@ -264,15 +328,47 @@ export default function UpcomingStopsScreen() {
     ids: ReminderIds = reminderIdsRef.current,
     settings: ReminderSettings = reminderSettingsRef.current
   ) => {
-    if (!settings.enabled) return ids;
+    devLog('scheduleReminderForStop called', {
+      stopId: stop.id,
+      truckId: stop.truck_id,
+      startsAt: stop.starts_at,
+      remindersEnabled: settings.enabled,
+      reminderLeadMinutes: settings.minutesBefore,
+      incomingReminderIds: ids,
+    });
+
+    if (!settings.enabled) {
+      devLog('scheduleReminderForStop skipped', {
+        stopId: stop.id,
+        reason: 'settings disabled',
+      });
+      return ids;
+    }
 
     const reminderAt = getUpcomingStopReminderTime(stop, settings.minutesBefore);
+    const now = new Date();
+    devLog('scheduleReminderForStop time check', {
+      stopId: stop.id,
+      startsAt: stop.starts_at,
+      reminderFireTime: reminderAt?.toISOString() ?? null,
+      currentTime: now.toISOString(),
+      reminderInFuture: !!reminderAt && reminderAt.getTime() > now.getTime(),
+    });
 
-    if (!reminderAt || reminderAt.getTime() <= Date.now()) {
+    if (!reminderAt || reminderAt.getTime() <= now.getTime()) {
+      devLog('scheduleReminderForStop skipped', {
+        stopId: stop.id,
+        reason: 'reminder time not in future',
+      });
+      setErrorMessage(`This stop is too soon for a ${settings.minutesBefore}-minute reminder, so no reminder was scheduled.`);
       return cancelReminderForStop(stop.id, ids);
     }
 
     const hasPermission = await requestLocalNotificationPermission();
+    devLog('scheduleReminderForStop permission result', {
+      stopId: stop.id,
+      granted: hasPermission,
+    });
     if (!hasPermission) return ids;
 
     await ensureReminderNotificationSetup();
@@ -298,22 +394,56 @@ export default function UpcomingStopsScreen() {
       },
     });
 
+    devLog('scheduleNotificationAsync returned', {
+      stopId: stop.id,
+      notificationId,
+    });
+
     const nextIds = {
       ...idsWithoutOldReminder,
       [stop.id]: notificationId,
     };
+    devLog('scheduleReminderForStop reminder ids before/after', {
+      stopId: stop.id,
+      beforeReminderIds: ids,
+      idsWithoutOldReminder,
+      afterReminderIds: nextIds,
+    });
     await persistReminderIds(nextIds);
     return nextIds;
   };
 
   const hasActiveReminder = (stop: UpcomingStop) => {
-    if (!reminderSettings.enabled || !reminderIds[stop.id] || stop.status === 'completed') {
+    const storedNotificationId = reminderIds[stop.id];
+    const reminderAt = getUpcomingStopReminderTime(stop, reminderSettings.minutesBefore);
+    const now = new Date();
+    const reminderOn = !!(
+      reminderSettings.enabled &&
+      storedNotificationId &&
+      stop.status !== 'completed' &&
+      reminderAt &&
+      reminderAt.getTime() > now.getTime()
+    );
+
+    devLog('stop card reminder decision', {
+      stopId: stop.id,
+      startsAt: stop.starts_at,
+      status: stop.status,
+      remindersEnabled: reminderSettings.enabled,
+      reminderLeadMinutes: reminderSettings.minutesBefore,
+      storedNotificationId: storedNotificationId ?? null,
+      reminderIds,
+      reminderFireTime: reminderAt?.toISOString() ?? null,
+      currentTime: now.toISOString(),
+      reminderInFuture: !!reminderAt && reminderAt.getTime() > now.getTime(),
+      reminderOn,
+    });
+
+    if (!reminderOn) {
       return false;
     }
 
-    const reminderAt = getUpcomingStopReminderTime(stop, reminderSettings.minutesBefore);
-
-    return !!reminderAt && reminderAt.getTime() > Date.now();
+    return true;
   };
 
   const handleReminderToggle = async (enabled: boolean) => {
@@ -364,7 +494,9 @@ export default function UpcomingStopsScreen() {
   }
 
   const resetForm = () => {
-    setDateValue(new Date());
+    const nextDate = new Date();
+    setDateValue(nextDate);
+    setSelectedDates([startOfSelectedDate(nextDate)]);
     setStartTime(atTime(11, 0));
     setEndTime(atTime(14, 0));
     setEndsNextDay(false);
@@ -373,9 +505,9 @@ export default function UpcomingStopsScreen() {
     setActivePicker(null);
   };
 
-  const buildDateRange = () => {
-    const startsAt = combineDateAndTime(dateValue, startTime);
-    const endsAt = combineDateAndTime(dateValue, endTime);
+  const buildDateRange = (selectedDate: Date) => {
+    const startsAt = combineDateAndTime(selectedDate, startTime);
+    const endsAt = combineDateAndTime(selectedDate, endTime);
 
     if (endsNextDay) {
       endsAt.setDate(endsAt.getDate() + 1);
@@ -386,6 +518,26 @@ export default function UpcomingStopsScreen() {
     }
 
     return { startsAt, endsAt };
+  };
+
+  const addSelectedDate = (date: Date) => {
+    setSelectedDates(current => {
+      const dateToAdd = startOfSelectedDate(date);
+      const dateKey = getDateKey(dateToAdd);
+
+      if (current.some(date => getDateKey(date) === dateKey)) {
+        return current;
+      }
+
+      return [...current, dateToAdd].sort((a, b) => a.getTime() - b.getTime());
+    });
+  };
+
+  const handleRemoveSelectedDate = (dateToRemove: Date) => {
+    setSuccessMessage(null);
+    setSelectedDates(current =>
+      current.filter(date => getDateKey(date) !== getDateKey(dateToRemove))
+    );
   };
 
   const handlePickerChange = (_event: any, selectedDate?: Date) => {
@@ -399,11 +551,22 @@ export default function UpcomingStopsScreen() {
 
     if (activePicker === 'date') {
       setDateValue(selectedDate);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+      addSelectedDate(selectedDate);
     } else if (activePicker === 'start') {
       setStartTime(selectedDate);
     } else if (activePicker === 'end') {
       setEndTime(selectedDate);
     }
+  };
+
+  const handleStartPeriodChange = (period: TimePeriod) => {
+    setStartTime(current => withTimePeriod(current, period));
+  };
+
+  const handleEndPeriodChange = (period: TimePeriod) => {
+    setEndTime(current => withTimePeriod(current, period));
   };
 
   const pickerValue =
@@ -416,32 +579,82 @@ export default function UpcomingStopsScreen() {
 
   const handleSave = async () => {
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     try {
       const trimmedLocation = locationText.trim();
       if (!trimmedLocation) {
         throw new Error('Location name or address is required.');
       }
+      if (selectedDates.length === 0) {
+        throw new Error('Select at least one date for this stop.');
+      }
       if (!reminderSettingsLoaded) {
         throw new Error('Reminder settings are still loading. Please try again.');
       }
 
-      const { startsAt, endsAt } = buildDateRange();
-      setIsSaving(true);
+      const dateRanges = selectedDates.map(selectedDate => buildDateRange(selectedDate));
+      const currentSettings = reminderSettingsRef.current;
+      const saveReminderAt = new Date(dateRanges[0].startsAt.getTime() - currentSettings.minutesBefore * 60 * 1000);
+      const saveNow = new Date();
 
-      const createdStop = await addUpcomingStop({
-        truck_id: truck.id,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-        location_text: trimmedLocation,
-        note: note.trim() || null,
-        status: 'scheduled',
+      devLog('Save Stop pressed', {
+        selectedDate: dateValue.toISOString(),
+        selectedDates: selectedDates.map(date => date.toISOString()),
+        startTime: startTime.toISOString(),
+        calculatedStartsAt: dateRanges[0].startsAt.toISOString(),
+        calculatedReminderFireTime: saveReminderAt.toISOString(),
+        currentTime: saveNow.toISOString(),
+        reminderConsideredInFuture: saveReminderAt.getTime() > saveNow.getTime(),
+        remindersEnabled: currentSettings.enabled,
+        reminderLeadMinutes: currentSettings.minutesBefore,
+        reminderIdsBeforeSave: reminderIdsRef.current,
       });
 
-      const currentSettings = reminderSettingsRef.current;
-      if (currentSettings.enabled) {
-        await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
+      setIsSaving(true);
+
+      const createdStops: UpcomingStop[] = [];
+
+      for (const { startsAt, endsAt } of dateRanges) {
+        const createdStop = await addUpcomingStop({
+          truck_id: truck.id,
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
+          location_text: trimmedLocation,
+          note: note.trim() || null,
+          status: 'scheduled',
+        });
+
+        createdStops.push(createdStop);
+
+        devLog('Save Stop created stop', {
+          createdStopId: createdStop.id,
+          createdStopTruckId: createdStop.truck_id,
+          createdStopStartsAt: createdStop.starts_at,
+          createdStopEndsAt: createdStop.ends_at,
+          reminderIdsBeforeScheduling: reminderIdsRef.current,
+        });
+
+        if (currentSettings.enabled) {
+          await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
+        } else {
+          devLog('Save Stop skipped scheduling', {
+            createdStopId: createdStop.id,
+            reason: 'reminders disabled',
+          });
+        }
       }
+
+      if (createdStops.length > 1) {
+        setSuccessMessage(`${createdStops.length} stops scheduled.`);
+      } else {
+        setSuccessMessage('Stop scheduled.');
+      }
+
+      devLog('Save Stop reminder ids after scheduling', {
+        createdStopIds: createdStops.map(stop => stop.id),
+        reminderIdsAfterScheduling: reminderIdsRef.current,
+      });
 
       resetForm();
     } catch (error: any) {
@@ -536,7 +749,7 @@ export default function UpcomingStopsScreen() {
               <View style={styles.reminderTextContainer}>
                 <Text style={styles.reminderTitle}>Remind me before upcoming stops</Text>
                 <Text style={styles.reminderSubtitle}>
-                  {reminderSettings.minutesBefore} minutes before each new stop
+                  Reminder: {reminderSettings.minutesBefore} minutes before
                 </Text>
               </View>
               <Switch
@@ -562,6 +775,33 @@ export default function UpcomingStopsScreen() {
               onPress={() => setActivePicker(activePicker === 'date' ? null : 'date')}
             />
 
+            <View style={styles.selectedDatesCard}>
+              <View style={styles.selectedDatesHeader}>
+                <View>
+                  <Text style={styles.selectedDatesTitle}>Selected Dates</Text>
+                  <Text style={styles.selectedDatesSubtitle}>Tap a date above to add it.</Text>
+                </View>
+              </View>
+              {selectedDates.length > 0 ? (
+                <View style={styles.selectedDateList}>
+                  {selectedDates.map(selectedDate => (
+                    <View key={getDateKey(selectedDate)} style={styles.selectedDateChip}>
+                      <Text style={styles.selectedDateText}>{formatSelectedDate(selectedDate)}</Text>
+                      <TouchableOpacity
+                        style={styles.removeDateButton}
+                        onPress={() => handleRemoveSelectedDate(selectedDate)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={styles.removeDateButtonText}>x</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.noSelectedDatesText}>No dates selected</Text>
+              )}
+            </View>
+
             <View style={styles.timeRow}>
               <View style={styles.timeInputGroup}>
                 <Text style={styles.label}>Start</Text>
@@ -569,6 +809,10 @@ export default function UpcomingStopsScreen() {
                   icon={Clock}
                   value={formatTimeButton(startTime)}
                   onPress={() => setActivePicker(activePicker === 'start' ? null : 'start')}
+                />
+                <PeriodSegmentedControl
+                  value={getTimePeriod(startTime)}
+                  onChange={handleStartPeriodChange}
                 />
               </View>
               <View style={styles.timeInputGroup}>
@@ -578,6 +822,22 @@ export default function UpcomingStopsScreen() {
                   value={formatTimeButton(endTime)}
                   onPress={() => setActivePicker(activePicker === 'end' ? null : 'end')}
                 />
+                <PeriodSegmentedControl
+                  value={getTimePeriod(endTime)}
+                  onChange={handleEndPeriodChange}
+                />
+              </View>
+            </View>
+
+            <View style={styles.timeSummary}>
+              <View style={styles.timeSummaryItem}>
+                <Text style={styles.timeSummaryLabel}>Start</Text>
+                <Text style={styles.timeSummaryValue}>{formatTimeButton(startTime)}</Text>
+              </View>
+              <View style={styles.timeSummaryDivider} />
+              <View style={styles.timeSummaryItem}>
+                <Text style={styles.timeSummaryLabel}>End</Text>
+                <Text style={styles.timeSummaryValue}>{formatTimeButton(endTime)}</Text>
               </View>
             </View>
 
@@ -635,6 +895,9 @@ export default function UpcomingStopsScreen() {
 
             {errorMessage ? (
               <Text style={styles.errorMessage}>{errorMessage}</Text>
+            ) : null}
+            {successMessage ? (
+              <Text style={styles.successMessage}>{successMessage}</Text>
             ) : null}
 
             <TouchableOpacity
@@ -694,6 +957,11 @@ type PickerButtonProps = {
   onPress: () => void;
 };
 
+type PeriodSegmentedControlProps = {
+  value: TimePeriod;
+  onChange: (period: TimePeriod) => void;
+};
+
 function PickerButton({ icon: Icon, value, onPress }: PickerButtonProps) {
   return (
     <TouchableOpacity style={styles.pickerButton} onPress={onPress} activeOpacity={0.75}>
@@ -701,6 +969,29 @@ function PickerButton({ icon: Icon, value, onPress }: PickerButtonProps) {
       <Text style={styles.pickerButtonText}>{value}</Text>
       <ChevronDown size={18} color={Colors.gray} />
     </TouchableOpacity>
+  );
+}
+
+function PeriodSegmentedControl({ value, onChange }: PeriodSegmentedControlProps) {
+  return (
+    <View style={styles.periodSegmentedControl}>
+      {(['AM', 'PM'] as TimePeriod[]).map(period => {
+        const selected = value === period;
+
+        return (
+          <TouchableOpacity
+            key={period}
+            style={[styles.periodSegment, selected && styles.periodSegmentSelected]}
+            onPress={() => onChange(period)}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.periodSegmentText, selected && styles.periodSegmentTextSelected]}>
+              {period}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 
@@ -885,13 +1176,138 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginBottom: 14,
+    marginBottom: 8,
   },
   pickerButtonText: {
     flex: 1,
     fontSize: 15,
     fontWeight: '700' as const,
     color: Colors.dark,
+  },
+  selectedDatesCard: {
+    backgroundColor: `${Colors.primary}08`,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}18`,
+    padding: 12,
+    marginBottom: 16,
+  },
+  selectedDatesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  selectedDatesTitle: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.dark,
+  },
+  selectedDatesSubtitle: {
+    fontSize: 12,
+    color: Colors.gray,
+    marginTop: 3,
+  },
+  selectedDateList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  selectedDateChip: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    backgroundColor: Colors.light,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}25`,
+    paddingLeft: 12,
+    paddingRight: 6,
+    paddingVertical: 5,
+  },
+  selectedDateText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  removeDateButton: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 11,
+    backgroundColor: Colors.lightGray,
+  },
+  removeDateButtonText: {
+    color: Colors.gray,
+    fontSize: 13,
+    fontWeight: '900' as const,
+    lineHeight: 16,
+  },
+  noSelectedDatesText: {
+    fontSize: 13,
+    color: Colors.gray,
+  },
+  periodSegmentedControl: {
+    minHeight: 46,
+    flexDirection: 'row',
+    backgroundColor: Colors.lightGray,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 3,
+    marginBottom: 14,
+  },
+  periodSegment: {
+    flex: 1,
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  periodSegmentSelected: {
+    backgroundColor: Colors.primary,
+  },
+  periodSegmentText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.gray,
+  },
+  periodSegmentTextSelected: {
+    color: Colors.light,
+    fontWeight: '900' as const,
+  },
+  timeSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${Colors.primary}10`,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}30`,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  timeSummaryItem: {
+    flex: 1,
+  },
+  timeSummaryLabel: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: Colors.gray,
+    textTransform: 'uppercase' as const,
+    marginBottom: 3,
+  },
+  timeSummaryValue: {
+    fontSize: 17,
+    fontWeight: '900' as const,
+    color: Colors.dark,
+  },
+  timeSummaryDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: `${Colors.primary}30`,
+    marginHorizontal: 14,
   },
   pickerContainer: {
     backgroundColor: Colors.lightGray,
@@ -953,6 +1369,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 14,
+  },
+  successMessage: {
+    color: Colors.success,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 14,
+    fontWeight: '700' as const,
   },
   listHeader: {
     flexDirection: 'row',

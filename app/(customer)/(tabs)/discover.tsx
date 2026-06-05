@@ -10,7 +10,7 @@ import { Image } from 'expo-image';
 import { supabase } from '@/lib/supabase';
 import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, getSafeSpotterDisplayName, hasSightingCoordinates } from '@/lib/sightings';
 import { Sighting } from '@/types';
-import { getValidatedCoordinate, getValidatedTruckMarkerCoordinate, isValidCoordinate } from '@/lib/mapValidation';
+import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { getTruckDisplayLocation } from '@/lib/truckLocation';
 
 const TRUCK_MARKER_COLOR = '#f97316';
@@ -30,7 +30,7 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 };
 
 const hasMapLocation = (truck: any) =>
-  !!getValidatedTruckMarkerCoordinate(`discover truck ${truck?.id ?? 'unknown'}`, truck?.location);
+  isValidCoordinate(truck?.location);
 
 const hasCoordinates = (truck: any) =>
   isValidCoordinate(truck?.location);
@@ -80,11 +80,10 @@ const openSightingNavigation = (latitude?: number, longitude?: number) => {
 
 export default function CustomerHomeScreen() {
   const router = useRouter();
-  const { currentUser, isTruckOpenNow, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews } = useApp();
+  const { currentUser, isTruckOpenNow, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews, showClosed, setShowClosed } = useApp();
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [showClosed, setShowClosed] = useState<boolean>(false);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [isMapExpanded, setIsMapExpanded] = useState<boolean>(false);
   const [isRadiusModalVisible, setIsRadiusModalVisible] = useState<boolean>(false);
@@ -105,6 +104,7 @@ export default function CustomerHomeScreen() {
   const foregroundRefreshInFlightRef = useRef(false);
 
   const allTrucks = useFilteredTrucks('', 'All', false);
+  const isAdmin = currentUser?.role === 'admin';
 
   const ratingsByTruckId = useMemo(() => {
     const totals = new Map<string, { sum: number; count: number }>();
@@ -167,7 +167,7 @@ export default function CustomerHomeScreen() {
     return allTrucks.filter((truck: any) => {
       if (truck?.archived === true || truck?.archivedAt) return false;
 
-      if (centerPoint && hasCoordinates(truck)) {
+      if (!isAdmin && centerPoint && hasCoordinates(truck)) {
         const distance = calculateDistance(
           centerPoint.latitude,
           centerPoint.longitude,
@@ -192,7 +192,7 @@ export default function CustomerHomeScreen() {
 
       return true;
     });
-  }, [allTrucks, centerPoint, customerRadius, searchQuery, showClosed, openTruckIds]);
+  }, [allTrucks, centerPoint, customerRadius, isAdmin, searchQuery, showClosed, openTruckIds]);
 
   const hasFeedContent = listTrucks.length > 0 || sightings.length > 0;
 
@@ -707,7 +707,7 @@ export default function CustomerHomeScreen() {
               provider={PROVIDER_GOOGLE}
             >
               {mapTrucks.map((truck) => {
-                const truckCoordinate = getValidatedTruckMarkerCoordinate(`discover truck ${truck.id}`, truck.location);
+                const truckCoordinate = getValidatedCoordinate(`discover truck ${truck.id}`, truck.location);
 
                 if (!truckCoordinate) {
                   return null;

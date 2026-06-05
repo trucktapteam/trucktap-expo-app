@@ -404,6 +404,29 @@ export const [AppProvider, useApp] = createContextHook(() => {
       };
     });
   }, []);
+
+  const fetchTruckLocationRows = useCallback(async (truckIds: string[], source: string): Promise<LocationRow[] | null> => {
+    if (truckIds.length === 0) return null;
+
+    const { data, error } = await supabase
+      .from('locations')
+      .select('truck_id, latitude, longitude, label')
+      .in('truck_id', truckIds);
+
+    if (error) {
+      console.log(`[AppContext] Supabase fetch ${source} locations error:`, error.message);
+      return null;
+    }
+
+    if (__DEV__) {
+      console.log(`[AppContext] ${source} locations fetched:`, {
+        requestedTruckCount: truckIds.length,
+        locationRowCount: data?.length ?? 0,
+      });
+    }
+
+    return data as LocationRow[] | null;
+  }, []);
   
   const fetchReviewsFromSupabase = useCallback(async () => {
   if (!isSupabaseConfigured) {
@@ -537,32 +560,21 @@ export const [AppProvider, useApp] = createContextHook(() => {
         let merged = mapped;
 
         if (truckIds.length > 0) {
-          const locationsResult = await supabase
-            .from('locations')
-            .select('truck_id, latitude, longitude, label, updated_at')
-            .in('truck_id', truckIds);
-          let locationRows = locationsResult.data as LocationRow[] | null;
-          let locationsError = locationsResult.error;
-
-          if (locationsError) {
-            if (locationsError.message.includes('updated_at')) {
-              const fallback = await supabase
-                .from('locations')
-                .select('truck_id, latitude, longitude, label')
-                .in('truck_id', truckIds);
-              locationRows = fallback.data as LocationRow[] | null;
-              locationsError = fallback.error;
-            }
-          }
-
-          if (locationsError) {
-            console.log('[AppContext] Supabase fetch locations error:', locationsError.message);
-          } else {
-            merged = mergeTruckLocations(mapped, locationRows);
-          }
+          const locationRows = await fetchTruckLocationRows(truckIds, 'all truck');
+          merged = mergeTruckLocations(mapped, locationRows);
         }
 
         if (DEBUG) console.log('[AppContext] Fetched', merged.length, 'trucks from Supabase');
+        if (__DEV__) {
+          const validLocationCount = merged.filter(truck =>
+            Number.isFinite(truck.location?.latitude) && Number.isFinite(truck.location?.longitude)
+          ).length;
+          console.log('[AppContext] all truck location merge result:', {
+            truckCount: merged.length,
+            validLocationCount,
+            invalidLocationCount: merged.length - validLocationCount,
+          });
+        }
         setFoodTrucks(merged);
 
         const extractedMenuItems: MenuItem[] = [];
@@ -608,7 +620,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     } finally {
       setAllTrucksLoading(false);
     }
-  }, [mapSupabaseTruckToLocal, mergeTruckLocations]);
+  }, [fetchTruckLocationRows, mapSupabaseTruckToLocal, mergeTruckLocations]);
 
   const fetchOwnedTrucksFromSupabase = useCallback(async () => {
     if (!isAuthenticated || !authUser || !isSupabaseConfigured) {
@@ -641,37 +653,21 @@ export const [AppProvider, useApp] = createContextHook(() => {
         let merged = mapped;
 
         if (truckIds.length > 0) {
-          const locationsResult = await supabase
-            .from('locations')
-            .select('truck_id, latitude, longitude, label, updated_at')
-            .in('truck_id', truckIds);
-          let locationRows = locationsResult.data as LocationRow[] | null;
-          let locationsError = locationsResult.error;
-
-          if (locationsError) {
-            if (locationsError.message.includes('updated_at')) {
-              const fallback = await supabase
-                .from('locations')
-                .select('truck_id, latitude, longitude, label')
-                .in('truck_id', truckIds);
-              locationRows = fallback.data as LocationRow[] | null;
-              locationsError = fallback.error;
-            }
-          }
-
-          if (locationsError) {
-            console.log('[AppContext] Supabase fetch owned truck locations error:', locationsError.message);
-          } else {
-            merged = mergeTruckLocations(mapped, locationRows);
-          }
+          const locationRows = await fetchTruckLocationRows(truckIds, 'owned truck');
+          merged = mergeTruckLocations(mapped, locationRows);
         }
 
         if (DEBUG) console.log('[AppContext] Fetched', merged.length, 'owned trucks');
         if (__DEV__) {
+          const validLocationCount = merged.filter(truck =>
+            Number.isFinite(truck.location?.latitude) && Number.isFinite(truck.location?.longitude)
+          ).length;
           console.log('[AppContext] owned truck refresh result:', {
             ownerId: authUser.id,
             count: merged.length,
             ids: merged.map(truck => truck.id),
+            validLocationCount,
+            invalidLocationCount: merged.length - validLocationCount,
             selectedAdminTruckId: selectedAdminTruckIdRef.current,
           });
         }
@@ -683,7 +679,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     } finally {
       setIsOwnerLoading(false);
     }
-  }, [isAuthenticated, authUser, mapSupabaseTruckToLocal, mergeTruckLocations]);
+  }, [fetchTruckLocationRows, isAuthenticated, authUser, mapSupabaseTruckToLocal, mergeTruckLocations]);
 
   const refreshOwnedTrucks = useCallback(async () => {
     await fetchOwnedTrucksFromSupabase();
