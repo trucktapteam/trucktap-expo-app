@@ -7,6 +7,7 @@ import { teamUpdates } from '@/mocks/data';
 import { DEBUG } from '@/constants/debug';
 import { useAuth } from '@/contexts/AuthContext';
 import { trackEvent } from '@/lib/analytics';
+import { recordReviewEngagement } from '@/lib/appReviewPrompt';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 const parseJsonArray = (val: any): any[] => {
@@ -1255,6 +1256,12 @@ if (error) {
         truck_id: truckId,
         user_id: userId,
       });
+      if (userProfile?.role !== 'owner' && userProfile?.role !== 'admin') {
+        void recordReviewEngagement('favorite_added', {
+          truckId,
+          userId,
+        });
+      }
 
       if (DEBUG) console.log('[AppContext] favorite added to Supabase:', { userId, truckId });
     }

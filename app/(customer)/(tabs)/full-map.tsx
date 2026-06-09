@@ -14,6 +14,8 @@ import { FoodTruck, Sighting } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, hasSightingCoordinates } from '@/lib/sightings';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
+import { trackEvent } from '@/lib/analytics';
+import { recordReviewEngagement } from '@/lib/appReviewPrompt';
 
 const TRUCK_MARKER_COLOR = '#f97316';
 const FOREGROUND_SCREEN_REFRESH_DEBOUNCE_MS = 5000;
@@ -670,9 +672,27 @@ const openNavigation = (latitude: number, longitude: number) => {
 
 function TruckBottomSheet({ truck, isFavorited, onViewDetails, onToggleFavorite }: TruckBottomSheetProps) {
   const { average, count } = useTruckRating(truck.id);
-  const { isTruckOpenNow } = useApp();
+  const { currentUser, incrementNavigation, isTruckOpenNow } = useApp();
   const { colors } = useTheme();
   const styles = createStyles(colors);
+
+  const handleNavigate = () => {
+    if (!truck.location) return;
+
+    incrementNavigation(truck.id);
+    void trackEvent({
+      event_type: 'navigate_click',
+      truck_id: truck.id,
+      user_id: currentUser?.id ?? null,
+    });
+    if (currentUser?.role !== 'owner' && currentUser?.role !== 'admin') {
+      void recordReviewEngagement('navigate_click', {
+        truckId: truck.id,
+        userId: currentUser?.id ?? null,
+      });
+    }
+    openNavigation(truck.location.latitude, truck.location.longitude);
+  };
 
   return (
     <View style={styles.sheetContent}>
@@ -717,7 +737,7 @@ function TruckBottomSheet({ truck, isFavorited, onViewDetails, onToggleFavorite 
         
         <TouchableOpacity 
           style={styles.primaryButton} 
-          onPress={() => truck.location && openNavigation(truck.location.latitude, truck.location.longitude)}
+          onPress={handleNavigate}
           activeOpacity={0.8}
         >
           <Text style={styles.primaryButtonText}>Navigate</Text>

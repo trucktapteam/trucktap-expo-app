@@ -25,7 +25,6 @@ void SplashScreen.preventAutoHideAsync().catch((e) => {
 const queryClient = new QueryClient();
 const VERIFICATION_LINK_TYPES = new Set(['signup', 'invite', 'magiclink', 'email', 'email_change']);
 const RECOVERY_LINK_TYPE = 'recovery';
-const UPCOMING_STOP_REMINDER_CATEGORY = 'upcoming-stop-reminder';
 
 type NotificationData = Record<string, unknown>;
 
@@ -340,10 +339,6 @@ export default function RootLayout() {
       devLog('[RootLayout] Skipping notification response setup on web');
       return;
     }
-
-    void Notifications.setNotificationCategoryAsync(UPCOMING_STOP_REMINDER_CATEGORY, []).catch((error) => {
-      devLog('[RootLayout] Error setting upcoming stop reminder category:', error);
-    });
 
     const handleNotificationResponse = (
       response: Notifications.NotificationResponse,

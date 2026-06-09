@@ -15,6 +15,7 @@ import AuthPromptModal from '@/components/AuthPromptModal';
 import UpcomingStopsRow from '@/components/UpcomingStopsRow';
 import { trackEvent } from '@/lib/analytics';
 import { getTruckShareUrl } from '@/lib/truckShare';
+import { recordReviewEngagement } from '@/lib/appReviewPrompt';
 import { MenuItem } from '@/types';
 
 interface TruckProfileProps {
@@ -38,6 +39,8 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     if (!isAuthenticated || !authUser || !truck) return false;
     return truck.owner_id === authUser.id;
   }, [isAuthenticated, authUser, truck]);
+  const isCustomerReviewPromptAudience =
+    mode === 'customer' && currentUser?.role !== 'owner' && currentUser?.role !== 'admin';
   const canViewTestTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
   const canViewArchivedTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
   
@@ -95,7 +98,13 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
       truck_id: truckId,
       user_id: authUser?.id ?? currentUser?.id ?? null,
     });
-  }, [authUser?.id, currentUser?.id, mode, truckId]);
+    if (isCustomerReviewPromptAudience) {
+      void recordReviewEngagement('truck_profile_view', {
+        truckId,
+        userId: authUser?.id ?? currentUser?.id ?? null,
+      });
+    }
+  }, [authUser?.id, currentUser?.id, isCustomerReviewPromptAudience, mode, truckId]);
 
   const handleOwnerAction = useCallback((action: string) => {
     if (!isAuthenticated || !authUser) {
@@ -181,6 +190,12 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
       truck_id: truck.id,
       user_id: authUser?.id ?? currentUser?.id ?? null,
     });
+    if (isCustomerReviewPromptAudience) {
+      void recordReviewEngagement('navigate_click', {
+        truckId: truck.id,
+        userId: authUser?.id ?? currentUser?.id ?? null,
+      });
+    }
     const { latitude, longitude } = truck.location;
     const url = Platform.select({
       ios: `http://maps.apple.com/?daddr=${latitude},${longitude}`,
