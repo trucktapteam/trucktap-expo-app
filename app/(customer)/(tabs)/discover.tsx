@@ -61,6 +61,40 @@ const getSightingLocationText = (sighting?: Sighting | null) => {
   return 'Location unavailable';
 };
 
+const formatCardStopDateTime = (iso: string) => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Time not set';
+
+  const dateText = date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+  const timeText = date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  return `${dateText} @ ${timeText}`;
+};
+
+const formatCardLocationFallback = (address?: string | null) => {
+  const trimmed = address?.trim();
+  if (!trimmed) return '';
+
+  const parts = trimmed
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 3) {
+    const city = parts[parts.length - 2];
+    const state = parts[parts.length - 1].replace(/\s+\d{5}(?:-\d{4})?$/, '');
+    return [city, state].filter(Boolean).join(', ');
+  }
+
+  return trimmed;
+};
+
 const openSightingNavigation = (latitude?: number, longitude?: number) => {
   if (typeof latitude !== 'number' || typeof longitude !== 'number') {
     Alert.alert('Location unavailable', 'This sighting does not have a usable location.');
@@ -80,7 +114,7 @@ const openSightingNavigation = (latitude?: number, longitude?: number) => {
 
 export default function CustomerHomeScreen() {
   const router = useRouter();
-  const { currentUser, isTruckOpenNow, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews, showClosed, setShowClosed } = useApp();
+  const { currentUser, isTruckOpenNow, getNextUpcomingStopForTruck, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews, showClosed, setShowClosed } = useApp();
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -580,6 +614,7 @@ export default function CustomerHomeScreen() {
   { label: 'Cincinnati, OH', latitude: 39.1031, longitude: -84.5120 },
   { label: 'Nashville, TN', latitude: 36.1627, longitude: -86.7816 },
   { label: 'Indianapolis, IN', latitude: 39.7684, longitude: -86.1581 },
+  { label: 'Central Illinois', latitude: 40.1164, longitude: -89.1787 },
   { label: 'Knoxville, TN', latitude: 35.9606, longitude: -83.9207 },
   { label: 'St. Louis, MO', latitude: 38.6270, longitude: -90.1994 },
 ];
@@ -888,6 +923,11 @@ export default function CustomerHomeScreen() {
               const rating = ratingsByTruckId.get(truck.id);
               const reviewAverage = rating?.count ? Math.round((rating.sum / rating.count) * 10) / 10 : 0;
               const openNow = openTruckIds.has(truck.id);
+              const nextStop = getNextUpcomingStopForTruck(truck.id);
+              const nextStopLocation = nextStop?.location_text?.trim();
+              const currentLocation = openNow ? getTruckDisplayLocation(truck) : null;
+              const profileSnippet = (truck.bio || (truck as any).description || '').trim();
+              const fallbackLocation = formatCardLocationFallback(truck.location?.address);
 
               return (
                 <React.Fragment key={truck.id}>
@@ -895,36 +935,65 @@ export default function CustomerHomeScreen() {
                     style={styles.truckCard}
                     onPress={() => handleTruckPress(truck.id)}
                   >
-                    <Image source={truck.logo ? { uri: truck.logo } : undefined} style={styles.truckLogo} />
-                    <View style={styles.truckInfo}>
-                      <View style={styles.truckNameRow}>
-                        <Text style={styles.truckName}>{truck.name}</Text>
-                        {truck.verified && (
-                          <CheckCircle size={16} color={colors.success} fill={colors.success} />
-                        )}
-                      </View>
-                      <Text style={styles.truckCuisine}>{truck.cuisine_type}</Text>
-                      <View style={styles.ratingRow}>
-                        {rating?.count ? (
-                          <>
-                            <Star size={13} color={colors.starYellow} fill={colors.starYellow} />
-                            <Text style={styles.ratingText}>{reviewAverage.toFixed(1)} ({rating.count})</Text>
-                          </>
-                        ) : (
-                          <Text style={styles.noReviewsText}>No reviews yet</Text>
-                        )}
-                      </View>
-                      <View style={styles.truckMeta}>
-                        <View style={[styles.statusBadge, openNow && { backgroundColor: `${colors.success}20` }]}>
-                          <Text style={[styles.statusText, openNow && { color: colors.success }]}>
-                            {openNow ? 'Open' : 'Closed'}
-                          </Text>
-                        </View>
-                        <Text style={styles.truckDistance} numberOfLines={1} ellipsizeMode="tail">
-                          {openNow
-                            ? getTruckDisplayLocation(truck)
-                            : 'Not currently serving'}
+                    <View style={styles.truckImageColumn}>
+                      <Image source={truck.logo ? { uri: truck.logo } : undefined} style={styles.truckLogo} />
+                      <View style={styles.imageRatingRow}>
+                        <Star
+                          size={11}
+                          color={rating?.count ? colors.starYellow : colors.secondaryText}
+                          fill={rating?.count ? colors.starYellow : 'transparent'}
+                        />
+                        <Text style={[styles.imageRatingText, !rating?.count && styles.noReviewsText]} numberOfLines={1}>
+                          {rating?.count ? `${reviewAverage.toFixed(1)} (${rating.count})` : 'New'}
                         </Text>
+                      </View>
+                    </View>
+                    <View style={styles.truckInfo}>
+                      <View style={styles.cardHeaderRow}>
+                        <View style={styles.truckTitleWrap}>
+                          <View style={styles.truckNameRow}>
+                            <Text style={styles.truckName} numberOfLines={1}>{truck.name}</Text>
+                            {truck.verified && (
+                              <CheckCircle size={16} color={colors.success} fill={colors.success} />
+                            )}
+                            <View style={[styles.statusBadge, openNow && { backgroundColor: `${colors.success}20` }]}>
+                              <Text style={[styles.statusText, openNow && { color: colors.success }]}>
+                                {openNow ? 'Open' : 'Closed'}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.locationLines}>
+                        {currentLocation ? (
+                          <Text style={styles.locationLineText} numberOfLines={2} ellipsizeMode="tail">
+                            📍 {currentLocation}
+                          </Text>
+                        ) : nextStop ? (
+                          <>
+                            <Text style={styles.locationLineText} numberOfLines={1}>
+                              📅 {formatCardStopDateTime(nextStop.starts_at)}
+                            </Text>
+                            {!!nextStopLocation && (
+                              <Text style={styles.locationLineText} numberOfLines={2} ellipsizeMode="tail">
+                                📍 {nextStopLocation}
+                              </Text>
+                            )}
+                          </>
+                        ) : profileSnippet ? (
+                          <Text
+                            style={[styles.locationLineText, styles.profileSnippetText]}
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                          >
+                            {profileSnippet}
+                          </Text>
+                        ) : fallbackLocation ? (
+                          <Text style={styles.locationLineText} numberOfLines={1} ellipsizeMode="tail">
+                            📍 {fallbackLocation}
+                          </Text>
+                        ) : null}
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -1339,6 +1408,25 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderRadius: 11,
     backgroundColor: colors.secondaryBackground,
   },
+  truckImageColumn: {
+    width: 72,
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  imageRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    marginTop: 5,
+    maxWidth: 72,
+  },
+  imageRatingText: {
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: colors.text,
+  },
   spotListCard: {
     backgroundColor: colors.cardBackground,
     borderColor: colors.border,
@@ -1441,15 +1529,26 @@ const createStyles = (colors: any) => StyleSheet.create({
   truckInfo: {
     flex: 1,
     marginLeft: 12,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 7,
+  },
+  truckTitleWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   truckNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 4,
   },
   truckName: {
+    flexShrink: 1,
     fontSize: 18,
     fontWeight: '600' as const,
     color: colors.text,
@@ -1457,18 +1556,20 @@ const createStyles = (colors: any) => StyleSheet.create({
   truckCuisine: {
     fontSize: 14,
     color: colors.secondaryText,
-    marginBottom: 5,
+    marginTop: 2,
   },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 8,
+  locationLines: {
+    gap: 3,
   },
-  ratingText: {
-    fontSize: 12,
+  locationLineText: {
+    fontSize: 14,
     fontWeight: '600' as const,
+    lineHeight: 18,
     color: colors.text,
+  },
+  profileSnippetText: {
+    fontWeight: '500' as const,
+    color: colors.secondaryText,
   },
   noReviewsText: {
     fontSize: 12,
@@ -1479,11 +1580,6 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontWeight: '600' as const,
     color: colors.primary,
   },
-  truckMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -1493,11 +1589,6 @@ const createStyles = (colors: any) => StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: '600' as const,
-    color: colors.secondaryText,
-  },
-  truckDistance: {
-    flex: 1,
-    fontSize: 12,
     color: colors.secondaryText,
   },
   findMeButton: {

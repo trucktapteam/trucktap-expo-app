@@ -148,6 +148,7 @@ const mapOwnerMessageRow = (row: any, readAt?: string | null): OwnerMessage => (
 });
 
 const UPCOMING_STOP_STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
+const INACTIVITY_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 const normalizeUpcomingStopStatus = (status: unknown): UpcomingStopStatus =>
   UPCOMING_STOP_STATUSES.includes(status as UpcomingStopStatus)
@@ -165,6 +166,15 @@ const mapUpcomingStopRow = (row: any): UpcomingStop => ({
   created_at: row.created_at ?? undefined,
   updated_at: row.updated_at ?? undefined,
 });
+
+export type TruckActivitySummary = {
+  inactive: boolean;
+  lastLiveAt?: string;
+  upcomingStopCount: number;
+  announcementCount: number;
+  recentAnnouncementCount: number;
+  daysSinceActivity: number | null;
+};
 
 export type AppState = {
   currentUser: User | null;
@@ -235,6 +245,9 @@ export type AppState = {
   deleteAnnouncement: (announcementId: string) => void;
   getAnnouncements: (truckId: string) => Announcement[];
   getUpcomingStops: (truckId: string) => UpcomingStop[];
+  getNextUpcomingStopForTruck: (truckId: string) => UpcomingStop | null;
+  getTruckActivitySummary: (truckId: string) => TruckActivitySummary;
+  isTruckInactive: (truckId: string) => boolean;
   addUpcomingStop: (stop: Omit<UpcomingStop, 'id' | 'created_at' | 'updated_at'>) => Promise<UpcomingStop>;
   updateUpcomingStop: (stopId: string, updates: Partial<Omit<UpcomingStop, 'id' | 'truck_id' | 'created_at' | 'updated_at'>>) => Promise<UpcomingStop>;
   deleteUpcomingStop: (stopId: string) => Promise<void>;
@@ -365,13 +378,19 @@ export const [AppProvider, useApp] = createContextHook(() => {
       operatingHours: row.operating_hours ?? undefined,
       verified: false,
       lastUpdated: row.updated_at ?? row.created_at ?? undefined,
-      lastLiveUpdatedAt: row.location_updated_at ?? row.updated_at ?? row.created_at ?? undefined,
+      lastLiveUpdatedAt: row.location_updated_at ?? undefined,
       search_keywords: [],
       analytics: undefined,
       archived: row.archived === true,
       archivedAt: typeof row.archived_at === 'string' ? row.archived_at : undefined,
       archiveReason: row.archive_reason ?? undefined,
       is_test: row.is_test === true,
+      lastOwnerActivityAt:
+        typeof row.last_owner_activity_at === 'string'
+          ? Date.parse(row.last_owner_activity_at)
+          : typeof row.last_owner_activity_at === 'number'
+          ? row.last_owner_activity_at
+          : undefined,
     };
   }, []);
 
@@ -410,7 +429,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
     const { data, error } = await supabase
       .from('locations')
-      .select('truck_id, latitude, longitude, label')
+      .select('truck_id, latitude, longitude, label, updated_at')
       .in('truck_id', truckIds);
 
     if (error) {
@@ -1345,12 +1364,26 @@ if (error) {
 
   setFoodTrucks(prev =>
     prev.map(truck =>
-      truck.id === truckId ? { ...truck, ...sanitizedUpdates, lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt } : truck
+      truck.id === truckId
+        ? {
+            ...truck,
+            ...sanitizedUpdates,
+            lastUpdated: savedAt,
+            lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt,
+          }
+        : truck
     )
   );
     setSupabaseOwnedTrucks(prev =>
       prev.map(truck =>
-        truck.id === truckId ? { ...truck, ...sanitizedUpdates, lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt } : truck
+        truck.id === truckId
+          ? {
+              ...truck,
+              ...sanitizedUpdates,
+              lastUpdated: savedAt,
+              lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt,
+            }
+          : truck
       )
     );
     if (__DEV__ && isArchiveUpdate) {
@@ -2114,6 +2147,90 @@ if (error) {
       .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
   }, [upcomingStops]);
 
+  const getNextUpcomingStopForTruck = useCallback((truckId: string) => {
+    const requestedId = truckId?.toString() ?? '';
+    const now = Date.now();
+
+    return upcomingStops.find((stop) => {
+      if (stop.truck_id?.toString() !== requestedId) return false;
+      if (stop.status === 'cancelled' || stop.status === 'completed') return false;
+
+      const startsAt = Date.parse(stop.starts_at);
+      return Number.isFinite(startsAt) && startsAt > now;
+    }) ?? null;
+  }, [upcomingStops]);
+
+  const getTruckActivitySummary = useCallback((truckId: string): TruckActivitySummary => {
+    const requestedId = truckId?.toString() ?? '';
+    const now = Date.now();
+    const truck = foodTrucks.find(item => item.id?.toString() === requestedId);
+    const lastLiveTime = truck?.lastLiveUpdatedAt ? Date.parse(truck.lastLiveUpdatedAt) : Number.NaN;
+    const lastUpdatedTime = truck?.lastUpdated ? Date.parse(truck.lastUpdated) : Number.NaN;
+    const manualActivityTime =
+      typeof truck?.lastOwnerActivityAt === 'number' ? truck.lastOwnerActivityAt : Number.NaN;
+    const recentLive =
+      isTruckOpenNow(requestedId) ||
+      (Number.isFinite(lastLiveTime) && now - lastLiveTime <= INACTIVITY_WINDOW_MS);
+    const recentOwnerActivity =
+      (Number.isFinite(manualActivityTime) && now - manualActivityTime <= INACTIVITY_WINDOW_MS) ||
+      (Number.isFinite(lastUpdatedTime) && now - lastUpdatedTime <= INACTIVITY_WINDOW_MS);
+    const hasBio = Boolean((truck?.bio ?? '').trim());
+    const hasMenuItems = menuItems.some(item => item.truck_id?.toString() === requestedId);
+    const hasGalleryPhotos = Boolean(
+      (truck?.images?.length ?? 0) > 0 ||
+      (truck?.hero_image && truck.hero_image !== DEFAULT_HERO_IMAGE)
+    );
+    const hasReviews = reviews.some(review => review.truckId?.toString() === requestedId);
+
+    const futureStops = upcomingStops.filter((stop) => {
+      if (stop.truck_id?.toString() !== requestedId) return false;
+      if (stop.status === 'cancelled' || stop.status === 'completed') return false;
+
+      const startsAt = Date.parse(stop.starts_at);
+      return Number.isFinite(startsAt) && startsAt > now;
+    });
+
+    const truckAnnouncements = announcements.filter(
+      announcement => announcement.truck_id?.toString() === requestedId
+    );
+    const announcementTimes = truckAnnouncements
+      .map(announcement => Date.parse(announcement.timestamp))
+      .filter(Number.isFinite);
+    const recentAnnouncementCount = announcementTimes.filter(
+      timestamp => now - timestamp <= INACTIVITY_WINDOW_MS
+    ).length;
+
+    const activityTimes = [
+      Number.isFinite(lastLiveTime) ? lastLiveTime : null,
+      Number.isFinite(lastUpdatedTime) ? lastUpdatedTime : null,
+      Number.isFinite(manualActivityTime) ? manualActivityTime : null,
+      ...announcementTimes,
+    ].filter((timestamp): timestamp is number => typeof timestamp === 'number');
+    const lastActivityTime = activityTimes.length > 0 ? Math.max(...activityTimes) : null;
+
+    return {
+      inactive:
+        !recentLive &&
+        futureStops.length === 0 &&
+        recentAnnouncementCount === 0 &&
+        !hasBio &&
+        !hasMenuItems &&
+        !hasGalleryPhotos &&
+        !hasReviews &&
+        !recentOwnerActivity,
+      lastLiveAt: Number.isFinite(lastLiveTime) ? truck?.lastLiveUpdatedAt : undefined,
+      upcomingStopCount: futureStops.length,
+      announcementCount: truckAnnouncements.length,
+      recentAnnouncementCount,
+      daysSinceActivity:
+        lastActivityTime === null ? null : Math.max(0, Math.floor((now - lastActivityTime) / (24 * 60 * 60 * 1000))),
+    };
+  }, [announcements, foodTrucks, isTruckOpenNow, menuItems, reviews, upcomingStops]);
+
+  const isTruckInactive = useCallback((truckId: string) => {
+    return getTruckActivitySummary(truckId).inactive;
+  }, [getTruckActivitySummary]);
+
   const addUpcomingStop = useCallback(async (
     stop: Omit<UpcomingStop, 'id' | 'created_at' | 'updated_at'>
   ): Promise<UpcomingStop> => {
@@ -2607,6 +2724,9 @@ if (error) {
     deleteAnnouncement,
     getAnnouncements,
     getUpcomingStops,
+    getNextUpcomingStopForTruck,
+    getTruckActivitySummary,
+    isTruckInactive,
     addUpcomingStop,
     updateUpcomingStop,
     deleteUpcomingStop,
@@ -2643,6 +2763,7 @@ if (error) {
     qrShared, markQrShared, dismissChecklist, incrementView, incrementMenuView, incrementCall,
     incrementNavigation, incrementPhotoView, getTruckAnalytics, addAnnouncement,
     deleteAnnouncement, getAnnouncements, getUpcomingStops, addUpcomingStop,
+    getNextUpcomingStopForTruck, getTruckActivitySummary, isTruckInactive,
     updateUpcomingStop, deleteUpcomingStop, fetchUpcomingStopsFromSupabase,
     setTruckVerified, logout,
     incrementQrScan, getQrScanStats, allTrucksLoading, fetchAllTrucksFromSupabase, isProfileComplete,
@@ -2652,11 +2773,14 @@ if (error) {
 });
 
 export function useFilteredTrucks(searchQuery: string, cuisineFilter: string, openOnly: boolean) {
-  const { foodTrucks, isTruckOpenNow } = useApp();
+  const { foodTrucks, isTruckOpenNow, isTruckInactive } = useApp();
 
   return useMemo(() => {
     let filtered = foodTrucks.filter(truck =>
-      truck.archived !== true && !truck.archivedAt && truck.is_test !== true
+      truck.archived !== true &&
+      !truck.archivedAt &&
+      truck.is_test !== true &&
+      !isTruckInactive(truck.id)
     );
 
     if (openOnly) {
@@ -2682,11 +2806,11 @@ export function useFilteredTrucks(searchQuery: string, cuisineFilter: string, op
     }
 
     return filtered;
-  }, [foodTrucks, searchQuery, cuisineFilter, openOnly, isTruckOpenNow]);
+  }, [foodTrucks, searchQuery, cuisineFilter, openOnly, isTruckOpenNow, isTruckInactive]);
 }
 
 export function useFavoriteTrucks() {
-  const { currentUser, foodTrucks } = useApp();
+  const { currentUser, foodTrucks, isTruckInactive } = useApp();
 
   return useMemo(() => {
     if (!currentUser) return [];
@@ -2694,9 +2818,10 @@ export function useFavoriteTrucks() {
       currentUser.favorites.includes(truck.id) &&
       truck.archived !== true &&
       !truck.archivedAt &&
-      truck.is_test !== true
+      truck.is_test !== true &&
+      !isTruckInactive(truck.id)
     );
-  }, [currentUser, foodTrucks]);
+  }, [currentUser, foodTrucks, isTruckInactive]);
 }
 
 export function useTruckReviews(truckId: string) {

@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import AuthPromptModal from '@/components/AuthPromptModal';
 
 export default function ProfileScreen() {
-  const { currentUser, foodTrucks, getAverageRating } = useApp();
+  const { currentUser, foodTrucks, getAverageRating, isTruckInactive } = useApp();
   console.log('[ProfileScreen] currentUser:', currentUser);
   const { colors } = useTheme();
   const { isAuthenticated } = useAuth();
@@ -20,7 +20,7 @@ export default function ProfileScreen() {
 
   const styles = createStyles(colors);
   const visibleTrucks = foodTrucks.filter(t =>
-    !t.archived && t.is_test !== true
+    !t.archived && t.is_test !== true && !isTruckInactive(t.id)
   );
 
   const favoriteTrucks = visibleTrucks.filter(truck =>

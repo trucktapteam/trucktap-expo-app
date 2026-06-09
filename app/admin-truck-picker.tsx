@@ -2,7 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, Alert, View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
-import { ChevronRight, Truck } from 'lucide-react-native';
+import { ChevronRight, Eye, EyeOff, Mail, RotateCcw, Truck } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -13,7 +13,15 @@ export default function AdminTruckPickerScreen() {
   const pathname = usePathname();
   const { colors } = useTheme();
   const { isLoading: authLoading } = useAuth();
-  const { currentUser, foodTrucks, setSelectedAdminTruckId, completeOnboarding } = useApp();
+  const {
+    currentUser,
+    foodTrucks,
+    setSelectedAdminTruckId,
+    completeOnboarding,
+    getTruckActivitySummary,
+    isTruckInactive,
+    updateTruckDetails,
+  } = useApp();
   const isAdmin = currentUser?.role === 'admin';
 
   const trucks = useMemo(
@@ -23,6 +31,15 @@ export default function AdminTruckPickerScreen() {
       ),
     [foodTrucks]
   );
+  const publicTrucks = useMemo(
+    () => trucks.filter(truck => truck.archived !== true && !truck.archivedAt && truck.is_test !== true),
+    [trucks]
+  );
+  const inactiveTrucks = useMemo(
+    () => publicTrucks.filter(truck => isTruckInactive(truck.id)),
+    [publicTrucks, isTruckInactive]
+  );
+  const activeTruckCount = publicTrucks.length - inactiveTrucks.length;
 
   useEffect(() => {
     if (authLoading || !currentUser) return;
@@ -66,6 +83,44 @@ export default function AdminTruckPickerScreen() {
     }
   };
 
+  const formatLastLiveDate = (iso?: string) => {
+    if (!iso) return 'Never';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return 'Unknown';
+
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const formatDaysSinceActivity = (days: number | null) =>
+    days === null ? 'No activity' : `${days} day${days === 1 ? '' : 's'} ago`;
+
+  const reactivateTruck = async (truck: FoodTruck) => {
+    try {
+      await updateTruckDetails(truck.id, { lastOwnerActivityAt: Date.now() });
+      Alert.alert('Truck reactivated', `${truck.name || 'This truck'} is visible to customers again.`);
+    } catch (error: any) {
+      Alert.alert('Reactivate failed', error?.message ?? 'Could not reactivate this truck.');
+    }
+  };
+
+  const hideTruck = (truck: FoodTruck) => {
+    Alert.alert(
+      'Already hidden',
+      `${truck.name || 'This truck'} is inactive and already hidden from customer discovery.`
+    );
+  };
+
+  const contactOwner = (truck: FoodTruck) => {
+    Alert.alert(
+      'Contact Owner',
+      `Owner ID: ${truck.owner_id || 'Unknown'}`
+    );
+  };
+
   if (authLoading || !currentUser || !isAdmin) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
@@ -85,6 +140,17 @@ export default function AdminTruckPickerScreen() {
           <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
             Select a real truck to manage as an admin.
           </Text>
+        </View>
+
+        <View style={styles.statsRow}>
+          <View style={[styles.statCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+            <Text style={[styles.statValue, { color: colors.text }]}>{activeTruckCount}</Text>
+            <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Active Trucks</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+            <Text style={[styles.statValue, { color: colors.text }]}>{inactiveTrucks.length}</Text>
+            <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Inactive Trucks</Text>
+          </View>
         </View>
 
         {trucks.length === 0 ? (
@@ -118,6 +184,78 @@ export default function AdminTruckPickerScreen() {
                 <ChevronRight size={20} color={colors.secondaryText} />
               </TouchableOpacity>
             ))}
+          </View>
+        )}
+
+        {inactiveTrucks.length > 0 && (
+          <View style={styles.inactiveSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Inactive Trucks</Text>
+              <Text style={[styles.sectionSubtitle, { color: colors.secondaryText }]}>
+                Hidden from customer discovery until activity resumes.
+              </Text>
+            </View>
+
+            <View style={styles.inactiveList}>
+              {inactiveTrucks.map((truck) => {
+                const activity = getTruckActivitySummary(truck.id);
+
+                return (
+                  <View
+                    key={`inactive-${truck.id}`}
+                    style={[styles.inactiveCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+                  >
+                    <View style={styles.inactiveCardHeader}>
+                      <View style={styles.inactiveTitleWrap}>
+                        <Text style={[styles.truckName, { color: colors.text }]} numberOfLines={1}>
+                          {truck.name || 'Unnamed truck'}
+                        </Text>
+                        <Text style={[styles.truckMeta, { color: colors.secondaryText }]} numberOfLines={1}>
+                          Owner: {truck.owner_id || 'Unknown'}
+                        </Text>
+                      </View>
+                      <Text style={[styles.inactiveBadge, { color: colors.secondaryText, backgroundColor: colors.secondaryBackground }]}>
+                        Inactive
+                      </Text>
+                    </View>
+
+                    <View style={styles.activityGrid}>
+                      <Text style={[styles.activityText, { color: colors.secondaryText }]}>
+                        Last LIVE: {formatLastLiveDate(activity.lastLiveAt)}
+                      </Text>
+                      <Text style={[styles.activityText, { color: colors.secondaryText }]}>
+                        Upcoming Stops: {activity.upcomingStopCount}
+                      </Text>
+                      <Text style={[styles.activityText, { color: colors.secondaryText }]}>
+                        Announcements: {activity.announcementCount}
+                      </Text>
+                      <Text style={[styles.activityText, { color: colors.secondaryText }]}>
+                        Activity: {formatDaysSinceActivity(activity.daysSinceActivity)}
+                      </Text>
+                    </View>
+
+                    <View style={styles.actionRow}>
+                      <TouchableOpacity style={styles.actionButton} onPress={() => selectTruck(truck)} activeOpacity={0.7}>
+                        <Eye size={14} color={colors.primary} />
+                        <Text style={[styles.actionText, { color: colors.primary }]}>View Truck</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.actionButton} onPress={() => reactivateTruck(truck)} activeOpacity={0.7}>
+                        <RotateCcw size={14} color={colors.primary} />
+                        <Text style={[styles.actionText, { color: colors.primary }]}>Reactivate</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.actionButton} onPress={() => hideTruck(truck)} activeOpacity={0.7}>
+                        <EyeOff size={14} color={colors.secondaryText} />
+                        <Text style={[styles.actionText, { color: colors.secondaryText }]}>Hide</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.actionButton} onPress={() => contactOwner(truck)} activeOpacity={0.7}>
+                        <Mail size={14} color={colors.secondaryText} />
+                        <Text style={[styles.actionText, { color: colors.secondaryText }]}>Contact Owner</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
           </View>
         )}
 
@@ -171,6 +309,26 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'center',
   },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  statCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '800' as const,
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
   truckList: {
     gap: 12,
     marginBottom: 24,
@@ -204,6 +362,73 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     marginTop: 3,
     textTransform: 'uppercase',
+  },
+  inactiveSection: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 19,
+    fontWeight: '800' as const,
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  inactiveList: {
+    gap: 12,
+  },
+  inactiveCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+  },
+  inactiveCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 10,
+  },
+  inactiveTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  inactiveBadge: {
+    overflow: 'hidden',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    textTransform: 'uppercase',
+  },
+  activityGrid: {
+    gap: 5,
+    marginBottom: 12,
+  },
+  activityText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
+    borderRadius: 8,
+  },
+  actionText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
   },
   emptyCard: {
     borderWidth: 1,

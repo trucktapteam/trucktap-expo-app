@@ -26,8 +26,6 @@ const queryClient = new QueryClient();
 const VERIFICATION_LINK_TYPES = new Set(['signup', 'invite', 'magiclink', 'email', 'email_change']);
 const RECOVERY_LINK_TYPE = 'recovery';
 const UPCOMING_STOP_REMINDER_CATEGORY = 'upcoming-stop-reminder';
-const UPCOMING_STOP_SNOOZE_ACTION = 'snooze-upcoming-stop';
-const UPCOMING_STOP_SNOOZE_MINUTES = 15;
 
 type NotificationData = Record<string, unknown>;
 
@@ -135,37 +133,6 @@ const getRouteFromNotificationData = (
   const route = getStringDataValue(notificationData, ['route']);
 
   return route || null;
-};
-
-const scheduleUpcomingStopSnooze = async (
-  data?: Notifications.NotificationContent['data']
-) => {
-  if (!data) return;
-
-  const notificationData = data as NotificationData;
-  const locationText = getStringDataValue(notificationData, ['location_text', 'locationText']) || 'Your stop';
-  const truckId = getStringDataValue(notificationData, ['truck_id', 'truckId']);
-  const stopId = getStringDataValue(notificationData, ['stop_id', 'stopId']);
-
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: 'Time to Go Live soon',
-      body: `${locationText} starts soon. Open TruckTap and go live when you're ready.`,
-      categoryIdentifier: UPCOMING_STOP_REMINDER_CATEGORY,
-      data: {
-        ...notificationData,
-        truck_id: truckId,
-        stop_id: stopId,
-        route: '/(truck)/upcoming-stops',
-        snoozed: 'true',
-        snooze_minutes: String(UPCOMING_STOP_SNOOZE_MINUTES),
-      },
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: UPCOMING_STOP_SNOOZE_MINUTES * 60,
-    },
-  });
 };
 
 function RootLayoutNav() {
@@ -374,15 +341,7 @@ export default function RootLayout() {
       return;
     }
 
-    void Notifications.setNotificationCategoryAsync(UPCOMING_STOP_REMINDER_CATEGORY, [
-      {
-        identifier: UPCOMING_STOP_SNOOZE_ACTION,
-        buttonTitle: 'Snooze',
-        options: {
-          opensAppToForeground: false,
-        },
-      },
-    ]).catch((error) => {
+    void Notifications.setNotificationCategoryAsync(UPCOMING_STOP_REMINDER_CATEGORY, []).catch((error) => {
       devLog('[RootLayout] Error setting upcoming stop reminder category:', error);
     });
 
@@ -392,18 +351,6 @@ export default function RootLayout() {
     ) => {
       const responseId = response.notification.request.identifier;
       const notificationData = response.notification.request.content.data;
-
-      if (response.actionIdentifier === UPCOMING_STOP_SNOOZE_ACTION) {
-        if (handledNotificationResponseIds.current.has(`${responseId}:${UPCOMING_STOP_SNOOZE_ACTION}`)) {
-          return;
-        }
-
-        handledNotificationResponseIds.current.add(`${responseId}:${UPCOMING_STOP_SNOOZE_ACTION}`);
-        void scheduleUpcomingStopSnooze(notificationData).catch((error) => {
-          devLog('[RootLayout] Error scheduling upcoming stop snooze:', error);
-        });
-        return;
-      }
 
       if (handledNotificationResponseIds.current.has(responseId)) {
         devLog('[RootLayout] Notification response already handled; ignoring duplicate');

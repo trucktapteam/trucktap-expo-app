@@ -11,6 +11,7 @@
         "buildType": "apk"
       },
       "env": {
+        "APP_VARIANT": "development",
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       }
     },
@@ -28,6 +29,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
+        "APP_VARIANT": "production",
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       },
       "environment": "production"
