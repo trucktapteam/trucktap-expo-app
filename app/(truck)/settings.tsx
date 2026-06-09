@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform, Switch } from 'react-native';
-import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, ArrowLeft } from 'lucide-react-native';
+import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, ArrowLeft, Archive, ArchiveRestore } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,7 +22,15 @@ const DEFAULT_OWNER_NOTIFICATION_PREFS: OwnerNotificationPreferences = {
 };
 
 export default function TruckSettings() {
-  const { currentUser, logout, setCurrentUser } = useApp();
+  const {
+    currentUser,
+    logout,
+    setCurrentUser,
+    getUserTruck,
+    updateTruckDetails,
+    foodTrucks,
+    selectedAdminTruckId,
+  } = useApp();
   const { user: authUser } = useAuth();
   const router = useRouter();
   const { colors } = useTheme();
@@ -32,10 +40,20 @@ export default function TruckSettings() {
     useState<OwnerNotificationPreferences>(DEFAULT_OWNER_NOTIFICATION_PREFS);
   const [savingOwnerNotificationKey, setSavingOwnerNotificationKey] =
     useState<keyof OwnerNotificationPreferences | null>(null);
+  const [isUpdatingArchive, setIsUpdatingArchive] = useState(false);
   const { isDeletingAccount, confirmDeleteAccount } = useAccountDeletion({
     source: 'truck-settings',
   });
   useTruckLifecycleLogger('TruckSettings');
+
+  const ownerTruck = getUserTruck();
+  const isAdmin = currentUser?.role === 'admin';
+  const selectedAdminTruck = foodTrucks.find(t => t.id === selectedAdminTruckId) ?? null;
+  const selectedAdminTruckIsOwned =
+    isAdmin && !!selectedAdminTruck && !!currentUser?.id && selectedAdminTruck.owner_id === currentUser.id;
+  const truck = isAdmin && selectedAdminTruck ? selectedAdminTruck : ownerTruck;
+  const isArchived = truck ? (truck.archived === true || !!truck.archivedAt) : false;
+  const canManageArchive = !!truck && (!isAdmin || !selectedAdminTruck || selectedAdminTruckIsOwned);
 
   useEffect(() => {
     checkLocationPermission();
@@ -196,6 +214,59 @@ setCurrentUser(customerUser);
     );
   };
 
+  const handleArchiveTruck = () => {
+    if (!truck || !canManageArchive || isUpdatingArchive) return;
+
+    Alert.alert(
+      'Archive Truck',
+      'This will hide your truck from customers. You can restore it anytime.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive',
+          style: 'destructive',
+          onPress: async () => {
+            setIsUpdatingArchive(true);
+            try {
+              await updateTruckDetails(truck.id, {
+                archived: true,
+                archivedAt: new Date().toISOString(),
+                archiveReason: 'owner_archived',
+                open_now: false,
+              });
+              Alert.alert('Truck archived', 'Your truck is hidden from customers.');
+            } catch (error: any) {
+              console.log('[TruckSettings] Archive truck failed:', error?.message);
+              Alert.alert('Could not archive truck', 'Please try again.');
+            } finally {
+              setIsUpdatingArchive(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRestoreTruck = async () => {
+    if (!truck || !canManageArchive || isUpdatingArchive) return;
+
+    setIsUpdatingArchive(true);
+    try {
+      await updateTruckDetails(truck.id, {
+        archived: false,
+        archivedAt: undefined,
+        archiveReason: undefined,
+        lastOwnerActivityAt: Date.now(),
+      });
+      Alert.alert('Truck restored', 'Your truck can appear to customers again.');
+    } catch (error: any) {
+      console.log('[TruckSettings] Restore truck failed:', error?.message);
+      Alert.alert('Could not restore truck', 'Please try again.');
+    } finally {
+      setIsUpdatingArchive(false);
+    }
+  };
+
   const handleReportBug = () => {
     const email = 'support@trucktap.app';
     const subject = 'Bug Report - TruckTap';
@@ -277,6 +348,44 @@ setCurrentUser(customerUser);
               <AlertCircle size={16} color={colors.error} />
               <Text style={[styles.noticeText, { color: colors.error }]}>Notifications are disabled. Enable them in your device settings to receive truck alerts.</Text>
             </View>
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Truck management</Text>
+
+          <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+            <View style={styles.infoRow}>
+              <View style={styles.infoLeft}>
+                <Archive size={20} color={colors.secondaryText} />
+                <Text style={[styles.infoLabel, { color: colors.text }]}>Customer visibility</Text>
+              </View>
+              <Text style={[styles.infoValue, { color: isArchived ? colors.error : colors.secondaryText }]}>
+                {isArchived ? 'Archived' : 'Visible'}
+              </Text>
+            </View>
+          </View>
+
+          {isArchived ? (
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+              onPress={handleRestoreTruck}
+              disabled={!canManageArchive || isUpdatingArchive}
+            >
+              <ArchiveRestore size={20} color={colors.primary} />
+              <Text style={[styles.actionButtonText, { color: colors.primary }]}>Restore Truck</Text>
+              <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.dangerButton, { backgroundColor: `${colors.error}08`, borderColor: `${colors.error}20` }]}
+              onPress={handleArchiveTruck}
+              disabled={!canManageArchive || isUpdatingArchive}
+            >
+              <Archive size={20} color={colors.error} />
+              <Text style={[styles.dangerButtonText, { color: colors.error }]}>Archive Truck</Text>
+              <ChevronRight size={20} color={colors.error} style={styles.chevron} />
+            </TouchableOpacity>
           )}
         </View>
 

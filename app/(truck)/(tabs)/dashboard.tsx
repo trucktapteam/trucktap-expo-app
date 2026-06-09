@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, X, AlertCircle, Eye, Link, Sparkles, Bell, Archive, ArchiveRestore, Truck, CalendarDays } from 'lucide-react-native';
+import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, X, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckMenu, useTruckRating } from '@/contexts/AppContext';
 import * as Clipboard from 'expo-clipboard';
@@ -224,34 +224,6 @@ export default function TruckDashboard() {
       return;
     }
     router.push('/(truck)/qr' as any);
-  };
-
-  const handleArchiveTruck = () => {
-    if (!truck) return;
-    Alert.alert(
-      'Archive Truck',
-      'This will hide your truck from customers. You can restore it anytime.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          style: 'destructive',
-          onPress: async () => {
-            await updateTruckDetails(truck.id, {
-              archived: true,
-              archivedAt: new Date().toISOString(),
-              archiveReason: 'owner_archived',
-              open_now: false,
-            });
-            setStatusToast({
-              visible: true,
-              message: 'Truck archived successfully',
-              type: 'success'
-            });
-          }
-        }
-      ]
-    );
   };
 
   const handleRestoreTruck = () => {
@@ -729,12 +701,40 @@ export default function TruckDashboard() {
           )}
         </View>
 
-        <StatsRow 
-          stats={{
-            menuItems: menuItems.length,
-            rating: rating.average || 0,
-          }}
-        />
+        <TouchableOpacity
+          style={styles.upcomingStopsCard}
+          onPress={() => router.push('/(truck)/upcoming-stops' as any)}
+          activeOpacity={0.75}
+        >
+          <View style={styles.upcomingStopsIconWrap}>
+            <CalendarDays size={24} color={Colors.primary} />
+          </View>
+          <View style={styles.upcomingStopsTextWrap}>
+            <View style={styles.upcomingStopsHeader}>
+              <Text style={styles.upcomingStopsTitle}>Upcoming Stops</Text>
+              <View style={styles.newBadge}>
+                <Text style={styles.newBadgeText}>NEW</Text>
+              </View>
+            </View>
+            <Text style={styles.upcomingStopsSubtitle}>Plan future stops and get reminded before it is time to go live.</Text>
+          </View>
+          <ChevronRight size={20} color={Colors.primary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.announcementStrip}
+          onPress={() => router.push('/(truck)/announcements' as any)}
+          activeOpacity={0.75}
+        >
+          <View style={styles.announcementIconWrap}>
+            <Megaphone size={18} color={Colors.primary} />
+          </View>
+          <View style={styles.announcementTextWrap}>
+            <Text style={styles.announcementTitle}>Announcements</Text>
+            <Text style={styles.announcementSubtitle}>Post a quick update for customers</Text>
+          </View>
+          <ChevronRight size={18} color={Colors.gray} />
+        </TouchableOpacity>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -742,27 +742,14 @@ export default function TruckDashboard() {
 
         <View style={styles.gridContainer}>
           <DashboardCard 
-            icon={Pencil}
-            label="Edit Profile"
-            onPress={() => router.push('/(truck)/edit-profile' as any)}
+            icon={MapPin}
+            label="Location"
+            onPress={() => router.push('/(truck)/update-location' as any)}
           />
           <DashboardCard 
             icon={Utensils}
             label="Menu Editor"
             onPress={() => router.push('/(truck)/menu-editor' as any)}
-          />
-        </View>
-
-        <View style={styles.gridContainer}>
-          <DashboardCard 
-            icon={ImageIcon}
-            label="Gallery"
-            onPress={() => router.push('/(truck)/gallery' as any)}
-          />
-          <DashboardCard 
-            icon={MapPin}
-            label="Location"
-            onPress={() => router.push('/(truck)/update-location' as any)}
           />
         </View>
 
@@ -779,14 +766,6 @@ export default function TruckDashboard() {
               </View>
             )}
           </View>
-          <DashboardCard 
-            icon={BarChart3}
-            label="Analytics"
-            onPress={() => router.push('/(truck)/analytics' as any)}
-          />
-        </View>
-
-        <View style={styles.gridContainer}>
           <View style={styles.cardWithBadge}>
             <DashboardCard 
               icon={Bell}
@@ -797,18 +776,26 @@ export default function TruckDashboard() {
               <View style={styles.notificationBadge} />
             )}
           </View>
+        </View>
+
+        <View style={styles.gridContainer}>
           <DashboardCard 
-            icon={CalendarDays}
-            label="Upcoming Stops"
-            onPress={() => router.push('/(truck)/upcoming-stops' as any)}
+            icon={ImageIcon}
+            label="Gallery"
+            onPress={() => router.push('/(truck)/gallery' as any)}
+          />
+          <DashboardCard 
+            icon={Pencil}
+            label="Edit Profile"
+            onPress={() => router.push('/(truck)/edit-profile' as any)}
           />
         </View>
 
         <View style={styles.gridContainer}>
           <DashboardCard 
-            icon={Megaphone}
-            label="Announcements"
-            onPress={() => router.push('/(truck)/announcements' as any)}
+            icon={BarChart3}
+            label="Analytics"
+            onPress={() => router.push('/(truck)/analytics' as any)}
           />
           <DashboardCard 
             icon={Settings}
@@ -817,16 +804,12 @@ export default function TruckDashboard() {
           />
         </View>
 
-        {!isArchived && (
-          <View style={styles.gridContainer}>
-            <DashboardCard 
-              icon={Archive}
-              label="Archive Truck"
-              onPress={handleArchiveTruck}
-            />
-            <View style={{ flex: 1, marginHorizontal: 6 }} />
-          </View>
-        )}
+        <StatsRow 
+          stats={{
+            menuItems: menuItems.length,
+            rating: rating.average || 0,
+          }}
+        />
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Your Profile</Text>
@@ -1228,6 +1211,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
+  announcementStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}18`,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  announcementIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: `${Colors.primary}12`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  announcementTextWrap: {
+    flex: 1,
+  },
+  announcementTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 2,
+  },
+  announcementSubtitle: {
+    fontSize: 12,
+    color: Colors.gray,
+  },
   sectionHeader: {
     marginBottom: 16,
   },
@@ -1235,6 +1255,56 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700' as const,
     color: Colors.dark,
+  },
+  upcomingStopsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: `${Colors.primary}0D`,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}24`,
+  },
+  upcomingStopsIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upcomingStopsTextWrap: {
+    flex: 1,
+  },
+  upcomingStopsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  upcomingStopsTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  upcomingStopsSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.gray,
+  },
+  newBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  newBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 0.4,
   },
   gridContainer: {
     flexDirection: 'row',

@@ -369,7 +369,7 @@ export default function UpcomingStopsScreen() {
         body: `${stop.location_text} starts in about ${settings.minutesBefore} minutes. Open TruckTap and go live when you're ready.`,
         data: {
           type: 'upcoming_stop_reminder',
-          route: '/(truck)/upcoming-stops',
+          route: '/(truck)/(tabs)/dashboard',
           truck_id: stop.truck_id,
           stop_id: stop.id,
           location_text: stop.location_text,

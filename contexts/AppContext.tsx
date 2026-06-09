@@ -29,6 +29,7 @@ type LocationRow = {
   longitude?: number | null;
   label?: string | null;
   updated_at?: string | null;
+  created_at?: string | null;
 };
 
 const normalizeUserRole = (role: unknown): User['role'] => {
@@ -420,7 +421,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
           longitude: locationRow.longitude ?? truck.location.longitude,
           address: locationRow.label ?? truck.location.address,
         },
-        lastLiveUpdatedAt: locationRow.updated_at ?? truck.lastLiveUpdatedAt,
+        lastLiveUpdatedAt: locationRow.updated_at ?? locationRow.created_at ?? truck.lastLiveUpdatedAt,
       };
     });
   }, []);
@@ -428,10 +429,22 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const fetchTruckLocationRows = useCallback(async (truckIds: string[], source: string): Promise<LocationRow[] | null> => {
     if (truckIds.length === 0) return null;
 
-    const { data, error } = await supabase
+    const primaryLocationResult = await supabase
       .from('locations')
       .select('truck_id, latitude, longitude, label, updated_at')
       .in('truck_id', truckIds);
+    let data = primaryLocationResult.data as LocationRow[] | null;
+    let error = primaryLocationResult.error;
+
+    if (error?.message.includes('updated_at')) {
+      const fallback = await supabase
+        .from('locations')
+        .select('truck_id, latitude, longitude, label, created_at')
+        .in('truck_id', truckIds);
+
+      data = fallback.data as LocationRow[] | null;
+      error = fallback.error;
+    }
 
     if (error) {
       console.log(`[AppContext] Supabase fetch ${source} locations error:`, error.message);
@@ -1509,7 +1522,7 @@ if (error) {
             legacyLocationPayload,
             { onConflict: 'truck_id' }
           )
-          .select('truck_id, latitude, longitude, label');
+          .select('truck_id, latitude, longitude, label, created_at');
       }
 
       if (__DEV__) {
@@ -1553,7 +1566,7 @@ if (error) {
       if (locationFetchError?.message.includes('updated_at')) {
         const fallback = await supabase
           .from('locations')
-          .select('truck_id, latitude, longitude, label')
+          .select('truck_id, latitude, longitude, label, created_at')
           .eq('truck_id', truckId)
           .maybeSingle();
         locationRow = fallback.data as LocationRow | null;

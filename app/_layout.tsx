@@ -25,6 +25,7 @@ void SplashScreen.preventAutoHideAsync().catch((e) => {
 const queryClient = new QueryClient();
 const VERIFICATION_LINK_TYPES = new Set(['signup', 'invite', 'magiclink', 'email', 'email_change']);
 const RECOVERY_LINK_TYPE = 'recovery';
+const OWNER_DASHBOARD_ROUTE = '/(truck)/(tabs)/dashboard';
 
 type NotificationData = Record<string, unknown>;
 
@@ -129,6 +130,12 @@ const getRouteFromNotificationData = (
   if (!data) return null;
 
   const notificationData = data as NotificationData;
+  const notificationType = getStringDataValue(notificationData, ['type']);
+
+  if (notificationType === 'upcoming_stop_reminder') {
+    return OWNER_DASHBOARD_ROUTE;
+  }
+
   const route = getStringDataValue(notificationData, ['route']);
 
   return route || null;
