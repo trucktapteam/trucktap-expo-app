@@ -82,11 +82,6 @@ const getUpcomingStopReminderTime = (stop: UpcomingStop, minutesBefore: number) 
   return new Date(startsAtTime - minutesBefore * 60 * 1000);
 };
 
-const getParsedStopStart = (stop: UpcomingStop) => {
-  const startsAtTime = Date.parse(stop.starts_at);
-  return Number.isFinite(startsAtTime) ? new Date(startsAtTime) : null;
-};
-
 const getReminderNotificationTrigger = (fireAt: Date, now = new Date()) => {
   if (Platform.OS === 'android') {
     return {
@@ -108,12 +103,6 @@ const getDateKey = (date: Date) =>
 const startOfSelectedDate = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
 
-const devLog = (label: string, details?: Record<string, unknown>) => {
-  if (__DEV__) {
-    console.log(`[UpcomingStops][debug] ${label}`, details ?? {});
-  }
-};
-
 type PickerTarget = 'date' | 'start' | 'end' | null;
 type TimePeriod = 'AM' | 'PM';
 
@@ -125,9 +114,6 @@ type ReminderSettings = {
 type ReminderIds = Record<string, string>;
 type ReminderScheduleResult = {
   ids: ReminderIds;
-  notificationId: string | null;
-  scheduled: boolean;
-  skippedReason?: string;
 };
 
 const normalizeReminderSettings = (settings?: Partial<ReminderSettings> | null): ReminderSettings => ({
@@ -214,49 +200,6 @@ export default function UpcomingStopsScreen() {
   }, [reminderIds]);
 
   React.useEffect(() => {
-    if (!__DEV__ || !reminderSettingsLoaded) return;
-
-    const auditScheduledReminders = async () => {
-      try {
-        const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-        devLog('scheduled reminder audit after stops/reminderIds change', {
-          stopCount: stops.length,
-          reminderIds,
-          remindersEnabled: reminderSettingsRef.current.enabled,
-          stops: stops.map(stop => {
-            const matches = scheduled.filter(notification => {
-              const notificationStopId = notification.content.data?.stop_id ?? notification.content.data?.stopId;
-              return notificationStopId?.toString() === stop.id;
-            });
-
-            return {
-              stopId: stop.id,
-              title: stop.location_text,
-              rawStartsAt: stop.starts_at,
-              parsedLocalStartTime: getParsedStopStart(stop)?.toString() ?? null,
-              expectedReminderFireTime: getUpcomingStopReminderTime(
-                stop,
-                reminderSettingsRef.current.minutesBefore
-              )?.toString() ?? null,
-              storedNotificationId: reminderIds[stop.id] ?? null,
-              status: stop.status,
-              scheduledMatches: matches.map(notification => ({
-                identifier: notification.identifier,
-                trigger: notification.trigger,
-                data: notification.content.data,
-              })),
-            };
-          }),
-        });
-      } catch (error) {
-        console.log('[UpcomingStops] Failed scheduled reminder audit:', error);
-      }
-    };
-
-    void auditScheduledReminders();
-  }, [reminderIds, reminderSettingsLoaded, stops]);
-
-  React.useEffect(() => {
     const loadReminderState = async () => {
       try {
         const [storedSettings, storedIds] = await Promise.all([
@@ -279,11 +222,6 @@ export default function UpcomingStopsScreen() {
           }
         }
 
-        devLog('loaded reminder settings', {
-          remindersEnabled: reminderSettingsRef.current.enabled,
-          reminderLeadMinutes: reminderSettingsRef.current.minutesBefore,
-          reminderIds: reminderIdsRef.current,
-        });
       } catch (error) {
         console.log('[UpcomingStops] Failed to load reminder settings:', error);
       } finally {
@@ -302,34 +240,18 @@ export default function UpcomingStopsScreen() {
   };
 
   const persistReminderIds = async (ids: ReminderIds) => {
-    devLog('persist reminder ids before saving', {
-      previousReminderIds: reminderIdsRef.current,
-      nextReminderIds: ids,
-    });
     reminderIdsRef.current = ids;
     await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids));
     setReminderIds(ids);
-    devLog('persist reminder ids after saving', {
-      savedReminderIds: ids,
-    });
   };
 
   const requestLocalNotificationPermission = async () => {
     if (Platform.OS === 'web') {
-      devLog('notification permission result', {
-        platform: Platform.OS,
-        granted: false,
-        reason: 'web',
-      });
       setErrorMessage('Local stop reminders are not available on web.');
       return false;
     }
 
     const existing = await Notifications.getPermissionsAsync();
-    devLog('notification permission existing status', {
-      status: existing.status,
-      granted: existing.status === 'granted',
-    });
     if (existing.status === 'granted') {
       return true;
     }
@@ -345,11 +267,6 @@ export default function UpcomingStopsScreen() {
           }
         : {}
     );
-
-    devLog('notification permission requested status', {
-      status: requested.status,
-      granted: requested.status === 'granted',
-    });
 
     if (requested.status !== 'granted') {
       setErrorMessage('Notifications are off, so reminders cannot be scheduled.');
@@ -376,58 +293,7 @@ export default function UpcomingStopsScreen() {
     }
   };
 
-  const logScheduledNotifications = async (label: string, stopId?: string) => {
-    if (!__DEV__) return;
-
-    try {
-      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      devLog(label, {
-        stopId,
-        scheduledCount: scheduled.length,
-        scheduled: scheduled.map(notification => ({
-          identifier: notification.identifier,
-          title: notification.content.title,
-          trigger: notification.trigger,
-          data: notification.content.data,
-        })),
-      });
-    } catch (error) {
-      console.log('[UpcomingStops] Failed to inspect scheduled notifications:', error);
-    }
-  };
-
-  const inspectScheduledReminderForStop = async (label: string, stopId: string) => {
-    try {
-      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      const matches = scheduled.filter(notification => {
-        const notificationStopId = notification.content.data?.stop_id ?? notification.content.data?.stopId;
-        return notificationStopId?.toString() === stopId;
-      });
-
-      devLog(label, {
-        stopId,
-        matchCount: matches.length,
-        matches: matches.map(notification => ({
-          identifier: notification.identifier,
-          title: notification.content.title,
-          trigger: notification.trigger,
-          data: notification.content.data,
-        })),
-        scheduledCount: scheduled.length,
-      });
-
-      return matches;
-    } catch (error) {
-      console.log('[UpcomingStops] Failed to inspect scheduled reminder for stop:', error);
-      return [];
-    }
-  };
-
-  const cancelReminderForStop = async (
-    stopId: string,
-    ids: ReminderIds = reminderIdsRef.current,
-    source = 'unspecified'
-  ) => {
+  const cancelReminderForStop = async (stopId: string, ids: ReminderIds = reminderIdsRef.current) => {
     const notificationId = ids[stopId];
     const idsToCancel = new Set<string>();
     if (notificationId) idsToCancel.add(notificationId);
@@ -444,13 +310,6 @@ export default function UpcomingStopsScreen() {
       console.log('[UpcomingStops] Failed to inspect reminders before cancel:', error);
     }
 
-    devLog('cancelReminderForStop', {
-      source,
-      stopId,
-      storedNotificationId: notificationId ?? null,
-      notificationIdsBeingCancelled: Array.from(idsToCancel),
-    });
-
     for (const idToCancel of idsToCancel) {
       try {
         await Notifications.cancelScheduledNotificationAsync(idToCancel);
@@ -462,7 +321,6 @@ export default function UpcomingStopsScreen() {
     const nextIds = { ...ids };
     delete nextIds[stopId];
     await persistReminderIds(nextIds);
-    await logScheduledNotifications('scheduled notifications after cancelReminderForStop', stopId);
     return nextIds;
   };
 
@@ -470,131 +328,41 @@ export default function UpcomingStopsScreen() {
     stop: UpcomingStop,
     ids: ReminderIds = reminderIdsRef.current,
     settings: ReminderSettings = reminderSettingsRef.current,
-    overrideReminderAt?: Date,
-    source = 'unspecified'
+    overrideReminderAt?: Date
   ): Promise<ReminderScheduleResult> => {
-    const parsedStart = getParsedStopStart(stop);
     const reminderAt = overrideReminderAt ?? getUpcomingStopReminderTime(stop, settings.minutesBefore);
     const now = new Date();
-    const minutesUntilStart = parsedStart ? (parsedStart.getTime() - now.getTime()) / (60 * 1000) : null;
-    const minutesUntilReminder = reminderAt ? (reminderAt.getTime() - now.getTime()) / (60 * 1000) : null;
 
-    devLog('scheduleReminderForStop called', {
-      source,
-      stopId: stop.id,
-      stopTitle: stop.location_text,
-      truckId: stop.truck_id,
-      rawStartsAt: stop.starts_at,
-      parsedLocalStartTime: parsedStart?.toString() ?? null,
-      parsedStartIso: parsedStart?.toISOString() ?? null,
-      reminderFireTime: reminderAt?.toString() ?? null,
-      reminderFireTimeIso: reminderAt?.toISOString() ?? null,
-      currentDeviceTime: now.toString(),
-      currentDeviceTimeIso: now.toISOString(),
-      remindersEnabled: settings.enabled,
-      reminderLeadMinutes: settings.minutesBefore,
-      minutesUntilStart,
-      minutesUntilReminder,
-      incomingReminderIds: ids,
-      existingNotificationIdBeingCancelled: ids[stop.id] ?? null,
-      status: stop.status,
-      overrideReminderAt: overrideReminderAt?.toISOString() ?? null,
-    });
-
-    const idsWithoutOldReminder = await cancelReminderForStop(stop.id, ids, `${source}: pre-schedule cleanup`);
+    const idsWithoutOldReminder = await cancelReminderForStop(stop.id, ids);
 
     if (!settings.enabled) {
-      devLog('scheduleReminderForStop skipped', {
-        source,
-        stopId: stop.id,
-        reason: 'settings disabled',
-      });
       return {
         ids: idsWithoutOldReminder,
-        notificationId: null,
-        scheduled: false,
-        skippedReason: 'settings disabled',
       };
     }
 
     if (REMINDER_CANCEL_STATUSES.includes(stop.status)) {
-      devLog('scheduleReminderForStop skipped', {
-        source,
-        stopId: stop.id,
-        reason: 'status does not allow reminders',
-        status: stop.status,
-      });
       return {
         ids: idsWithoutOldReminder,
-        notificationId: null,
-        scheduled: false,
-        skippedReason: `status ${stop.status}`,
       };
     }
 
-    devLog('scheduleReminderForStop time check', {
-      source,
-      stopId: stop.id,
-      stopTitle: stop.location_text,
-      rawStartsAt: stop.starts_at,
-      parsedLocalStartTime: parsedStart?.toString() ?? null,
-      parsedStartIso: parsedStart?.toISOString() ?? null,
-      reminderFireTime: reminderAt?.toString() ?? null,
-      reminderFireTimeIso: reminderAt?.toISOString() ?? null,
-      currentDeviceTime: now.toString(),
-      currentDeviceTimeIso: now.toISOString(),
-      remindersEnabled: settings.enabled,
-      reminderInFuture: !!reminderAt && reminderAt.getTime() > now.getTime(),
-      minutesUntilStart,
-      minutesUntilReminder,
-    });
-
     if (!reminderAt || reminderAt.getTime() <= now.getTime()) {
-      devLog('scheduleReminderForStop skipped', {
-        source,
-        stopId: stop.id,
-        reason: 'reminder time not in future',
-      });
       setErrorMessage(`This stop is too soon for a ${settings.minutesBefore}-minute reminder, so no reminder was scheduled.`);
       return {
         ids: idsWithoutOldReminder,
-        notificationId: null,
-        scheduled: false,
-        skippedReason: 'reminder time not in future',
       };
     }
 
     const hasPermission = await requestLocalNotificationPermission();
-    devLog('scheduleReminderForStop permission result', {
-      source,
-      stopId: stop.id,
-      granted: hasPermission,
-    });
     if (!hasPermission) {
       return {
         ids: idsWithoutOldReminder,
-        notificationId: null,
-        scheduled: false,
-        skippedReason: 'notification permission not granted',
       };
     }
 
     await ensureReminderNotificationSetup();
     const trigger = getReminderNotificationTrigger(reminderAt, now);
-    devLog('scheduleNotificationAsync trigger', {
-      source,
-      stopId: stop.id,
-      platform: Platform.OS,
-      trigger,
-      reminderFireTime: reminderAt.toString(),
-      reminderFireTimeIso: reminderAt.toISOString(),
-      currentDeviceTime: now.toString(),
-      currentDeviceTimeIso: now.toISOString(),
-      secondsUntilFire:
-        'seconds' in trigger && typeof trigger.seconds === 'number'
-          ? trigger.seconds
-          : Math.max(1, Math.floor((reminderAt.getTime() - now.getTime()) / 1000)),
-    });
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Time to Go Live soon',
@@ -611,46 +379,14 @@ export default function UpcomingStopsScreen() {
       trigger,
     });
 
-    devLog('scheduleNotificationAsync returned', {
-      source,
-      stopId: stop.id,
-      stopTitle: stop.location_text,
-      rawStartsAt: stop.starts_at,
-      parsedLocalStartTime: parsedStart?.toString() ?? null,
-      reminderFireTime: reminderAt.toString(),
-      currentDeviceTime: now.toString(),
-      remindersEnabled: settings.enabled,
-      cancelledNotificationId: ids[stop.id] ?? null,
-      notificationId,
-    });
-
     const nextIds = {
       ...idsWithoutOldReminder,
       [stop.id]: notificationId,
     };
-    devLog('scheduleReminderForStop reminder ids before/after', {
-      source,
-      stopId: stop.id,
-      beforeReminderIds: ids,
-      idsWithoutOldReminder,
-      afterReminderIds: nextIds,
-    });
     await persistReminderIds(nextIds);
-    await logScheduledNotifications('scheduled notifications after scheduleReminderForStop', stop.id);
-    const matches = await inspectScheduledReminderForStop('real reminder verification after scheduleReminderForStop', stop.id);
-    const scheduled = matches.some(notification => notification.identifier === notificationId);
-    devLog('scheduleReminderForStop verification result', {
-      source,
-      stopId: stop.id,
-      notificationId,
-      scheduled,
-      matchingNotificationIds: matches.map(notification => notification.identifier),
-    });
 
     return {
       ids: nextIds,
-      notificationId,
-      scheduled,
     };
   };
 
@@ -665,20 +401,6 @@ export default function UpcomingStopsScreen() {
       reminderAt &&
       reminderAt.getTime() > now.getTime()
     );
-
-    devLog('stop card reminder decision', {
-      stopId: stop.id,
-      startsAt: stop.starts_at,
-      status: stop.status,
-      remindersEnabled: reminderSettings.enabled,
-      reminderLeadMinutes: reminderSettings.minutesBefore,
-      storedNotificationId: storedNotificationId ?? null,
-      reminderIds,
-      reminderFireTime: reminderAt?.toISOString() ?? null,
-      currentTime: now.toISOString(),
-      reminderInFuture: !!reminderAt && reminderAt.getTime() > now.getTime(),
-      reminderOn,
-    });
 
     if (!reminderOn) {
       return false;
@@ -703,10 +425,10 @@ export default function UpcomingStopsScreen() {
       let nextIds = reminderIdsRef.current;
       for (const stop of stops) {
         if (REMINDER_CANCEL_STATUSES.includes(stop.status)) {
-          nextIds = await cancelReminderForStop(stop.id, nextIds, 'reminders toggled on: invalid status cleanup');
+          nextIds = await cancelReminderForStop(stop.id, nextIds);
           continue;
         }
-        const scheduleResult = await scheduleReminderForStop(stop, nextIds, nextSettings, undefined, 'reminders toggled on');
+        const scheduleResult = await scheduleReminderForStop(stop, nextIds, nextSettings);
         nextIds = scheduleResult.ids;
       }
       return;
@@ -720,10 +442,9 @@ export default function UpcomingStopsScreen() {
 
     let nextIds = reminderIdsRef.current;
     for (const stopId of Object.keys(reminderIdsRef.current)) {
-      nextIds = await cancelReminderForStop(stopId, nextIds, 'reminders toggled off');
+      nextIds = await cancelReminderForStop(stopId, nextIds);
     }
     await persistReminderIds(nextIds);
-    await logScheduledNotifications('scheduled notifications after reminders toggled off');
   };
 
   const handleScheduleDevTestReminder = async () => {
@@ -736,77 +457,7 @@ export default function UpcomingStopsScreen() {
     }
 
     const fireAt = new Date(Date.now() + DEV_TEST_REMINDER_SECONDS * 1000);
-    devLog('DEV test reminder requested', {
-      stopId: testStop.id,
-      stopTitle: testStop.location_text,
-      rawStartsAt: testStop.starts_at,
-      testFireTime: fireAt.toString(),
-      currentDeviceTime: new Date().toString(),
-      remindersEnabled: reminderSettingsRef.current.enabled,
-      existingNotificationIdBeingCancelled: reminderIdsRef.current[testStop.id] ?? null,
-    });
-
-    await scheduleReminderForStop(testStop, reminderIdsRef.current, { ...reminderSettingsRef.current, enabled: true }, fireAt, 'dev 60-second test');
-  };
-
-  const handleDumpReminderDiagnostics = async () => {
-    if (!__DEV__) return;
-
-    try {
-      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      const diagnostics = {
-        generatedAt: new Date().toString(),
-        generatedAtIso: new Date().toISOString(),
-        remindersEnabled: reminderSettingsRef.current.enabled,
-        reminderLeadMinutes: reminderSettingsRef.current.minutesBefore,
-        reminderIds: reminderIdsRef.current,
-        stopCount: stops.length,
-        stops: stops.map(stop => {
-          const parsedStart = getParsedStopStart(stop);
-          const expectedReminderAt = getUpcomingStopReminderTime(
-            stop,
-            reminderSettingsRef.current.minutesBefore
-          );
-          const notificationId = reminderIdsRef.current[stop.id] ?? null;
-          const matches = scheduled.filter(notification => {
-            const notificationStopId = notification.content.data?.stop_id ?? notification.content.data?.stopId;
-            return notificationStopId?.toString() === stop.id;
-          });
-
-          return {
-            stopId: stop.id,
-            title: stop.location_text,
-            rawStartsAt: stop.starts_at,
-            parsedLocalStartTime: parsedStart?.toString() ?? null,
-            parsedStartIso: parsedStart?.toISOString() ?? null,
-            expectedReminderFireTime: expectedReminderAt?.toString() ?? null,
-            expectedReminderFireTimeIso: expectedReminderAt?.toISOString() ?? null,
-            status: stop.status,
-            storedNotificationId: notificationId,
-            scheduledMatchCount: matches.length,
-            scheduledMatches: matches.map(notification => ({
-              identifier: notification.identifier,
-              trigger: notification.trigger,
-              data: notification.content.data,
-            })),
-          };
-        }),
-        scheduledNotificationCount: scheduled.length,
-        scheduledNotifications: scheduled.map(notification => ({
-          identifier: notification.identifier,
-          title: notification.content.title,
-          body: notification.content.body,
-          trigger: notification.trigger,
-          data: notification.content.data,
-        })),
-      };
-
-      console.log('[UpcomingStops][diagnostics]', JSON.stringify(diagnostics, null, 2));
-      setSuccessMessage(`Diagnostics dumped: ${scheduled.length} scheduled notification${scheduled.length === 1 ? '' : 's'}.`);
-    } catch (error: any) {
-      console.log('[UpcomingStops][diagnostics] Failed to dump reminder diagnostics:', error);
-      setErrorMessage(error?.message ?? 'Could not dump reminder diagnostics.');
-    }
+    await scheduleReminderForStop(testStop, reminderIdsRef.current, { ...reminderSettingsRef.current, enabled: true }, fireAt);
   };
 
   if (!truck) {
@@ -921,21 +572,6 @@ export default function UpcomingStopsScreen() {
 
       const dateRanges = selectedDates.map(selectedDate => buildDateRange(selectedDate));
       const currentSettings = reminderSettingsRef.current;
-      const saveReminderAt = new Date(dateRanges[0].startsAt.getTime() - currentSettings.minutesBefore * 60 * 1000);
-      const saveNow = new Date();
-
-      devLog('Save Stop pressed', {
-        selectedDate: dateValue.toISOString(),
-        selectedDates: selectedDates.map(date => date.toISOString()),
-        startTime: startTime.toISOString(),
-        calculatedStartsAt: dateRanges[0].startsAt.toISOString(),
-        calculatedReminderFireTime: saveReminderAt.toISOString(),
-        currentTime: saveNow.toISOString(),
-        reminderConsideredInFuture: saveReminderAt.getTime() > saveNow.getTime(),
-        remindersEnabled: currentSettings.enabled,
-        reminderLeadMinutes: currentSettings.minutesBefore,
-        reminderIdsBeforeSave: reminderIdsRef.current,
-      });
 
       setIsSaving(true);
 
@@ -953,28 +589,8 @@ export default function UpcomingStopsScreen() {
 
         createdStops.push(createdStop);
 
-        devLog('Save Stop created stop', {
-          createdStopId: createdStop.id,
-          createdStopTruckId: createdStop.truck_id,
-          createdStopStartsAt: createdStop.starts_at,
-          createdStopEndsAt: createdStop.ends_at,
-          reminderIdsBeforeScheduling: reminderIdsRef.current,
-        });
-
         if (currentSettings.enabled) {
-          const scheduleResult = await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings, undefined, 'real save stop');
-          devLog('Save Stop schedule result', {
-            createdStopId: createdStop.id,
-            notificationId: scheduleResult.notificationId,
-            scheduled: scheduleResult.scheduled,
-            skippedReason: scheduleResult.skippedReason ?? null,
-            reminderIdsAfterScheduleResult: scheduleResult.ids,
-          });
-        } else {
-          devLog('Save Stop skipped scheduling', {
-            createdStopId: createdStop.id,
-            reason: 'reminders disabled',
-          });
+          await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
         }
       }
 
@@ -982,14 +598,6 @@ export default function UpcomingStopsScreen() {
         setSuccessMessage(`${createdStops.length} stops scheduled.`);
       } else {
         setSuccessMessage('Stop scheduled.');
-      }
-
-      devLog('Save Stop reminder ids after scheduling', {
-        createdStopIds: createdStops.map(stop => stop.id),
-        reminderIdsAfterScheduling: reminderIdsRef.current,
-      });
-      for (const createdStop of createdStops) {
-        await inspectScheduledReminderForStop('Save Stop final scheduled reminder verification', createdStop.id);
       }
 
       resetForm();
@@ -1009,9 +617,9 @@ export default function UpcomingStopsScreen() {
       const updatedStop = { ...stop, status };
 
       if (REMINDER_CANCEL_STATUSES.includes(status)) {
-        await cancelReminderForStop(stop.id, reminderIdsRef.current, 'status changed to cancel status');
+        await cancelReminderForStop(stop.id, reminderIdsRef.current);
       } else if (reminderSettingsRef.current.enabled) {
-        await scheduleReminderForStop(updatedStop, reminderIdsRef.current, reminderSettingsRef.current, undefined, 'status changed to active status');
+        await scheduleReminderForStop(updatedStop, reminderIdsRef.current, reminderSettingsRef.current);
       }
     } catch (error: any) {
       setErrorMessage(error?.message ?? 'Could not update stop status.');
@@ -1035,7 +643,7 @@ export default function UpcomingStopsScreen() {
 
             try {
               await deleteUpcomingStop(stop.id);
-              await cancelReminderForStop(stop.id, reminderIdsRef.current, 'stop deleted');
+              await cancelReminderForStop(stop.id, reminderIdsRef.current);
             } catch (error: any) {
               setErrorMessage(error?.message ?? 'Could not delete upcoming stop.');
             } finally {
@@ -1104,22 +712,13 @@ export default function UpcomingStopsScreen() {
               />
             </View>
             {__DEV__ && (
-              <View style={styles.devReminderActions}>
-                <TouchableOpacity
-                  style={styles.devReminderButton}
-                  onPress={handleScheduleDevTestReminder}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.devReminderButtonText}>DEV: Test reminder in 60s</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.devReminderButton}
-                  onPress={handleDumpReminderDiagnostics}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.devReminderButtonText}>DEV: Dump reminder diagnostics</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={styles.devReminderButton}
+                onPress={handleScheduleDevTestReminder}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.devReminderButtonText}>DEV: Test reminder in 60s</Text>
+              </TouchableOpacity>
             )}
           </View>
 
@@ -1481,13 +1080,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: Colors.gray,
   },
-  devReminderActions: {
-    alignItems: 'flex-start',
-    gap: 8,
-    marginTop: 12,
-  },
   devReminderButton: {
     alignSelf: 'flex-start',
+    marginTop: 12,
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 8,
