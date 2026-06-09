@@ -16,6 +16,7 @@ const REMINDER_SETTINGS_KEY = 'upcomingStopReminderSettings';
 const REMINDER_IDS_KEY = 'upcomingStopReminderIds';
 const DEFAULT_REMINDER_MINUTES = 30;
 const DEV_TEST_REMINDER_SECONDS = 60;
+const REMINDER_NOTIFICATION_CHANNEL_ID = 'upcoming-stop-reminders';
 const REMINDER_CANCEL_STATUSES: UpcomingStopStatus[] = ['cancelled', 'completed', 'sold_out'];
 
 const statusLabels: Record<UpcomingStopStatus, string> = {
@@ -84,6 +85,21 @@ const getUpcomingStopReminderTime = (stop: UpcomingStop, minutesBefore: number) 
 const getParsedStopStart = (stop: UpcomingStop) => {
   const startsAtTime = Date.parse(stop.starts_at);
   return Number.isFinite(startsAtTime) ? new Date(startsAtTime) : null;
+};
+
+const getReminderNotificationTrigger = (fireAt: Date, now = new Date()) => {
+  if (Platform.OS === 'android') {
+    return {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: Math.max(1, Math.floor((fireAt.getTime() - now.getTime()) / 1000)),
+      channelId: REMINDER_NOTIFICATION_CHANNEL_ID,
+    };
+  }
+
+  return {
+    type: Notifications.SchedulableTriggerInputTypes.DATE,
+    date: fireAt,
+  };
 };
 
 const getDateKey = (date: Date) =>
@@ -345,9 +361,17 @@ export default function UpcomingStopsScreen() {
 
   const ensureReminderNotificationSetup = async () => {
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
+      await Notifications.setNotificationChannelAsync(REMINDER_NOTIFICATION_CHANNEL_ID, {
+        name: 'Upcoming Stop Reminders',
         importance: Notifications.AndroidImportance.MAX,
+        sound: 'default',
+        vibrationPattern: [0, 250, 250, 250],
+        enableVibrate: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        audioAttributes: {
+          usage: Notifications.AndroidAudioUsage.ALARM,
+          contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+        },
       });
     }
   };
@@ -556,6 +580,21 @@ export default function UpcomingStopsScreen() {
     }
 
     await ensureReminderNotificationSetup();
+    const trigger = getReminderNotificationTrigger(reminderAt, now);
+    devLog('scheduleNotificationAsync trigger', {
+      source,
+      stopId: stop.id,
+      platform: Platform.OS,
+      trigger,
+      reminderFireTime: reminderAt.toString(),
+      reminderFireTimeIso: reminderAt.toISOString(),
+      currentDeviceTime: now.toString(),
+      currentDeviceTimeIso: now.toISOString(),
+      secondsUntilFire:
+        'seconds' in trigger && typeof trigger.seconds === 'number'
+          ? trigger.seconds
+          : Math.max(1, Math.floor((reminderAt.getTime() - now.getTime()) / 1000)),
+    });
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Time to Go Live soon',
@@ -569,10 +608,7 @@ export default function UpcomingStopsScreen() {
           minutes_before: String(settings.minutesBefore),
         },
       },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: reminderAt,
-      },
+      trigger,
     });
 
     devLog('scheduleNotificationAsync returned', {
@@ -711,6 +747,66 @@ export default function UpcomingStopsScreen() {
     });
 
     await scheduleReminderForStop(testStop, reminderIdsRef.current, { ...reminderSettingsRef.current, enabled: true }, fireAt, 'dev 60-second test');
+  };
+
+  const handleDumpReminderDiagnostics = async () => {
+    if (!__DEV__) return;
+
+    try {
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      const diagnostics = {
+        generatedAt: new Date().toString(),
+        generatedAtIso: new Date().toISOString(),
+        remindersEnabled: reminderSettingsRef.current.enabled,
+        reminderLeadMinutes: reminderSettingsRef.current.minutesBefore,
+        reminderIds: reminderIdsRef.current,
+        stopCount: stops.length,
+        stops: stops.map(stop => {
+          const parsedStart = getParsedStopStart(stop);
+          const expectedReminderAt = getUpcomingStopReminderTime(
+            stop,
+            reminderSettingsRef.current.minutesBefore
+          );
+          const notificationId = reminderIdsRef.current[stop.id] ?? null;
+          const matches = scheduled.filter(notification => {
+            const notificationStopId = notification.content.data?.stop_id ?? notification.content.data?.stopId;
+            return notificationStopId?.toString() === stop.id;
+          });
+
+          return {
+            stopId: stop.id,
+            title: stop.location_text,
+            rawStartsAt: stop.starts_at,
+            parsedLocalStartTime: parsedStart?.toString() ?? null,
+            parsedStartIso: parsedStart?.toISOString() ?? null,
+            expectedReminderFireTime: expectedReminderAt?.toString() ?? null,
+            expectedReminderFireTimeIso: expectedReminderAt?.toISOString() ?? null,
+            status: stop.status,
+            storedNotificationId: notificationId,
+            scheduledMatchCount: matches.length,
+            scheduledMatches: matches.map(notification => ({
+              identifier: notification.identifier,
+              trigger: notification.trigger,
+              data: notification.content.data,
+            })),
+          };
+        }),
+        scheduledNotificationCount: scheduled.length,
+        scheduledNotifications: scheduled.map(notification => ({
+          identifier: notification.identifier,
+          title: notification.content.title,
+          body: notification.content.body,
+          trigger: notification.trigger,
+          data: notification.content.data,
+        })),
+      };
+
+      console.log('[UpcomingStops][diagnostics]', JSON.stringify(diagnostics, null, 2));
+      setSuccessMessage(`Diagnostics dumped: ${scheduled.length} scheduled notification${scheduled.length === 1 ? '' : 's'}.`);
+    } catch (error: any) {
+      console.log('[UpcomingStops][diagnostics] Failed to dump reminder diagnostics:', error);
+      setErrorMessage(error?.message ?? 'Could not dump reminder diagnostics.');
+    }
   };
 
   if (!truck) {
@@ -1008,13 +1104,22 @@ export default function UpcomingStopsScreen() {
               />
             </View>
             {__DEV__ && (
-              <TouchableOpacity
-                style={styles.devReminderButton}
-                onPress={handleScheduleDevTestReminder}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.devReminderButtonText}>DEV: Test reminder in 60s</Text>
-              </TouchableOpacity>
+              <View style={styles.devReminderActions}>
+                <TouchableOpacity
+                  style={styles.devReminderButton}
+                  onPress={handleScheduleDevTestReminder}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.devReminderButtonText}>DEV: Test reminder in 60s</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.devReminderButton}
+                  onPress={handleDumpReminderDiagnostics}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.devReminderButtonText}>DEV: Dump reminder diagnostics</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
 
@@ -1376,9 +1481,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: Colors.gray,
   },
+  devReminderActions: {
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 12,
+  },
   devReminderButton: {
     alignSelf: 'flex-start',
-    marginTop: 12,
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 8,
