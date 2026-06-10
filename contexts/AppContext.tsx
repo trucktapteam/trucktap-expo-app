@@ -70,6 +70,14 @@ const isTruckStaleOpen = (truck: Pick<FoodTruck, 'id' | 'open_now' | 'lastLiveUp
   return Date.now() - timestamp > STALE_OPEN_WINDOW_MS;
 };
 
+const isMissingUpdatedAtError = (message?: string | null): boolean =>
+  typeof message === 'string' && message.toLowerCase().includes('updated_at');
+
+const isMissingLocationConflictTargetError = (message?: string | null): boolean =>
+  typeof message === 'string' &&
+  message.toLowerCase().includes('no unique or exclusion constraint') &&
+  message.toLowerCase().includes('on conflict');
+
 const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   const dbUpdates: Record<string, any> = {};
 
@@ -413,6 +421,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
       if (!locationRow) {
         return truck;
       }
+      const locationFreshnessTimestamp = locationRow.updated_at
+        ?? (truck.open_now ? truck.lastUpdated : locationRow.created_at)
+        ?? truck.lastLiveUpdatedAt;
 
       return {
         ...truck,
@@ -421,7 +432,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
           longitude: locationRow.longitude ?? truck.location.longitude,
           address: locationRow.label ?? truck.location.address,
         },
-        lastLiveUpdatedAt: locationRow.updated_at ?? locationRow.created_at ?? truck.lastLiveUpdatedAt,
+        lastLiveUpdatedAt: locationFreshnessTimestamp,
       };
     });
   }, []);
@@ -436,7 +447,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     let data = primaryLocationResult.data as LocationRow[] | null;
     let error = primaryLocationResult.error;
 
-    if (error?.message.includes('updated_at')) {
+    if (isMissingUpdatedAtError(error?.message)) {
       const fallback = await supabase
         .from('locations')
         .select('truck_id, latitude, longitude, label, created_at')
@@ -1136,7 +1147,11 @@ if (!favoritesError && favoriteRows) {
   }, [refreshOnForeground]);
 
   useEffect(() => {
+    if (!isAuthenticated || !authUser) return;
+
     const staleOpenTrucks = foodTrucks.filter((truck) => {
+      const canAutoCloseTruck = userProfile?.role === 'admin' || truck.owner_id === authUser.id;
+      if (!canAutoCloseTruck) return false;
       if (!isTruckStaleOpen(truck)) return false;
 
       const timestamp = getTruckLiveTimestamp(truck) ?? 'unknown';
@@ -1178,6 +1193,7 @@ if (!favoritesError && favoriteRows) {
           if (__DEV__) {
             console.log('[AppContext] Stale open auto-close update result:', {
               truckId: truck.id,
+              currentUserId: authUser.id,
               error: error?.message ?? null,
             });
           }
@@ -1186,7 +1202,7 @@ if (!favoritesError && favoriteRows) {
           }
         });
     });
-  }, [foodTrucks]);
+  }, [authUser, foodTrucks, isAuthenticated, userProfile?.role]);
 
   const toggleFavorite = useCallback(async (truckId: string) => {
   if (authLoading) {
@@ -1269,7 +1285,8 @@ if (error) {
         truck_id: truckId,
         user_id: userId,
       });
-      if (userProfile?.role !== 'owner' && userProfile?.role !== 'admin') {
+      const currentRole = userProfile?.role as string | undefined;
+      if (currentRole !== 'owner' && currentRole !== 'admin') {
         void recordReviewEngagement('favorite_added', {
           truckId,
           userId,
@@ -1343,6 +1360,7 @@ if (error) {
    const updateTruckDetails = useCallback(async (truckId: string, updates: Partial<FoodTruck>) => {
   const isArchiveUpdate = Object.prototype.hasOwnProperty.call(updates, 'archived');
   const isArchiving = updates.archived === true;
+  const isGoLiveUpdate = updates.open_now === true && !!updates.location;
   const savedAt = new Date().toISOString();
   const sanitizedUpdates = sanitizeTruckUpdatesForPersistence(updates);
   const skippedEmptyImageFields = (['hero_image', 'logo'] as const).filter(
@@ -1362,6 +1380,16 @@ if (error) {
   
 
   if (DEBUG) console.log('[AppContext] updateTruckDetails for:', truckId, 'keys:', Object.keys(updates));
+  if (__DEV__ && (sanitizedUpdates.open_now !== undefined || sanitizedUpdates.location)) {
+    const currentLocalTruck = [...supabaseOwnedTrucks, ...foodTrucks].find(truck => truck.id === truckId);
+    console.log('[AppContext] Go Live local state before save:', {
+      currentUserId: authUser.id,
+      truckId,
+      openNowBefore: currentLocalTruck?.open_now ?? null,
+      latitudeBefore: currentLocalTruck?.location?.latitude ?? null,
+      longitudeBefore: currentLocalTruck?.location?.longitude ?? null,
+    });
+  }
   if (__DEV__ && skippedEmptyImageFields.length > 0) {
     console.log('[AppContext] Preserving existing truck image fields; skipped empty save values:', {
       truckId,
@@ -1370,6 +1398,7 @@ if (error) {
   }
   if (__DEV__ && (sanitizedUpdates.open_now !== undefined || sanitizedUpdates.location)) {
     console.log('[AppContext] Go Live update requested:', {
+      currentUserId: authUser.id,
       truckId,
       openNow: sanitizedUpdates.open_now,
       hasLocation: Boolean(sanitizedUpdates.location),
@@ -1382,18 +1411,19 @@ if (error) {
     console.log('[AppContext] Archiving truck:', { truckId });
   }
 
-  setFoodTrucks(prev =>
-    prev.map(truck =>
-      truck.id === truckId
-        ? {
-            ...truck,
-            ...sanitizedUpdates,
-            lastUpdated: savedAt,
-            lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt,
-          }
-        : truck
-    )
-  );
+  if (!isGoLiveUpdate) {
+    setFoodTrucks(prev =>
+      prev.map(truck =>
+        truck.id === truckId
+          ? {
+              ...truck,
+              ...sanitizedUpdates,
+              lastUpdated: savedAt,
+              lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt,
+            }
+          : truck
+      )
+    );
     setSupabaseOwnedTrucks(prev =>
       prev.map(truck =>
         truck.id === truckId
@@ -1406,6 +1436,7 @@ if (error) {
           : truck
       )
     );
+  }
     if (__DEV__ && isArchiveUpdate) {
       console.log('[AppContext] Archive local optimistic update:', {
         truckId,
@@ -1424,10 +1455,12 @@ if (error) {
 
     const persistableKeys = Object.keys(dbUpdates).filter(k => k !== 'updated_at');
     if (DEBUG) console.log('[AppContext] DB payload keys:', persistableKeys.join(', '));
-    if (__DEV__) {
-      console.log('[AppContext] Truck Supabase update payload:', {
+      if (__DEV__) {
+        console.log('[AppContext] Truck Supabase update payload:', {
+        currentUserId: authUser.id,
         truckId,
         keys: persistableKeys,
+        isOpen: dbUpdates.is_open ?? null,
         heroImage: dbUpdates.hero_image ?? '(preserved)',
         logo: dbUpdates.logo ?? '(preserved)',
         galleryImageCount: Array.isArray(dbUpdates.gallery_images) ? dbUpdates.gallery_images.length : undefined,
@@ -1458,10 +1491,12 @@ if (error) {
       }
       if (__DEV__ && sanitizedUpdates.open_now !== undefined) {
         console.log('[AppContext] Truck open status update result:', {
+          currentUserId: authUser.id,
           truckId,
           openNow: sanitizedUpdates.open_now,
           rows: data?.length ?? 0,
           error: error?.message ?? null,
+          returnedIsOpen: data?.[0]?.is_open ?? null,
         });
       }
       if (__DEV__) {
@@ -1478,6 +1513,19 @@ if (error) {
       if (error) {
         console.log('[AppContext] Truck update error:', error.message);
         throw new Error(`Failed to update truck: ${error.message}`);
+      }
+      if ((data?.length ?? 0) === 0) {
+        const message = userProfile?.role === 'admin'
+          ? 'No truck row was updated.'
+          : 'No truck row was updated. This may be an owner permission issue.';
+        console.log('[AppContext] Truck update returned zero rows:', {
+          currentUserId: authUser.id,
+          truckId,
+          role: userProfile?.role ?? null,
+          ownerFilterApplied: userProfile?.role !== 'admin',
+          attemptedOpenNow: sanitizedUpdates.open_now ?? null,
+        });
+        throw new Error(message);
       }
       if (DEBUG) console.log('[AppContext] Truck update success, rows:', data?.length ?? 0);
     }
@@ -1509,7 +1557,7 @@ if (error) {
         )
         .select('truck_id, latitude, longitude, label, updated_at');
 
-      if (locationWrite.error?.message.includes('updated_at')) {
+      if (isMissingUpdatedAtError(locationWrite.error?.message)) {
         const legacyLocationPayload = {
           truck_id: locationPayload.truck_id,
           latitude: locationPayload.latitude,
@@ -1525,6 +1573,60 @@ if (error) {
           .select('truck_id, latitude, longitude, label, created_at');
       }
 
+      const locationWriteErrorMessage = locationWrite.error?.message;
+      if (locationWriteErrorMessage && isMissingLocationConflictTargetError(locationWriteErrorMessage)) {
+        if (__DEV__) {
+          console.log('[AppContext] Location upsert conflict target unavailable; falling back to update/insert:', {
+            truckId,
+            error: locationWriteErrorMessage,
+          });
+        }
+
+        let locationUpdate = await supabase
+          .from('locations')
+          .update(locationPayload)
+          .eq('truck_id', truckId)
+          .select('truck_id, latitude, longitude, label, updated_at');
+
+        if (isMissingUpdatedAtError(locationUpdate.error?.message)) {
+          const legacyLocationPayload = {
+            truck_id: locationPayload.truck_id,
+            latitude: locationPayload.latitude,
+            longitude: locationPayload.longitude,
+            label: locationPayload.label,
+          };
+          locationUpdate = await supabase
+            .from('locations')
+            .update(legacyLocationPayload)
+            .eq('truck_id', truckId)
+            .select('truck_id, latitude, longitude, label, created_at');
+        }
+
+        if (!locationUpdate.error && (locationUpdate.data?.length ?? 0) > 0) {
+          locationWrite = locationUpdate;
+        } else if (!locationUpdate.error) {
+          locationWrite = await supabase
+            .from('locations')
+            .insert(locationPayload)
+            .select('truck_id, latitude, longitude, label, updated_at');
+
+          if (isMissingUpdatedAtError(locationWrite.error?.message)) {
+            const legacyLocationPayload = {
+              truck_id: locationPayload.truck_id,
+              latitude: locationPayload.latitude,
+              longitude: locationPayload.longitude,
+              label: locationPayload.label,
+            };
+            locationWrite = await supabase
+              .from('locations')
+              .insert(legacyLocationPayload)
+              .select('truck_id, latitude, longitude, label, created_at');
+          }
+        } else {
+          locationWrite = locationUpdate;
+        }
+      }
+
       if (__DEV__) {
         console.log('[AppContext] Supabase location write result:', {
           truckId,
@@ -1536,6 +1638,13 @@ if (error) {
       if (locationWrite.error) {
         console.log('[AppContext] Location upsert error:', locationWrite.error.message);
         throw new Error(`Failed to update location: ${locationWrite.error.message}`);
+      }
+      if (isGoLiveUpdate && (locationWrite.data?.length ?? 0) === 0) {
+        console.log('[AppContext] Location write returned zero rows:', {
+          currentUserId: authUser.id,
+          truckId,
+        });
+        throw new Error('Failed to save live location: no location row was written.');
       }
 
     }
@@ -1549,6 +1658,9 @@ if (error) {
 
     if (fetchErr) {
       console.log('[AppContext] Post-save re-fetch error:', fetchErr.message);
+      if (isGoLiveUpdate) {
+        throw new Error(`Failed to verify truck after save: ${fetchErr.message}`);
+      }
       return;
     }
 
@@ -1563,7 +1675,7 @@ if (error) {
       let locationRow = locationResult.data as LocationRow | null;
       let locationFetchError = locationResult.error;
 
-      if (locationFetchError?.message.includes('updated_at')) {
+      if (isMissingUpdatedAtError(locationFetchError?.message)) {
         const fallback = await supabase
           .from('locations')
           .select('truck_id, latitude, longitude, label, created_at')
@@ -1575,11 +1687,43 @@ if (error) {
 
       if (locationFetchError) {
         console.log('[AppContext] Post-save location fetch error:', locationFetchError.message);
+        if (isGoLiveUpdate) {
+          throw new Error(`Failed to verify live location after save: ${locationFetchError.message}`);
+        }
       } else if (locationRow) {
         hydrated = mergeTruckLocations([hydrated], [locationRow])[0];
       }
-      
 
+      if (isGoLiveUpdate) {
+        hydrated = {
+          ...hydrated,
+          lastUpdated: hydrated.lastUpdated ?? savedAt,
+          lastLiveUpdatedAt: savedAt,
+        };
+
+        const hasVerifiedLocation =
+          Number.isFinite(hydrated.location?.latitude) &&
+          Number.isFinite(hydrated.location?.longitude);
+
+        console.log('[AppContext] Go Live post-save verification:', {
+          currentUserId: authUser.id,
+          truckId,
+          refetchedIsOpen: hydrated.open_now,
+          hasVerifiedLocation,
+          latitude: hydrated.location?.latitude ?? null,
+          longitude: hydrated.location?.longitude ?? null,
+          lastLiveUpdatedAt: hydrated.lastLiveUpdatedAt ?? null,
+          locationFetchError: locationFetchError?.message ?? null,
+        });
+
+        if (hydrated.open_now !== true) {
+          throw new Error('Truck did not remain open after save. Please try again.');
+        }
+
+        if (!hasVerifiedLocation) {
+          throw new Error('Live location was not saved with valid coordinates.');
+        }
+      }
 
       setFoodTrucks(prev =>
         prev.map(truck =>
@@ -1598,6 +1742,9 @@ if (error) {
           refreshedOwnerId: hydrated.owner_id,
           authUserId: authUser.id,
           role: userProfile?.role ?? null,
+          openNowAfter: hydrated.open_now,
+          latitudeAfter: hydrated.location?.latitude ?? null,
+          longitudeAfter: hydrated.location?.longitude ?? null,
         });
       }
       if (__DEV__ && isArchiveUpdate) {
@@ -1618,7 +1765,7 @@ if (error) {
       }
 
     }
-  }, [isAuthenticated, authUser, userProfile?.role, userOwnsTruck, mapSupabaseTruckToLocal, mergeTruckLocations]);
+  }, [isAuthenticated, authUser, userProfile?.role, userOwnsTruck, foodTrucks, supabaseOwnedTrucks, mapSupabaseTruckToLocal, mergeTruckLocations]);
 
   const addMenuImage = useCallback(async (truckId: string, imageUrl: string) => {
     if (!isAuthenticated || !authUser) {

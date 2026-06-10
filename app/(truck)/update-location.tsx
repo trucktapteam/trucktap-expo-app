@@ -25,7 +25,7 @@ const getCurrentPositionWithTimeout = (
 
 export default function UpdateLocationScreen() {
   const router = useRouter();
-  const { getUserTruck, updateTruckDetails } = useApp();
+  const { currentUser, getUserTruck, updateTruckDetails } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('UpdateLocationScreen');
 
@@ -54,6 +54,7 @@ export default function UpdateLocationScreen() {
 
     if (__DEV__) {
       console.log('[UpdateLocation] Saving live location:', {
+        currentUserId: currentUser?.id ?? null,
         truckId: truck.id,
         latitude: location.latitude,
         longitude: location.longitude,
@@ -279,8 +280,12 @@ export default function UpdateLocationScreen() {
 
       if (__DEV__) {
         console.log('[UpdateLocation] Go Live validation:', {
+          currentUserId: currentUser?.id ?? null,
           source: pendingLocation.source,
           truckId: truck?.id ?? null,
+          selectedLatitude: liveLocation.latitude,
+          selectedLongitude: liveLocation.longitude,
+          selectedAddress: liveLocation.address,
           ...validation,
         });
       }
@@ -293,9 +298,12 @@ export default function UpdateLocationScreen() {
       await saveLiveLocation(liveLocation);
     } catch (error) {
       console.error('Error confirming live location:', error);
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Failed to save your live location. Please try again.';
       Alert.alert(
-        'Error',
-        'Failed to save your live location. Please try again.',
+        'Go Live Failed',
+        message,
         [{ text: 'OK' }]
       );
     } finally {

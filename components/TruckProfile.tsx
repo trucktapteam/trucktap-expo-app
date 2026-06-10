@@ -16,6 +16,11 @@ import UpcomingStopsRow from '@/components/UpcomingStopsRow';
 import { trackEvent } from '@/lib/analytics';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
+import {
+  fetchCurrentUserTruckCheckInCount,
+  hasCurrentUserCheckedInToday,
+  insertCurrentUserTruckCheckIn,
+} from '@/lib/truckCheckins';
 import { MenuItem } from '@/types';
 
 interface TruckProfileProps {
@@ -34,13 +39,17 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     foodTrucks.find(t => t.id === truckId),
     [foodTrucks, truckId]
   );
+  const truckOpenNow = useMemo(
+    () => !!truck && isTruckOpenNow(truck.id),
+    [truck, isTruckOpenNow]
+  );
 
   const isOwnerOfTruck = useMemo(() => {
     if (!isAuthenticated || !authUser || !truck) return false;
     return truck.owner_id === authUser.id;
   }, [isAuthenticated, authUser, truck]);
   const isCustomerReviewPromptAudience =
-    mode === 'customer' && currentUser?.role !== 'owner' && currentUser?.role !== 'admin';
+    mode === 'customer' && currentUser?.role !== 'truck' && currentUser?.role !== 'admin';
   const canViewTestTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
   const canViewArchivedTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
   
@@ -70,6 +79,10 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
   const [showMenuItemModal, setShowMenuItemModal] = useState<boolean>(false);
   const [showAllReviewsModal, setShowAllReviewsModal] = useState(false);
+  const [checkInCount, setCheckInCount] = useState<number>(0);
+  const [checkedInToday, setCheckedInToday] = useState<boolean>(false);
+  const [checkInLoading, setCheckInLoading] = useState<boolean>(false);
+  const [checkInSubmitting, setCheckInSubmitting] = useState<boolean>(false);
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -105,6 +118,34 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
       });
     }
   }, [authUser?.id, currentUser?.id, isCustomerReviewPromptAudience, mode, truckId]);
+
+  const refreshCheckInState = useCallback(async () => {
+    if (mode !== 'customer' || !truck || !isAuthenticated || !authUser) {
+      setCheckInCount(0);
+      setCheckedInToday(false);
+      setCheckInLoading(false);
+      return;
+    }
+
+    setCheckInLoading(true);
+    try {
+      const [visitCount, hasCheckedInToday] = await Promise.all([
+        fetchCurrentUserTruckCheckInCount(truck.id, authUser.id),
+        hasCurrentUserCheckedInToday(truck.id, authUser.id),
+      ]);
+
+      setCheckInCount(visitCount);
+      setCheckedInToday(hasCheckedInToday);
+    } catch (error) {
+      console.error('[TruckProfile] Failed to load check-in state:', error);
+    } finally {
+      setCheckInLoading(false);
+    }
+  }, [authUser, isAuthenticated, mode, truck]);
+
+  React.useEffect(() => {
+    void refreshCheckInState();
+  }, [refreshCheckInState]);
 
   const handleOwnerAction = useCallback((action: string) => {
     if (!isAuthenticated || !authUser) {
@@ -168,7 +209,6 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   }
 
   const hasValidPhone = !!truck.phone && truck.phone.length === 10;
-  const truckOpenNow = isTruckOpenNow(truck.id);
   const isClosedCustomerView = mode === 'customer' && !truckOpenNow;
   const customerLocationText = isClosedCustomerView
     ? 'Not currently serving'
@@ -245,6 +285,52 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
         return;
       }
       toggleFavorite(truck.id);
+    }
+  };
+
+  const getCheckInButtonLabel = () => {
+    if (authLoading) return 'Loading...';
+    if (!isAuthenticated || !authUser) return 'Sign In to Check In';
+    if (!truckOpenNow) return 'Check In When Truck Is Live';
+    if (checkedInToday) return 'Checked In Today ✓';
+    return 'Check In';
+  };
+
+  const handleCheckIn = async () => {
+    if (authLoading || checkInSubmitting) return;
+
+    if (!isAuthenticated || !authUser) {
+      setAuthAction('check in');
+      setShowAuthPrompt(true);
+      return;
+    }
+
+    if (!truckOpenNow) {
+      Alert.alert('Truck must be LIVE', 'You can check in when this truck is live and serving.');
+      return;
+    }
+
+    if (checkedInToday) return;
+
+    setCheckInSubmitting(true);
+    try {
+      await insertCurrentUserTruckCheckIn(truck.id, authUser.id);
+      const updatedCount = await fetchCurrentUserTruckCheckInCount(truck.id, authUser.id);
+
+      setCheckInCount(updatedCount);
+      setCheckedInToday(true);
+      Alert.alert('Checked in!', `This is visit #${updatedCount} for ${truck.name}.`);
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        setCheckedInToday(true);
+        await refreshCheckInState();
+        Alert.alert('Already checked in today', 'You can check in again tomorrow.');
+      } else {
+        console.error('[TruckProfile] Failed to check in:', error);
+        Alert.alert('Check-in failed', 'Could not check in right now. Please try again.');
+      }
+    } finally {
+      setCheckInSubmitting(false);
     }
   };
 
@@ -460,6 +546,55 @@ console.log('[FORMAT DATE]', dateInput);
               <ExpandableText text={truck.bio} numberOfLines={3} style={styles.bioText} />
             </View>
           </TruckSectionCard>
+
+          {mode === 'customer' && (
+            <TruckSectionCard>
+              <View style={styles.checkInContent}>
+                <View style={styles.checkInHeader}>
+                  <MapPin size={16} color={colors.primary} />
+                  <Text style={styles.checkInTitle} numberOfLines={1}>Check In</Text>
+                </View>
+                <Text style={styles.checkInCountValue} numberOfLines={1}>
+                  Visit Count:{' '}
+                  {isAuthenticated && authUser
+                    ? checkInLoading
+                      ? 'Loading...'
+                      : checkInCount
+                    : 0}
+                </Text>
+                <Text style={styles.checkInSubtitle} numberOfLines={1}>
+                  Track visits and unlock rewards
+                </Text>
+
+                <TouchableOpacity
+                  style={[
+                    styles.checkInButton,
+                    (authLoading ||
+                      checkInLoading ||
+                      checkInSubmitting ||
+                      (isAuthenticated && !!authUser && (!truckOpenNow || checkedInToday))) &&
+                      styles.checkInButtonDisabled,
+                  ]}
+                  onPress={handleCheckIn}
+                  disabled={
+                    authLoading ||
+                    checkInLoading ||
+                    checkInSubmitting ||
+                    (isAuthenticated && !!authUser && (!truckOpenNow || checkedInToday))
+                  }
+                  activeOpacity={0.75}
+                >
+                  {checkInSubmitting ? (
+                    <ActivityIndicator size="small" color={colors.background} />
+                  ) : (
+                    <Text style={styles.checkInButtonText} numberOfLines={1} adjustsFontSizeToFit>
+                      {getCheckInButtonLabel()}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TruckSectionCard>
+          )}
 
           <TruckSectionCard>
             <View style={styles.sectionHeaderRow}>
@@ -974,6 +1109,44 @@ emptyReviewText: {
     fontSize: 15,
     fontWeight: '700' as const,
     color: colors.primary,
+  },
+  checkInContent: {
+    gap: 6,
+  },
+  checkInHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  checkInTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: colors.text,
+  },
+  checkInSubtitle: {
+    fontSize: 13,
+    color: colors.secondaryText,
+  },
+  checkInCountValue: {
+    fontSize: 18,
+    color: colors.primary,
+    fontWeight: '800' as const,
+  },
+  checkInButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 9,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 32,
+  },
+  checkInButtonDisabled: {
+    opacity: 0.55,
+  },
+  checkInButtonText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: colors.background,
   },
   seeAllRow: {
     flexDirection: 'row',

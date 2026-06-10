@@ -116,6 +116,12 @@ export default function TruckDashboard() {
   const showChecklist = !checklistDismissed && (!hasMenu || !hasPhotos || !hoursSet);
 
   const handleGoLive = () => {
+    if (__DEV__) {
+      console.log('[Dashboard] Go Live pressed:', {
+        truckId: truck?.id ?? null,
+        openNow: truck?.open_now ?? null,
+      });
+    }
     router.push('/(truck)/update-location' as any);
   };
 
