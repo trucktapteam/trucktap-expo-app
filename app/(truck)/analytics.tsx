@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Animated, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Eye, Heart, Star, Phone, Navigation, Image as ImageIcon, ChevronLeft, Menu, TrendingUp } from 'lucide-react-native';
+import { Eye, Heart, Star, Phone, Navigation, Image as ImageIcon, ChevronLeft, Menu, TrendingUp, CheckCircle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckRating } from '@/contexts/AppContext';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
@@ -100,6 +100,8 @@ export default function AnalyticsDashboard() {
     { icon: Menu, label: 'Menu Views', value: analytics.menuViews, color: '#8338EC', showTrend: true },
     { icon: Phone, label: 'Call Taps', value: analytics.calls, color: '#3A86FF', showTrend: true },
     { icon: Navigation, label: 'Navigate Taps', value: analytics.navigations, color: '#06D6A0', showTrend: true },
+    { icon: CheckCircle, label: 'Check-Ins This Month', value: analytics.customerCheckInsThisMonth, color: '#F97316', showTrend: true },
+    { icon: CheckCircle, label: 'Customer Check-Ins', value: analytics.customerCheckIns, color: Colors.success, showTrend: true },
     { icon: ImageIcon, label: 'Photo Views', value: analytics.photoViews, color: '#FB5607', showTrend: true },
   ];
 

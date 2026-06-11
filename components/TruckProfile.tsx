@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, TextInput, Modal, Alert, Platform, Animated, Share, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
 import { MapPin, Clock, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
@@ -22,6 +23,31 @@ import {
   insertCurrentUserTruckCheckIn,
 } from '@/lib/truckCheckins';
 import { MenuItem } from '@/types';
+
+const CHECK_IN_RADIUS_FEET = 1320;
+const FEET_PER_METER = 3.28084;
+const EARTH_RADIUS_METERS = 6371000;
+
+const getDistanceInFeet = (
+  start: { latitude: number; longitude: number },
+  end: { latitude: number; longitude: number }
+) => {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const latitudeDelta = toRadians(end.latitude - start.latitude);
+  const longitudeDelta = toRadians(end.longitude - start.longitude);
+  const startLatitude = toRadians(start.latitude);
+  const endLatitude = toRadians(end.latitude);
+
+  const a =
+    Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2) +
+    Math.cos(startLatitude) *
+      Math.cos(endLatitude) *
+      Math.sin(longitudeDelta / 2) *
+      Math.sin(longitudeDelta / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return EARTH_RADIUS_METERS * c * FEET_PER_METER;
+};
 
 interface TruckProfileProps {
   truckId: string;
@@ -310,10 +336,48 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
       return;
     }
 
+    if (!hasNavigableLocation) {
+      Alert.alert('Location unavailable', 'This truck does not have a check-in location yet.');
+      return;
+    }
+
     if (checkedInToday) return;
 
     setCheckInSubmitting(true);
     try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Location required', 'Location access is required to check in.');
+        return;
+      }
+
+      let userLocation: Awaited<ReturnType<typeof Location.getCurrentPositionAsync>>;
+      try {
+        userLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      } catch (locationError) {
+        console.log('[TruckProfile] Failed to get check-in location:', locationError);
+        Alert.alert('Location required', 'Location access is required to check in.');
+        return;
+      }
+
+      const distanceFeet = getDistanceInFeet(
+        {
+          latitude: userLocation.coords.latitude,
+          longitude: userLocation.coords.longitude,
+        },
+        {
+          latitude: truck.location.latitude,
+          longitude: truck.location.longitude,
+        }
+      );
+
+      if (distanceFeet > CHECK_IN_RADIUS_FEET) {
+        Alert.alert('Too far away', 'You must be near the truck to check in.');
+        return;
+      }
+
       await insertCurrentUserTruckCheckIn(truck.id, authUser.id);
       const updatedCount = await fetchCurrentUserTruckCheckInCount(truck.id, authUser.id);
 
@@ -419,6 +483,15 @@ console.log('[FORMAT DATE]', dateInput);
   };
 
   const styles = createStyles(colors);
+  const checkInVisitText =
+    isAuthenticated && authUser && checkInLoading
+      ? 'Loading visits...'
+      : checkInCount === 0
+        ? 'First visit'
+        : checkInCount === 1
+          ? "You've visited 1 time"
+          : `You've visited ${checkInCount} times`;
+  const truckAnnouncements = getAnnouncements(truck.id);
 
   return (
     <View style={styles.container}>
@@ -547,55 +620,6 @@ console.log('[FORMAT DATE]', dateInput);
             </View>
           </TruckSectionCard>
 
-          {mode === 'customer' && (
-            <TruckSectionCard>
-              <View style={styles.checkInContent}>
-                <View style={styles.checkInHeader}>
-                  <MapPin size={16} color={colors.primary} />
-                  <Text style={styles.checkInTitle} numberOfLines={1}>Check In</Text>
-                </View>
-                <Text style={styles.checkInCountValue} numberOfLines={1}>
-                  Visit Count:{' '}
-                  {isAuthenticated && authUser
-                    ? checkInLoading
-                      ? 'Loading...'
-                      : checkInCount
-                    : 0}
-                </Text>
-                <Text style={styles.checkInSubtitle} numberOfLines={1}>
-                  Track visits and unlock rewards
-                </Text>
-
-                <TouchableOpacity
-                  style={[
-                    styles.checkInButton,
-                    (authLoading ||
-                      checkInLoading ||
-                      checkInSubmitting ||
-                      (isAuthenticated && !!authUser && (!truckOpenNow || checkedInToday))) &&
-                      styles.checkInButtonDisabled,
-                  ]}
-                  onPress={handleCheckIn}
-                  disabled={
-                    authLoading ||
-                    checkInLoading ||
-                    checkInSubmitting ||
-                    (isAuthenticated && !!authUser && (!truckOpenNow || checkedInToday))
-                  }
-                  activeOpacity={0.75}
-                >
-                  {checkInSubmitting ? (
-                    <ActivityIndicator size="small" color={colors.background} />
-                  ) : (
-                    <Text style={styles.checkInButtonText} numberOfLines={1} adjustsFontSizeToFit>
-                      {getCheckInButtonLabel()}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </TruckSectionCard>
-          )}
-
           <TruckSectionCard>
             <View style={styles.sectionHeaderRow}>
               <Text style={{ color: '#111111', fontSize: 20, fontWeight: '700' }}>Gallery</Text>
@@ -689,45 +713,90 @@ console.log('[FORMAT DATE]', dateInput);
 
           <UpcomingStopsRow stops={getUpcomingStops(truck.id)} />
 
-          <TruckSectionCard>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={{ color: '#111111', fontSize: 20, fontWeight: '700' }}>Announcements</Text>
-              {getAnnouncements(truck.id).length > 3 && (
+          {mode === 'customer' && (
+            <View style={styles.checkInInlineSection}>
+              <View style={styles.checkInTextBlock}>
+                <View style={styles.checkInTitleRow}>
+                  <MapPin size={14} color={colors.primary} />
+                  <Text style={styles.checkInTitle} numberOfLines={1}>
+                    {checkedInToday ? 'Checked In Today ✓' : 'Check In'}
+                  </Text>
+                </View>
+                <Text style={styles.checkInCountValue} numberOfLines={1}>
+                  {checkInVisitText}
+                </Text>
+              </View>
+
+              {checkedInToday ? (
+                <View style={styles.checkInStatusPill}>
+                  <CheckCircle size={13} color={colors.success} />
+                  <Text style={styles.checkInStatusText} numberOfLines={1}>
+                    Checked In
+                  </Text>
+                </View>
+              ) : (
                 <TouchableOpacity
-                  style={styles.seeAllButton}
-                  onPress={() => router.push(`/truck/announcements?id=${truck.id}` as any)}
-                  activeOpacity={0.7}
+                  style={[
+                    styles.checkInButton,
+                    (authLoading ||
+                      checkInLoading ||
+                      checkInSubmitting ||
+                      (isAuthenticated && !!authUser && !truckOpenNow)) &&
+                      styles.checkInButtonDisabled,
+                  ]}
+                  onPress={handleCheckIn}
+                  disabled={
+                    authLoading ||
+                    checkInLoading ||
+                    checkInSubmitting ||
+                    (isAuthenticated && !!authUser && !truckOpenNow)
+                  }
+                  activeOpacity={0.75}
                 >
-                  <Text style={styles.seeAllText}>See All</Text>
-                  <ChevronRight size={16} color={colors.primary} />
+                  {checkInSubmitting ? (
+                    <ActivityIndicator size="small" color={colors.background} />
+                  ) : (
+                    <Text style={styles.checkInButtonText} numberOfLines={1} adjustsFontSizeToFit>
+                      {getCheckInButtonLabel()}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               )}
             </View>
-            {getAnnouncements(truck.id).length > 0 ? (
-              <>
-                {getAnnouncements(truck.id).slice(0, 3).map(announcement => (
-                  <View key={announcement.id} style={styles.announcementCard}>
-                    <View style={styles.announcementHeader}>
-                      <View style={styles.announcementIcon}>
-                        <MessageSquare size={18} color={colors.primary} />
-                      </View>
-                      <Text style={styles.announcementTime}>{formatTimestamp(announcement.timestamp)}</Text>
-                    </View>
-                    <Text style={styles.announcementText}>
-                      {announcement.message}
-                    </Text>
-                  </View>
-                ))}
-              </>
-            ) : (
-              <View style={styles.emptyAnnouncementState}>
-                <MessageSquare size={32} color={colors.secondaryText} />
-                <Text style={styles.emptyAnnouncementText}>No updates yet… the truck is getting ready! 🚚</Text>
-              </View>
-            )}
-          </TruckSectionCard>
+          )}
 
-         <TruckSectionCard>
+          {truckAnnouncements.length > 0 && (
+            <TruckSectionCard>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={{ color: '#111111', fontSize: 20, fontWeight: '700' }}>Announcements</Text>
+                {truckAnnouncements.length > 3 && (
+                  <TouchableOpacity
+                    style={styles.seeAllButton}
+                    onPress={() => router.push('/(truck)/announcements' as any)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.seeAllText}>See All</Text>
+                    <ChevronRight size={16} color={colors.primary} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {truckAnnouncements.slice(0, 3).map(announcement => (
+                <View key={announcement.id} style={styles.announcementCard}>
+                  <View style={styles.announcementHeader}>
+                    <View style={styles.announcementIcon}>
+                      <MessageSquare size={18} color={colors.primary} />
+                    </View>
+                    <Text style={styles.announcementTime}>{formatTimestamp(announcement.timestamp)}</Text>
+                  </View>
+                  <Text style={styles.announcementText}>
+                    {announcement.message}
+                  </Text>
+                </View>
+              ))}
+            </TruckSectionCard>
+          )}
+
+          <TruckSectionCard>
         <View style={styles.sectionHeaderRow}>
   <Text style={{ color: '#111111', fontSize: 20, fontWeight: '700' }}>
     Reviews
@@ -1110,35 +1179,59 @@ emptyReviewText: {
     fontWeight: '700' as const,
     color: colors.primary,
   },
-  checkInContent: {
-    gap: 6,
-  },
-  checkInHeader: {
+  checkInInlineSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 2,
+    marginBottom: 16,
+    paddingHorizontal: 2,
+    paddingVertical: 4,
+  },
+  checkInTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  checkInTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   checkInTitle: {
     fontSize: 15,
     fontWeight: '700' as const,
     color: colors.text,
   },
-  checkInSubtitle: {
-    fontSize: 13,
-    color: colors.secondaryText,
+  checkInStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: `${colors.success}16`,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  checkInStatusText: {
+    fontSize: 12,
+    color: colors.success,
+    fontWeight: '700' as const,
   },
   checkInCountValue: {
-    fontSize: 18,
-    color: colors.primary,
-    fontWeight: '800' as const,
+    fontSize: 13,
+    color: colors.secondaryText,
+    fontWeight: '600' as const,
   },
   checkInButton: {
     backgroundColor: colors.primary,
-    borderRadius: 9,
-    paddingVertical: 7,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 32,
+    minHeight: 34,
+    minWidth: 92,
   },
   checkInButtonDisabled: {
     opacity: 0.55,
@@ -1458,13 +1551,14 @@ announcementTime: {
   },
   emptyAnnouncementState: {
     alignItems: 'center',
-    paddingVertical: 32,
-    gap: 12,
+    paddingVertical: 12,
+    gap: 6,
   },
   emptyAnnouncementText: {
-    fontSize: 15,
+    fontSize: 14,
     color: colors.secondaryText,
     fontWeight: '500' as const,
+    textAlign: 'center',
   },
   ownerEditBanner: {
     flexDirection: 'row',

@@ -20,8 +20,31 @@ const parseJsonArray = (val: any): any[] => {
 
 const FOREGROUND_REFRESH_DEBOUNCE_MS = 5000;
 const STALE_OPEN_WINDOW_MS = 12 * 60 * 60 * 1000;
+const ANNOUNCEMENT_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_HERO_IMAGE = 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=800';
 const DEFAULT_LOGO_IMAGE = 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=200';
+
+type TruckCheckInAnalytics = {
+  allTime: number;
+  thisMonth: number;
+};
+
+const getAnnouncementExpiresAt = (announcement: Pick<Announcement, 'timestamp' | 'expires_at'>): number => {
+  const explicitExpiration = announcement.expires_at ? Date.parse(announcement.expires_at) : NaN;
+  if (Number.isFinite(explicitExpiration)) {
+    return explicitExpiration;
+  }
+
+  const createdAt = Date.parse(announcement.timestamp);
+  if (!Number.isFinite(createdAt)) {
+    return 0;
+  }
+
+  return createdAt + ANNOUNCEMENT_EXPIRATION_MS;
+};
+
+const isAnnouncementActive = (announcement: Announcement, now = Date.now()): boolean =>
+  getAnnouncementExpiresAt(announcement) > now;
 
 type LocationRow = {
   truck_id: string | number;
@@ -248,6 +271,8 @@ export type AppState = {
     photoViews: number;
     qrScans: number;
     lastQrScan?: string;
+    customerCheckIns: number;
+    customerCheckInsThisMonth: number;
   };
   incrementQrScan: (truckId: string, platform: string) => void;
   getQrScanStats: (truckId: string) => { totalScans: number; lastScanned?: string; };
@@ -306,6 +331,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [selectedAdminTruckId, setSelectedAdminTruckId] = useState<string | null>(null);
   const [ownerMessages, setOwnerMessages] = useState<OwnerMessage[]>([]);
   const [supabaseOwnedTrucks, setSupabaseOwnedTrucks] = useState<FoodTruck[]>([]);
+  const [truckCheckInAnalytics, setTruckCheckInAnalytics] = useState<Record<string, TruckCheckInAnalytics>>({});
   const [isOwnerLoading, setIsOwnerLoading] = useState<boolean>(true);
   const [qrShared, setQrShared] = useState<boolean>(false);
   const appStateRef = useRef(RNAppState.currentState);
@@ -648,6 +674,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
                 truck_id: row.id?.toString() ?? '',
                 message: ann.message ?? '',
                 timestamp: ann.timestamp ?? new Date().toISOString(),
+                expires_at: ann.expires_at,
               });
             }
           });
@@ -764,6 +791,61 @@ export const [AppProvider, useApp] = createContextHook(() => {
   useEffect(() => {
     void fetchOwnedTrucksFromSupabase();
   }, [fetchOwnedTrucksFromSupabase]);
+
+  useEffect(() => {
+    const fetchTruckCheckInAnalytics = async () => {
+      if (!isAuthenticated || !authUser || !isSupabaseConfigured) {
+        setTruckCheckInAnalytics({});
+        return;
+      }
+
+      const ownedTruckIds = (supabaseOwnedTrucks.length > 0
+        ? supabaseOwnedTrucks
+        : foodTrucks.filter(truck => truck.owner_id === authUser.id)
+      ).map(truck => truck.id);
+
+      if (ownedTruckIds.length === 0) {
+        setTruckCheckInAnalytics({});
+        return;
+      }
+
+      const now = new Date();
+      const monthStart = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}-01`;
+
+      const entries = await Promise.all(
+        ownedTruckIds.map(async (truckId) => {
+          const [{ count: allTimeCount, error: allTimeError }, { count: monthCount, error: monthError }] =
+            await Promise.all([
+              supabase
+                .from('truck_checkins')
+                .select('*', { count: 'exact', head: true })
+                .eq('truck_id', truckId),
+              supabase
+                .from('truck_checkins')
+                .select('*', { count: 'exact', head: true })
+                .eq('truck_id', truckId)
+                .gte('checkin_date', monthStart),
+            ]);
+
+          if (allTimeError || monthError) {
+            console.log('[AppContext] Error fetching check-in analytics:', allTimeError?.message || monthError?.message);
+          }
+
+          return [
+            truckId,
+            {
+              allTime: allTimeError ? 0 : allTimeCount ?? 0,
+              thisMonth: monthError ? 0 : monthCount ?? 0,
+            },
+          ] as const;
+        })
+      );
+
+      setTruckCheckInAnalytics(Object.fromEntries(entries));
+    };
+
+    void fetchTruckCheckInAnalytics();
+  }, [authUser, foodTrucks, isAuthenticated, supabaseOwnedTrucks]);
 
   useEffect(() => {
     const syncAuthWithUserProfile = async () => {
@@ -2021,11 +2103,13 @@ if (error) {
 
   if (!isSupabaseConfigured) return;
 
+  const activeItems = items.filter(item => item.truck_id !== truckId || isAnnouncementActive(item));
+
   if (DEBUG) console.log('[AppContext] Persisting announcements for truck:', truckId);
 
   const { error } = await supabase
     .from('trucks')
-    .update({ announcements: items, updated_at: new Date().toISOString() })
+    .update({ announcements: activeItems, updated_at: new Date().toISOString() })
     .eq('id', truckId)
     .eq('owner_id', authUser.id);
 
@@ -2224,8 +2308,14 @@ if (error) {
     const truck = foodTrucks.find(t => t.id === truckId);
     const analytics = truck?.analytics || { views: 0, favorites: 0, menuViews: 0, calls: 0, navigations: 0, photoViews: 0, qrScans: 0 };
     const favoritesCount = currentUser?.favorites.includes(truckId) ? 1 : 0;
-    return { ...analytics, favorites: favoritesCount };
-  }, [foodTrucks, currentUser]);
+    const checkInAnalytics = truckCheckInAnalytics[truckId] ?? { allTime: 0, thisMonth: 0 };
+    return {
+      ...analytics,
+      favorites: favoritesCount,
+      customerCheckIns: checkInAnalytics.allTime,
+      customerCheckInsThisMonth: checkInAnalytics.thisMonth,
+    };
+  }, [foodTrucks, currentUser, truckCheckInAnalytics]);
 
   const incrementQrScan = useCallback((truckId: string, platform: string) => {
     if (DEBUG) console.log(`QR scan tracked for truck ${truckId} from ${platform}`);
@@ -2268,6 +2358,7 @@ if (error) {
       truck_id: truckId,
       message,
       timestamp: new Date().toISOString(),
+      expires_at: new Date(Date.now() + ANNOUNCEMENT_EXPIRATION_MS).toISOString(),
     };
     if (DEBUG) console.log('[AppContext] addAnnouncement for truck:', truckId);
     setAnnouncements(prev => {
@@ -2303,6 +2394,7 @@ if (error) {
 
     return announcements
       .filter(announcement => announcement.truck_id === truckId)
+      .filter(announcement => isAnnouncementActive(announcement))
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [announcements]);
 

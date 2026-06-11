@@ -99,6 +99,7 @@ export type Announcement = {
   truck_id: string;
   message: string;
   timestamp: string;
+  expires_at?: string;
 };
 
 export type UpcomingStopStatus = 'scheduled' | 'delayed' | 'cancelled' | 'sold_out' | 'completed';

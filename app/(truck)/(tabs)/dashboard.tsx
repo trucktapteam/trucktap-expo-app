@@ -737,7 +737,7 @@ export default function TruckDashboard() {
           </View>
           <View style={styles.announcementTextWrap}>
             <Text style={styles.announcementTitle}>Announcements</Text>
-            <Text style={styles.announcementSubtitle}>Post a quick update for customers</Text>
+            <Text style={styles.announcementSubtitle}>Share a 7-day update with customers</Text>
           </View>
           <ChevronRight size={18} color={Colors.gray} />
         </TouchableOpacity>

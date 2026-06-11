@@ -121,7 +121,10 @@ export default function AnnouncementsScreen() {
             onChangeText={setMessage}
             textAlignVertical="top"
           />
-          
+          <Text style={styles.helperText}>
+            Visible for 7 days. Use announcements for specials, delays, sold-out items, or quick updates.
+          </Text>
+           
           <View style={styles.postFooter}>
             <Text style={[styles.charCount, remainingChars < 20 && styles.charCountWarning]}>
               {remainingChars} characters left
@@ -281,6 +284,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.dark,
     minHeight: 120,
+    marginBottom: 8,
+  },
+  helperText: {
+    fontSize: 13,
+    color: Colors.gray,
+    lineHeight: 18,
     marginBottom: 12,
   },
   postFooter: {
