@@ -2476,17 +2476,19 @@ if (error) {
     });
     const hasUpcomingStop = futureStops.length > 0;
     const stopActivityTime = futureStops
-      .map(stop => parseActivityTime(stop.updated_at) ?? parseActivityTime(stop.created_at))
+      .map(stop => (
+        parseActivityTime(stop.updated_at) ??
+        parseActivityTime(stop.created_at) ??
+        parseActivityTime(stop.starts_at)
+      ))
       .filter((timestamp): timestamp is number => timestamp !== null)
       .sort((a, b) => b - a)[0] ?? null;
     const lastLiveTime = parseActivityTime(truck?.lastLiveUpdatedAt);
     const ownerActivityTime = parseActivityTime(truck?.lastOwnerActivityAt);
     const lastUpdatedTime = parseActivityTime(truck?.lastUpdated);
-    const lastActivityTime =
-      lastLiveTime ??
-      ownerActivityTime ??
-      lastUpdatedTime ??
-      stopActivityTime;
+    const activityTimes = [lastLiveTime, ownerActivityTime, lastUpdatedTime, stopActivityTime]
+      .filter((timestamp): timestamp is number => timestamp !== null);
+    const lastActivityTime = activityTimes.length > 0 ? Math.max(...activityTimes) : null;
     const hasRecentLiveActivity =
       lastLiveTime !== null && now - lastLiveTime <= ACTIVE_ON_TRUCKTAP_WINDOW_MS;
     const meaningfulActivityTimes = [ownerActivityTime, lastUpdatedTime, stopActivityTime]

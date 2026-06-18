@@ -19,6 +19,7 @@ export default function AdminTruckPickerScreen() {
     setSelectedAdminTruckId,
     completeOnboarding,
     getTruckActivitySummary,
+    getTruckActivityStatus,
     isTruckInactive,
     updateTruckDetails,
   } = useApp();
@@ -98,6 +99,21 @@ export default function AdminTruckPickerScreen() {
   const formatDaysSinceActivity = (days: number | null) =>
     days === null ? 'No activity' : `${days} day${days === 1 ? '' : 's'} ago`;
 
+  const formatActivityReason = (reason?: string) => {
+    switch (reason) {
+      case 'open_now':
+        return 'Open now';
+      case 'recent_live_activity':
+        return 'Recent live activity';
+      case 'upcoming_stop':
+        return 'Upcoming scheduled stop';
+      case 'recent_meaningful_activity':
+        return 'Recent profile or planning activity';
+      default:
+        return '';
+    }
+  };
+
   const reactivateTruck = async (truck: FoodTruck) => {
     try {
       await updateTruckDetails(truck.id, { lastOwnerActivityAt: Date.now() });
@@ -162,28 +178,59 @@ export default function AdminTruckPickerScreen() {
           </View>
         ) : (
           <View style={styles.truckList}>
-            {trucks.map((truck) => (
-              <TouchableOpacity
-                key={truck.id}
-                style={[styles.truckCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
-                onPress={() => selectTruck(truck)}
-                activeOpacity={0.7}
-              >
-                <Image source={truck.logo ? { uri: truck.logo } : undefined} style={styles.logo} />
-                <View style={styles.truckInfo}>
-                  <Text style={[styles.truckName, { color: colors.text }]} numberOfLines={1}>
-                    {truck.name || 'Unnamed truck'}
-                  </Text>
-                  <Text style={[styles.truckMeta, { color: colors.secondaryText }]} numberOfLines={1}>
-                    {truck.cuisine_type || 'Food truck'}
-                  </Text>
-                  {(truck.archived === true || !!truck.archivedAt) && (
-                    <Text style={[styles.archivedText, { color: colors.error }]}>Archived</Text>
-                  )}
-                </View>
-                <ChevronRight size={20} color={colors.secondaryText} />
-              </TouchableOpacity>
-            ))}
+            {trucks.map((truck) => {
+              const activityStatus = getTruckActivityStatus(truck);
+              const activityReason = formatActivityReason(activityStatus.activeReason);
+              const isArchivedTruck = truck.archived === true || !!truck.archivedAt;
+              const isTestTruck = truck.is_test === true;
+              const isInactiveTruck = !isArchivedTruck && !isTestTruck && isTruckInactive(truck.id);
+
+              return (
+                <TouchableOpacity
+                  key={truck.id}
+                  style={[styles.truckCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+                  onPress={() => selectTruck(truck)}
+                  activeOpacity={0.7}
+                >
+                  <Image source={truck.logo ? { uri: truck.logo } : undefined} style={styles.logo} />
+                  <View style={styles.truckInfo}>
+                    <Text style={[styles.truckName, { color: colors.text }]} numberOfLines={1}>
+                      {truck.name || 'Unnamed truck'}
+                    </Text>
+                    <Text style={[styles.truckMeta, { color: colors.secondaryText }]} numberOfLines={1}>
+                      {truck.cuisine_type || 'Food truck'}
+                    </Text>
+                    <View style={styles.statusPillRow}>
+                      {activityStatus.activeOnTruckTap ? (
+                        <Text style={[styles.statusPill, { color: colors.success, backgroundColor: `${colors.success}15` }]}>
+                          Active on TruckTap
+                        </Text>
+                      ) : null}
+                      {isInactiveTruck ? (
+                        <Text style={[styles.statusPill, { color: colors.secondaryText, backgroundColor: colors.secondaryBackground }]}>
+                          Inactive
+                        </Text>
+                      ) : null}
+                      {isArchivedTruck ? (
+                        <Text style={[styles.statusPill, { color: colors.error, backgroundColor: `${colors.error}12` }]}>
+                          Archived
+                        </Text>
+                      ) : null}
+                      {isTestTruck ? (
+                        <Text style={[styles.statusPill, { color: colors.secondaryText, backgroundColor: colors.secondaryBackground }]}>
+                          Test truck
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Text style={[styles.activityStatusText, { color: colors.secondaryText }]} numberOfLines={1}>
+                      {activityStatus.lastActivityLabel || 'No recent activity yet'}
+                      {activityReason ? ` - ${activityReason}` : ''}
+                    </Text>
+                  </View>
+                  <ChevronRight size={20} color={colors.secondaryText} />
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
@@ -199,6 +246,8 @@ export default function AdminTruckPickerScreen() {
             <View style={styles.inactiveList}>
               {inactiveTrucks.map((truck) => {
                 const activity = getTruckActivitySummary(truck.id);
+                const activityStatus = getTruckActivityStatus(truck);
+                const activityReason = formatActivityReason(activityStatus.activeReason);
 
                 return (
                   <View
@@ -220,6 +269,17 @@ export default function AdminTruckPickerScreen() {
                     </View>
 
                     <View style={styles.activityGrid}>
+                      <Text style={[styles.activityText, { color: colors.secondaryText }]}>
+                        Status: {activityStatus.activeOnTruckTap ? 'Active on TruckTap' : 'Not active on TruckTap'}
+                      </Text>
+                      <Text style={[styles.activityText, { color: colors.secondaryText }]}>
+                        Last Updated: {activityStatus.lastActivityLabel || 'No recent activity yet'}
+                      </Text>
+                      {activityReason ? (
+                        <Text style={[styles.activityText, { color: colors.secondaryText }]}>
+                          Reason: {activityReason}
+                        </Text>
+                      ) : null}
                       <Text style={[styles.activityText, { color: colors.secondaryText }]}>
                         Last LIVE: {formatLastLiveDate(activity.lastLiveAt)}
                       </Text>
@@ -356,6 +416,25 @@ const styles = StyleSheet.create({
   },
   truckMeta: {
     fontSize: 14,
+  },
+  statusPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 7,
+  },
+  statusPill: {
+    overflow: 'hidden',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  activityStatusText: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 6,
   },
   archivedText: {
     fontSize: 12,

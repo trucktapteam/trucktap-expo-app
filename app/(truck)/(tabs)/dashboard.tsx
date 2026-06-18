@@ -59,6 +59,21 @@ const formatServingLocation = (truck: any): string => {
   return 'Location saved';
 };
 
+const getActivityReasonLabel = (reason?: string): string => {
+  switch (reason) {
+    case 'open_now':
+      return 'Open now';
+    case 'recent_live_activity':
+      return 'Recent live activity';
+    case 'upcoming_stop':
+      return 'Upcoming scheduled stop';
+    case 'recent_meaningful_activity':
+      return 'Recent profile or planning activity';
+    default:
+      return '';
+  }
+};
+
 export default function TruckDashboard() {
   const router = useRouter();
   const pathname = usePathname();
@@ -77,6 +92,7 @@ export default function TruckDashboard() {
     isProfileComplete,
     hasUnreadOwnerUpdates,
     qrShared,
+    getTruckActivityStatus,
   } = useApp();
   const ownerTruck = getUserTruck();
   const isAdmin = currentUser?.role === 'admin';
@@ -156,6 +172,8 @@ export default function TruckDashboard() {
   const canShareTruck = hasTruckIdentity && hasShareableRoute && !isArchived;
   const liveLocationText = truck ? formatServingLocation(truck) : '';
   const liveUpdatedText = formatLiveUpdatedText(truck?.lastUpdated, liveNowMs);
+  const truckActivityStatus = getTruckActivityStatus(truck);
+  const truckActivityReason = getActivityReasonLabel(truckActivityStatus.activeReason);
 
   useEffect(() => {
     if (isArchived) {
@@ -587,6 +605,36 @@ export default function TruckDashboard() {
             </TouchableOpacity>
           </Animated.View>
         )}
+
+        <View style={styles.reliabilityCard}>
+          <View style={styles.reliabilityHeader}>
+            <View style={[
+              styles.reliabilityBadge,
+              truckActivityStatus.activeOnTruckTap ? styles.reliabilityBadgeActive : styles.reliabilityBadgeQuiet,
+            ]}>
+              <Text style={[
+                styles.reliabilityBadgeText,
+                truckActivityStatus.activeOnTruckTap ? styles.reliabilityBadgeTextActive : styles.reliabilityBadgeTextQuiet,
+              ]}>
+                {truckActivityStatus.activeOnTruckTap ? 'Active on TruckTap' : 'Keep your profile fresh'}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.reliabilityTitle}>Customer activity signal</Text>
+          {truckActivityStatus.lastActivityLabel ? (
+            <Text style={styles.reliabilityText}>{truckActivityStatus.lastActivityLabel}</Text>
+          ) : (
+            <Text style={styles.reliabilityText}>No recent activity yet</Text>
+          )}
+          {truckActivityReason ? (
+            <Text style={styles.reliabilityMeta}>Reason: {truckActivityReason}</Text>
+          ) : null}
+          {!truckActivityStatus.activeOnTruckTap ? (
+            <Text style={styles.reliabilityGuidance}>
+              Add an upcoming stop, go live, or update your profile to show customers you&apos;re active.
+            </Text>
+          ) : null}
+        </View>
 
         {showChecklist && (
           <View style={styles.checklistCard}>
@@ -1139,6 +1187,65 @@ const styles = StyleSheet.create({
   },
   inspectionButtonHalf: {
     flex: 1,
+  },
+  reliabilityCard: {
+    backgroundColor: '#fff',
+    padding: 18,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}18`,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  reliabilityHeader: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  reliabilityBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  reliabilityBadgeActive: {
+    backgroundColor: `${Colors.success}18`,
+  },
+  reliabilityBadgeQuiet: {
+    backgroundColor: `${Colors.primary}12`,
+  },
+  reliabilityBadgeText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  reliabilityBadgeTextActive: {
+    color: Colors.success,
+  },
+  reliabilityBadgeTextQuiet: {
+    color: Colors.primary,
+  },
+  reliabilityTitle: {
+    fontSize: 17,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 6,
+  },
+  reliabilityText: {
+    fontSize: 14,
+    color: Colors.dark,
+    marginBottom: 4,
+  },
+  reliabilityMeta: {
+    fontSize: 13,
+    color: Colors.gray,
+    marginBottom: 8,
+  },
+  reliabilityGuidance: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: Colors.gray,
   },
   liveCard: {
     backgroundColor: '#fff',

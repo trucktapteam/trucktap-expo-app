@@ -9,7 +9,7 @@ import { useFilteredTrucks, useApp } from '@/contexts/AppContext';
 import { Image } from 'expo-image';
 import { supabase } from '@/lib/supabase';
 import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, getSafeSpotterDisplayName, hasSightingCoordinates } from '@/lib/sightings';
-import { Sighting } from '@/types';
+import { FoodTruck, Sighting } from '@/types';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { getTruckDisplayLocation } from '@/lib/truckLocation';
 
@@ -114,7 +114,7 @@ const openSightingNavigation = (latitude?: number, longitude?: number) => {
 
 export default function CustomerHomeScreen() {
   const router = useRouter();
-  const { currentUser, isTruckOpenNow, getNextUpcomingStopForTruck, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews, showClosed, setShowClosed } = useApp();
+  const { currentUser, isTruckOpenNow, getNextUpcomingStopForTruck, getTruckActivityStatus, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews, showClosed, setShowClosed } = useApp();
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -168,10 +168,58 @@ export default function CustomerHomeScreen() {
     return ids;
   }, [allTrucks, isTruckOpenNow]);
 
+  const getDistanceFromCenter = useCallback((truck: FoodTruck): number | null => {
+    if (!centerPoint || !hasCoordinates(truck)) return null;
+
+    return calculateDistance(
+      centerPoint.latitude,
+      centerPoint.longitude,
+      truck.location.latitude,
+      truck.location.longitude
+    );
+  }, [centerPoint]);
+
+  const sortTrucksByReliability = useCallback((trucks: FoodTruck[]) => (
+    trucks
+      .map((truck, index) => {
+        const activityStatus = getTruckActivityStatus(truck);
+        const lastActivityTime = activityStatus.lastActivityAt
+          ? Date.parse(activityStatus.lastActivityAt)
+          : 0;
+
+        return {
+          truck,
+          index,
+          openNow: openTruckIds.has(truck.id),
+          hasUpcomingStop: activityStatus.hasUpcomingStop,
+          activeOnTruckTap: activityStatus.activeOnTruckTap,
+          lastActivityTime: Number.isFinite(lastActivityTime) ? lastActivityTime : 0,
+          distance: getDistanceFromCenter(truck),
+          name: truck.name?.trim().toLowerCase() ?? '',
+        };
+      })
+      .sort((a, b) => {
+        if (a.openNow !== b.openNow) return a.openNow ? -1 : 1;
+        if (a.hasUpcomingStop !== b.hasUpcomingStop) return a.hasUpcomingStop ? -1 : 1;
+        if (a.activeOnTruckTap !== b.activeOnTruckTap) return a.activeOnTruckTap ? -1 : 1;
+        if (a.lastActivityTime !== b.lastActivityTime) return b.lastActivityTime - a.lastActivityTime;
+
+        if (a.distance !== null && b.distance !== null && a.distance !== b.distance) {
+          return a.distance - b.distance;
+        }
+
+        const nameCompare = a.name.localeCompare(b.name);
+        if (nameCompare !== 0) return nameCompare;
+
+        return a.index - b.index;
+      })
+      .map(item => item.truck)
+  ), [getDistanceFromCenter, getTruckActivityStatus, openTruckIds]);
+
   const mapTrucks = useMemo(() => {
     const trimmedQuery = searchQuery.trim().toLowerCase();
 
-    const result = allTrucks.filter((truck: any) => {
+    const result = allTrucks.filter((truck: FoodTruck) => {
       if (truck?.archived === true || truck?.archivedAt) return false;
 
       if (!hasMapLocation(truck)) return false;
@@ -192,13 +240,13 @@ export default function CustomerHomeScreen() {
       return true;
     });
 
-    return result;
-  }, [allTrucks, searchQuery, showClosed, openTruckIds]);
+    return sortTrucksByReliability(result);
+  }, [allTrucks, searchQuery, showClosed, openTruckIds, sortTrucksByReliability]);
 
   const listTrucks = useMemo(() => {
     const trimmedQuery = searchQuery.trim().toLowerCase();
 
-    return allTrucks.filter((truck: any) => {
+    const result = allTrucks.filter((truck: FoodTruck) => {
       if (truck?.archived === true || truck?.archivedAt) return false;
 
       if (!isAdmin && centerPoint && hasCoordinates(truck)) {
@@ -226,7 +274,9 @@ export default function CustomerHomeScreen() {
 
       return true;
     });
-  }, [allTrucks, centerPoint, customerRadius, isAdmin, searchQuery, showClosed, openTruckIds]);
+
+    return sortTrucksByReliability(result);
+  }, [allTrucks, centerPoint, customerRadius, isAdmin, searchQuery, showClosed, openTruckIds, sortTrucksByReliability]);
 
   const hasFeedContent = listTrucks.length > 0 || sightings.length > 0;
 
