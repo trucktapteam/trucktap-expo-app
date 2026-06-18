@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert, Linking, Platform, Modal, Pressable } from 'react-native';
 import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, Truck, ChevronLeft, Sun, Moon, Smartphone, Facebook, Instagram } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -14,6 +15,7 @@ import { useAccountDeletion } from '@/hooks/useAccountDeletion';
 
 const FACEBOOK_URL = 'https://www.facebook.com/TruckTap';
 const INSTAGRAM_URL = 'https://www.instagram.com/trucktapapp';
+const TIKTOK_URL = 'https://www.tiktok.com/@trucktap';
 
 export default function SettingsScreen() {
   const { currentUser, logout } = useApp();
@@ -101,7 +103,7 @@ export default function SettingsScreen() {
   const handleReportBug = () => {
     const email = 'support@trucktap.app';
     const subject = 'Bug Report - TruckTap';
-    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 1.0.33`;
+    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 1.0.50`;
     
     Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   };
@@ -413,6 +415,16 @@ export default function SettingsScreen() {
               </View>
               <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
             </TouchableOpacity>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <TouchableOpacity style={styles.socialRow} onPress={() => handleOpenSocialLink(TIKTOK_URL)}>
+              <View style={styles.socialLeft}>
+                <Ionicons name="logo-tiktok" size={20} color={colors.primary} />
+                <Text style={[styles.socialText, { color: colors.primary }]}>TikTok</Text>
+              </View>
+              <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity style={[styles.truckOwnerButton, { backgroundColor: colors.cardBackground, borderColor: `${colors.primary}30` }]} onPress={handleSwitchToTruck}>
@@ -433,7 +445,7 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        <Text style={[styles.versionFooter, { color: colors.secondaryText }]}>v1.0.33</Text>
+        <Text style={[styles.versionFooter, { color: colors.secondaryText }]}>v1.0.50</Text>
         <View style={styles.bottomSpacing} />
       </ScrollView>
 

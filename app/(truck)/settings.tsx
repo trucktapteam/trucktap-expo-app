@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform, Switch } from 'react-native';
 import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, ArrowLeft, Archive, ArchiveRestore } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +21,9 @@ const DEFAULT_OWNER_NOTIFICATION_PREFS: OwnerNotificationPreferences = {
   favorites: true,
   reviews: true,
 };
+const FACEBOOK_URL = 'https://www.facebook.com/TruckTap';
+const INSTAGRAM_URL = 'https://www.instagram.com/trucktapapp';
+const TIKTOK_URL = 'https://www.tiktok.com/@trucktap';
 
 export default function TruckSettings() {
   const {
@@ -270,7 +274,7 @@ setCurrentUser(customerUser);
   const handleReportBug = () => {
     const email = 'support@trucktap.app';
     const subject = 'Bug Report - TruckTap';
-    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 1.0.33`;
+    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 1.0.50`;
     
     Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   };
@@ -281,6 +285,13 @@ setCurrentUser(customerUser);
     const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}`;
     
     Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+  };
+
+  const handleOpenSocialLink = (url: string) => {
+    Linking.openURL(url).catch((error) => {
+      console.log('Error opening social link:', error);
+      Alert.alert('Error', 'Unable to open that link right now.');
+    });
   };
 
   return (
@@ -491,6 +502,38 @@ setCurrentUser(customerUser);
             <Text style={[styles.actionButtonText, { color: colors.primary }]}>Send Feedback</Text>
             <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
           </TouchableOpacity>
+
+          <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+            <Text style={[styles.followTitle, { color: colors.text }]}>Follow TruckTap</Text>
+
+            <TouchableOpacity style={styles.socialRow} onPress={() => handleOpenSocialLink(FACEBOOK_URL)}>
+              <View style={styles.socialLeft}>
+                <Ionicons name="logo-facebook" size={20} color={colors.primary} />
+                <Text style={[styles.socialText, { color: colors.primary }]}>Facebook</Text>
+              </View>
+              <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
+            </TouchableOpacity>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <TouchableOpacity style={styles.socialRow} onPress={() => handleOpenSocialLink(INSTAGRAM_URL)}>
+              <View style={styles.socialLeft}>
+                <Ionicons name="logo-instagram" size={20} color={colors.primary} />
+                <Text style={[styles.socialText, { color: colors.primary }]}>Instagram</Text>
+              </View>
+              <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
+            </TouchableOpacity>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <TouchableOpacity style={styles.socialRow} onPress={() => handleOpenSocialLink(TIKTOK_URL)}>
+              <View style={styles.socialLeft}>
+                <Ionicons name="logo-tiktok" size={20} color={colors.primary} />
+                <Text style={[styles.socialText, { color: colors.primary }]}>TikTok</Text>
+              </View>
+              <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -506,7 +549,7 @@ setCurrentUser(customerUser);
 
             <View style={styles.aboutRow}>
               <Text style={[styles.aboutLabel, { color: colors.text }]}>Version</Text>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>1.0.33</Text>
+              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>v1.0.50</Text>
             </View>
 
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -681,6 +724,26 @@ const styles = StyleSheet.create({
   },
   aboutValue: {
     fontSize: 16,
+  },
+  followTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    marginBottom: 8,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  socialLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  socialText: {
+    fontSize: 16,
+    fontWeight: '500' as const,
   },
   bottomSpacing: {
     height: 40,

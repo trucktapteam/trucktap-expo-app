@@ -2,7 +2,7 @@
   "expo": {
     "name": "TruckTap Food Truck Finder",
     "slug": "trucktap-food-truck-finder-cqgko70",
-    "version": "1.0.49",
+    "version": "1.0.50",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "trucktap",
