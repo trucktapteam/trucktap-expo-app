@@ -182,6 +182,7 @@ const mapOwnerMessageRow = (row: any, readAt?: string | null): OwnerMessage => (
 
 const UPCOMING_STOP_STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
 const INACTIVITY_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+const ACTIVE_ON_TRUCKTAP_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 const normalizeUpcomingStopStatus = (status: unknown): UpcomingStopStatus =>
   UPCOMING_STOP_STATUSES.includes(status as UpcomingStopStatus)
@@ -207,6 +208,22 @@ export type TruckActivitySummary = {
   announcementCount: number;
   recentAnnouncementCount: number;
   daysSinceActivity: number | null;
+};
+
+export type TruckActivityStatus = {
+  lastActivityAt?: string;
+  lastActivityLabel: string;
+  activeOnTruckTap: boolean;
+  activeReason:
+    | 'open_now'
+    | 'recent_live_activity'
+    | 'upcoming_stop'
+    | 'recent_meaningful_activity'
+    | 'none';
+  daysSinceActivity: number | null;
+  hasUpcomingStop: boolean;
+  hasRecentLiveActivity: boolean;
+  hasRecentMeaningfulActivity: boolean;
 };
 
 export type AppState = {
@@ -281,6 +298,7 @@ export type AppState = {
   getAnnouncements: (truckId: string) => Announcement[];
   getUpcomingStops: (truckId: string) => UpcomingStop[];
   getNextUpcomingStopForTruck: (truckId: string) => UpcomingStop | null;
+  getTruckActivityStatus: (truck: FoodTruck | null | undefined) => TruckActivityStatus;
   getTruckActivitySummary: (truckId: string) => TruckActivitySummary;
   isTruckInactive: (truckId: string) => boolean;
   addUpcomingStop: (stop: Omit<UpcomingStop, 'id' | 'created_at' | 'updated_at'>) => Promise<UpcomingStop>;
@@ -2419,6 +2437,86 @@ if (error) {
     }) ?? null;
   }, [upcomingStops]);
 
+  const getTruckActivityStatus = useCallback((truck: FoodTruck | null | undefined): TruckActivityStatus => {
+    const now = Date.now();
+    const requestedId = truck?.id?.toString() ?? '';
+    const parseActivityTime = (value: string | number | null | undefined): number | null => {
+      if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+      }
+      if (typeof value === 'string') {
+        const parsed = Date.parse(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return null;
+    };
+    const formatLastActivityLabel = (timestamp: number | null): string => {
+      if (timestamp === null) return '';
+
+      const startOfToday = new Date(now);
+      startOfToday.setHours(0, 0, 0, 0);
+      const startOfActivityDay = new Date(timestamp);
+      startOfActivityDay.setHours(0, 0, 0, 0);
+      const diffDays = Math.max(
+        0,
+        Math.floor((startOfToday.getTime() - startOfActivityDay.getTime()) / (24 * 60 * 60 * 1000))
+      );
+
+      if (diffDays === 0) return 'Updated Today';
+      if (diffDays === 1) return 'Updated Yesterday';
+      return `Updated ${diffDays} Days Ago`;
+    };
+
+    const futureStops = upcomingStops.filter((stop) => {
+      if (!requestedId || stop.truck_id?.toString() !== requestedId) return false;
+      if (stop.status !== 'scheduled') return false;
+
+      const startsAt = parseActivityTime(stop.starts_at);
+      return startsAt !== null && startsAt > now;
+    });
+    const hasUpcomingStop = futureStops.length > 0;
+    const stopActivityTime = futureStops
+      .map(stop => parseActivityTime(stop.updated_at) ?? parseActivityTime(stop.created_at))
+      .filter((timestamp): timestamp is number => timestamp !== null)
+      .sort((a, b) => b - a)[0] ?? null;
+    const lastLiveTime = parseActivityTime(truck?.lastLiveUpdatedAt);
+    const ownerActivityTime = parseActivityTime(truck?.lastOwnerActivityAt);
+    const lastUpdatedTime = parseActivityTime(truck?.lastUpdated);
+    const lastActivityTime =
+      lastLiveTime ??
+      ownerActivityTime ??
+      lastUpdatedTime ??
+      stopActivityTime;
+    const hasRecentLiveActivity =
+      lastLiveTime !== null && now - lastLiveTime <= ACTIVE_ON_TRUCKTAP_WINDOW_MS;
+    const meaningfulActivityTimes = [ownerActivityTime, lastUpdatedTime, stopActivityTime]
+      .filter((timestamp): timestamp is number => timestamp !== null);
+    const hasRecentMeaningfulActivity = meaningfulActivityTimes.some(
+      timestamp => now - timestamp <= ACTIVE_ON_TRUCKTAP_WINDOW_MS
+    );
+    const activeReason: TruckActivityStatus['activeReason'] = truck?.open_now
+      ? 'open_now'
+      : hasRecentLiveActivity
+      ? 'recent_live_activity'
+      : hasUpcomingStop
+      ? 'upcoming_stop'
+      : hasRecentMeaningfulActivity
+      ? 'recent_meaningful_activity'
+      : 'none';
+
+    return {
+      lastActivityAt: lastActivityTime === null ? undefined : new Date(lastActivityTime).toISOString(),
+      lastActivityLabel: formatLastActivityLabel(lastActivityTime),
+      activeOnTruckTap: activeReason !== 'none',
+      activeReason,
+      daysSinceActivity:
+        lastActivityTime === null ? null : Math.max(0, Math.floor((now - lastActivityTime) / (24 * 60 * 60 * 1000))),
+      hasUpcomingStop,
+      hasRecentLiveActivity,
+      hasRecentMeaningfulActivity,
+    };
+  }, [upcomingStops]);
+
   const getTruckActivitySummary = useCallback((truckId: string): TruckActivitySummary => {
     const requestedId = truckId?.toString() ?? '';
     const now = Date.now();
@@ -2984,6 +3082,7 @@ if (error) {
     getAnnouncements,
     getUpcomingStops,
     getNextUpcomingStopForTruck,
+    getTruckActivityStatus,
     getTruckActivitySummary,
     isTruckInactive,
     addUpcomingStop,
@@ -3022,7 +3121,7 @@ if (error) {
     qrShared, markQrShared, dismissChecklist, incrementView, incrementMenuView, incrementCall,
     incrementNavigation, incrementPhotoView, getTruckAnalytics, addAnnouncement,
     deleteAnnouncement, getAnnouncements, getUpcomingStops, addUpcomingStop,
-    getNextUpcomingStopForTruck, getTruckActivitySummary, isTruckInactive,
+    getNextUpcomingStopForTruck, getTruckActivityStatus, getTruckActivitySummary, isTruckInactive,
     updateUpcomingStop, deleteUpcomingStop, fetchUpcomingStopsFromSupabase,
     setTruckVerified, logout,
     incrementQrScan, getQrScanStats, allTrucksLoading, fetchAllTrucksFromSupabase, isProfileComplete,

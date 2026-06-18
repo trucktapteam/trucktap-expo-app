@@ -128,24 +128,36 @@ export default function TruckSetupScreen() {
         return;
       }
 
-      console.log('[TruckSetup] Truck created in Supabase:', data.id);
+      console.log('[TruckSetup] New profile/truck created:', {
+        truckId: data.id,
+        truckName: data.name,
+        ownerId: data.owner_id,
+      });
       await refreshOwnedTrucks();
 
       try {
-        const { error: fnError } = await supabase.functions.invoke('notify-new-truck', {
-          body: {
-            truckId: data.id,
-            truckName: data.name,
-          },
+        const notificationPayload = {
+          truckId: data.id,
+          truckName: data.name,
+        };
+
+        console.log('[TruckSetup] Notification payload sent:', notificationPayload);
+
+        const { data: fnData, error: fnError } = await supabase.functions.invoke('notify-new-truck', {
+          body: notificationPayload,
         });
 
         if (fnError) {
-          console.log('[TruckSetup] Error invoking new truck notification:', fnError.message);
+          console.log('[TruckSetup] Error response invoking new truck notification:', {
+            message: fnError.message,
+            name: fnError.name,
+            context: fnError.context,
+          });
         } else {
-          console.log('[TruckSetup] New truck notification invoked');
+          console.log('[TruckSetup] New truck notification invoked:', fnData);
         }
       } catch (err) {
-        console.log('[TruckSetup] Unexpected error invoking new truck notification:', err);
+        console.log('[TruckSetup] Error response invoking new truck notification:', err);
       }
 
       completeOnboarding();

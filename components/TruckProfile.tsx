@@ -57,7 +57,7 @@ interface TruckProfileProps {
 
 export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProps) {
   const router = useRouter();
-  const { foodTrucks, currentUser, toggleFavorite, addReview, isTruckOpenNow, incrementView, incrementNavigation, incrementMenuView, incrementPhotoView, getAnnouncements, getUpcomingStops, isProfileComplete, getDaysAgoText, menuItems, formatOperatingHours, allTrucksLoading, isOwnerLoading } = useApp();
+  const { foodTrucks, currentUser, toggleFavorite, addReview, isTruckOpenNow, incrementView, incrementNavigation, incrementMenuView, incrementPhotoView, getAnnouncements, getUpcomingStops, isProfileComplete, getTruckActivityStatus, menuItems, formatOperatingHours, allTrucksLoading, isOwnerLoading } = useApp();
   const { colors } = useTheme();
   const { isAuthenticated, user: authUser, isLoading: authLoading } = useAuth();
   
@@ -68,6 +68,10 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const truckOpenNow = useMemo(
     () => !!truck && isTruckOpenNow(truck.id),
     [truck, isTruckOpenNow]
+  );
+  const activityStatus = useMemo(
+    () => getTruckActivityStatus(truck),
+    [getTruckActivityStatus, truck]
   );
 
   const isOwnerOfTruck = useMemo(() => {
@@ -535,13 +539,18 @@ console.log('[FORMAT DATE]', dateInput);
                 ) : (
                   <Text style={styles.incompleteText}>🍴Preparing🍴</Text>
                 )}
-                {truck.lastUpdated ? (
+                {activityStatus.lastActivityLabel ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Text style={styles.trustDot}>•</Text>
-                    <Text style={styles.trustText}>{getDaysAgoText(truck.lastUpdated)}</Text>
+                    <Text style={styles.trustText}>{activityStatus.lastActivityLabel}</Text>
                   </View>
                 ) : null}
               </View>
+              {activityStatus.activeOnTruckTap && (
+                <View style={styles.activityBadge}>
+                  <Text style={styles.activityBadgeText}>🟢 Active on TruckTap</Text>
+                </View>
+              )}
               {count > 0 && (
                 <View style={styles.ratingRow}>
                   {renderStars(average, 18)}
@@ -1074,6 +1083,7 @@ emptyReviewText: {
     alignItems: 'center',
     marginTop: 6,
     gap: 6,
+    flexWrap: 'wrap',
   },
   trustIndicator: {
     flexDirection: 'row',
@@ -1094,6 +1104,21 @@ emptyReviewText: {
     fontSize: 13,
     color: colors.secondaryText,
     fontStyle: 'italic' as const,
+  },
+  activityBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: `${colors.success}12`,
+    borderWidth: 1,
+    borderColor: `${colors.success}30`,
+  },
+  activityBadgeText: {
+    fontSize: 13,
+    color: colors.success,
+    fontWeight: '700' as const,
   },
   cuisine: {
     fontSize: 17,
