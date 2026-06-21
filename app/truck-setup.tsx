@@ -135,31 +135,6 @@ export default function TruckSetupScreen() {
       });
       await refreshOwnedTrucks();
 
-      try {
-        const notificationPayload = {
-          truckId: data.id,
-          truckName: data.name,
-        };
-
-        console.log('[TruckSetup] Notification payload sent:', notificationPayload);
-
-        const { data: fnData, error: fnError } = await supabase.functions.invoke('notify-new-truck', {
-          body: notificationPayload,
-        });
-
-        if (fnError) {
-          console.log('[TruckSetup] Error response invoking new truck notification:', {
-            message: fnError.message,
-            name: fnError.name,
-            context: fnError.context,
-          });
-        } else {
-          console.log('[TruckSetup] New truck notification invoked:', fnData);
-        }
-      } catch (err) {
-        console.log('[TruckSetup] Error response invoking new truck notification:', err);
-      }
-
       completeOnboarding();
       console.log('[TruckSetup] Navigating to dashboard');
       router.replace('/(truck)/(tabs)/dashboard' as any);

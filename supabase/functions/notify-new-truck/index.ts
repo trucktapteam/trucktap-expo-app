@@ -10,11 +10,18 @@ serve(async (req) => {
     const record = payload.record ?? payload;
     const truckId = record?.truckId ?? record?.truck_id ?? record?.id;
     const truckName = record?.truckName ?? record?.truck_name ?? record?.name ?? "A new truck";
+    const ownerId = record?.ownerId ?? record?.owner_id;
+    const createdAt = record?.createdAt ?? record?.created_at;
 
-    console.log("[notify-new-truck] New profile/truck created:", {
+    console.log("[notify-new-truck] Trigger/function received payload:", {
       truckId,
       truckName,
+      ownerId,
+      createdAt,
+      sourceTable: payload?.table ?? null,
+      operation: payload?.type ?? null,
       payloadKeys: Object.keys(payload ?? {}),
+      recordKeys: Object.keys(record ?? {}),
     });
 
     if (!truckId) {
@@ -38,25 +45,32 @@ serve(async (req) => {
       return new Response("Error", { status: 500 });
     }
 
-    console.log("[notify-new-truck] Admin push tokens found:", adminProfiles?.length ?? 0);
+    console.log("[notify-new-truck] Admin token count:", adminProfiles?.length ?? 0);
 
     if (!adminProfiles || adminProfiles.length === 0) {
       console.log("[notify-new-truck] Error response: no admin push tokens found");
       return new Response("No admin push tokens", { status: 200 });
     }
 
-    const messages = adminProfiles.map((p) => ({
-      to: p.push_token,
-      sound: "default",
-      title: "New food truck added",
-      body: `${truckName} just joined TruckTap`,
-      data: {
-        type: NOTIFICATION_TYPE,
-        truckId,
-        truck_id: truckId,
-        route: `/truck/${truckId}`,
-      },
-    }));
+    const messages = adminProfiles
+      .filter((p) => typeof p.push_token === "string" && p.push_token.trim().length > 0)
+      .map((p) => ({
+        to: p.push_token,
+        sound: "default",
+        title: "New food truck added",
+        body: `${truckName} just joined TruckTap`,
+        data: {
+          type: NOTIFICATION_TYPE,
+          truckId,
+          truck_id: truckId,
+          route: `/truck/${truckId}`,
+        },
+      }));
+
+    if (messages.length === 0) {
+      console.log("[notify-new-truck] Error response: admin token query returned no usable push tokens");
+      return new Response("No usable admin push tokens", { status: 200 });
+    }
 
     console.log("[notify-new-truck] Notification payload sent:", JSON.stringify(messages));
 
@@ -71,6 +85,20 @@ serve(async (req) => {
     const result = await res.json();
     console.log("[notify-new-truck] Expo push ticket response:", JSON.stringify(result, null, 2));
 
+    const tickets = Array.isArray(result?.data) ? result.data : [];
+    const ticketErrors = tickets
+      .map((ticket: any, index: number) => ({ index, ticket }))
+      .filter(({ ticket }: { ticket: any }) => ticket?.status === "error");
+
+    if (ticketErrors.length > 0 || result?.errors) {
+      console.log("[notify-new-truck] Expo ticket-level errors:", JSON.stringify({
+        ticketErrors,
+        requestErrors: result?.errors ?? null,
+      }, null, 2));
+    } else {
+      console.log("[notify-new-truck] Expo ticket-level errors: none");
+    }
+
     if (!res.ok) {
       console.log("[notify-new-truck] Error response: Expo push failed:", {
         status: res.status,
@@ -80,7 +108,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, expoResult: result }),
+      JSON.stringify({ success: true, expoResult: result, ticketErrorCount: ticketErrors.length }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
