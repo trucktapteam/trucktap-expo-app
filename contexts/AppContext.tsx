@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import { AppState as RNAppState } from 'react-native';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, FoodTruck, Review, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType, UpcomingStop, UpcomingStopStatus } from '@/types';
+import { User, FoodTruck, Review, ReviewReply, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType, UpcomingStop, UpcomingStopStatus } from '@/types';
 import { teamUpdates } from '@/mocks/data';
 import { DEBUG } from '@/constants/debug';
 import { useAuth } from '@/contexts/AuthContext';
@@ -100,6 +100,11 @@ const isMissingLocationConflictTargetError = (message?: string | null): boolean 
   typeof message === 'string' &&
   message.toLowerCase().includes('no unique or exclusion constraint') &&
   message.toLowerCase().includes('on conflict');
+
+const isMissingRelationError = (message?: string | null): boolean =>
+  typeof message === 'string' &&
+  message.toLowerCase().includes('relation') &&
+  message.toLowerCase().includes('does not exist');
 
 const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   const dbUpdates: Record<string, any> = {};
@@ -266,6 +271,9 @@ export type AppState = {
   isOwnerLoading: boolean;
   refreshOwnedTrucks: () => Promise<void>;
   addReview: (truckId: string, rating: number, text: string) => void;
+  addReviewReply: (reviewId: string, truckId: string, body: string) => Promise<void>;
+  updateReviewReply: (replyId: string, body: string) => Promise<void>;
+  deleteReviewReply: (replyId: string) => Promise<void>;
   getReviews: (truckId: string) => Review[];
   getAverageRating: (truckId: string) => { average: number; count: number };
   addMenuItem: (item: Omit<MenuItem, 'id'>) => Promise<MenuItem | null>;
@@ -562,12 +570,50 @@ export const [AppProvider, useApp] = createContextHook(() => {
       }
     }
 
+    const reviewIds = (reviewRows ?? [])
+      .map((row: any) => row.id?.toString?.() ?? '')
+      .filter(Boolean);
+    let repliesByReviewId: Record<string, ReviewReply> = {};
+
+    if (reviewIds.length > 0) {
+      const { data: replyRows, error: replyError } = await supabase
+        .from('review_replies')
+        .select('id, review_id, truck_id, owner_id, body, created_at, updated_at')
+        .in('review_id', reviewIds)
+        .is('deleted_at', null);
+
+      if (replyError) {
+        if (isMissingRelationError(replyError.message)) {
+          console.log('[AppContext] Review replies table not available yet');
+        } else {
+          console.log('[AppContext] Supabase fetch review replies error:', replyError.message);
+        }
+      } else {
+        repliesByReviewId = (replyRows ?? []).reduce((acc: Record<string, ReviewReply>, reply: any) => {
+          const reviewId = reply.review_id?.toString?.() ?? '';
+          if (!reviewId) return acc;
+
+          acc[reviewId] = {
+            id: reply.id?.toString() ?? '',
+            reviewId,
+            truckId: reply.truck_id?.toString?.() ?? '',
+            ownerId: reply.owner_id?.toString?.() ?? '',
+            body: reply.body ?? '',
+            createdAt: reply.created_at ? String(reply.created_at) : new Date().toISOString(),
+            updatedAt: reply.updated_at ? String(reply.updated_at) : new Date().toISOString(),
+          };
+          return acc;
+        }, {});
+      }
+    }
+
     const mappedReviews = (reviewRows ?? []).map((row: any) => {
   const userId = row.user_id?.toString() ?? '';
   const profile = profilesById[userId];
+  const reviewId = row.id?.toString() ?? '';
 
   return {
-    id: row.id?.toString() ?? '',
+    id: reviewId,
     truckId: row.truck_id?.toString() ?? '',
     rating: typeof row.rating === 'number' ? row.rating : Number(row.rating) || 0,
     text: row.text ?? '',
@@ -579,6 +625,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       name: profile?.display_name || 'Food Truck Fan',
       profile_photo: profile?.profile_photo ?? null,
     },
+    ownerReply: repliesByReviewId[reviewId] ?? null,
   };
 }) as Review[];
     setReviews(mappedReviews);
@@ -698,9 +745,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
           });
         });
         if (DEBUG) console.log('[AppContext] Extracted', extractedMenuItems.length, 'menu items,', extractedAnnouncements.length, 'announcements');
-        if (extractedMenuItems.length > 0) {
-          setMenuItems(extractedMenuItems);
-        }
+        setMenuItems(extractedMenuItems);
         setAnnouncements(extractedAnnouncements);
       }
     } catch (err: any) {
@@ -2046,6 +2091,95 @@ if (error) {
   [authLoading, isAuthenticated, authUser, currentUser, userProfile, fetchReviewsFromSupabase]
 );
 
+  const addReviewReply = useCallback(async (reviewId: string, truckId: string, body: string): Promise<void> => {
+    if (!isAuthenticated || !authUser) {
+      throw new Error('Not authenticated');
+    }
+    if (!userOwnsTruck(truckId)) {
+      throw new Error(`User does not own truck ${truckId}`);
+    }
+
+    const trimmedBody = body.trim();
+    if (!trimmedBody) {
+      throw new Error('Reply cannot be empty');
+    }
+
+    const { error } = await supabase
+      .from('review_replies')
+      .insert({
+        review_id: reviewId,
+        truck_id: truckId,
+        owner_id: authUser.id,
+        body: trimmedBody,
+      });
+
+    if (error) {
+      console.log('[AppContext] addReviewReply error:', error.message);
+      throw new Error(`Could not save reply: ${error.message}`);
+    }
+
+    await fetchReviewsFromSupabase();
+  }, [authUser, fetchReviewsFromSupabase, isAuthenticated, userOwnsTruck]);
+
+  const updateReviewReply = useCallback(async (replyId: string, body: string): Promise<void> => {
+    if (!isAuthenticated || !authUser) {
+      throw new Error('Not authenticated');
+    }
+
+    const reply = reviews.map(review => review.ownerReply).find(item => item?.id === replyId);
+    if (!reply) {
+      throw new Error('Reply not found');
+    }
+    if (!userOwnsTruck(reply.truckId)) {
+      throw new Error(`User does not own truck ${reply.truckId}`);
+    }
+
+    const trimmedBody = body.trim();
+    if (!trimmedBody) {
+      throw new Error('Reply cannot be empty');
+    }
+
+    const { error } = await supabase
+      .from('review_replies')
+      .update({ body: trimmedBody })
+      .eq('id', replyId)
+      .is('deleted_at', null);
+
+    if (error) {
+      console.log('[AppContext] updateReviewReply error:', error.message);
+      throw new Error(`Could not update reply: ${error.message}`);
+    }
+
+    await fetchReviewsFromSupabase();
+  }, [authUser, fetchReviewsFromSupabase, isAuthenticated, reviews, userOwnsTruck]);
+
+  const deleteReviewReply = useCallback(async (replyId: string): Promise<void> => {
+    if (!isAuthenticated || !authUser) {
+      throw new Error('Not authenticated');
+    }
+
+    const reply = reviews.map(review => review.ownerReply).find(item => item?.id === replyId);
+    if (!reply) {
+      throw new Error('Reply not found');
+    }
+    if (!userOwnsTruck(reply.truckId)) {
+      throw new Error(`User does not own truck ${reply.truckId}`);
+    }
+
+    const { error } = await supabase
+      .from('review_replies')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', replyId)
+      .is('deleted_at', null);
+
+    if (error) {
+      console.log('[AppContext] deleteReviewReply error:', error.message);
+      throw new Error(`Could not delete reply: ${error.message}`);
+    }
+
+    await fetchReviewsFromSupabase();
+  }, [authUser, fetchReviewsFromSupabase, isAuthenticated, reviews, userOwnsTruck]);
+
   const getReviews = useCallback((truckId: string) => {
     return reviews.filter(review => review.truckId === truckId).sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -3061,6 +3195,9 @@ if (error) {
     refreshOwnedTrucks,
     supabaseOwnedTrucks,
     addReview,
+    addReviewReply,
+    updateReviewReply,
+    deleteReviewReply,
     getReviews,
     getAverageRating,
     addMenuItem,
@@ -3118,6 +3255,7 @@ if (error) {
     removeMenuImage, addTruckImage, addGalleryImage, removeGalleryImage,
     removeTruckImage, updateTruckDetails, getUserTruck, getOwnedTrucks,
     isOwner, isOwnerLoading, refreshOwnedTrucks, supabaseOwnedTrucks, addReview,
+    addReviewReply, updateReviewReply, deleteReviewReply,
     getReviews, getAverageRating, addMenuItem, updateMenuItem, deleteMenuItem,
     updateOperatingHours, getOperatingHours, isTruckOpenNow, hasHoursSet,
     qrShared, markQrShared, dismissChecklist, incrementView, incrementMenuView, incrementCall,

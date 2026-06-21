@@ -665,7 +665,7 @@ console.log('[FORMAT DATE]', dateInput);
             )}
           </TruckSectionCard>
 
-          {truckMenuItems.length > 0 ? (
+          {truckMenuItems.length > 0 && (
             <TruckSectionCard>
               <View style={styles.sectionHeaderRow}>
                <Text style={{ color: '#111111', fontSize: 20, fontWeight: '700' }}>Menu</Text>
@@ -709,15 +709,6 @@ console.log('[FORMAT DATE]', dateInput);
                 ))}
               </ScrollView>
             </TruckSectionCard>
-          ) : (
-            truckMenuItems.length === 0 && mode === 'customer' && (
-              <TruckSectionCard>
-                <View style={styles.emptyMenuState}>
-                  <Utensils size={32} color={colors.secondaryText} />
-                  <Text style={styles.emptyMenuText}>Menu not available yet</Text>
-                </View>
-              </TruckSectionCard>
-            )
           )}
 
           <UpcomingStopsRow stops={getUpcomingStops(truck.id)} />
@@ -844,6 +835,16 @@ console.log('[FORMAT DATE]', dateInput);
           <Text style={styles.reviewTime}>{formatTimestamp(review.createdAt)}</Text>
         </View>
         <ExpandableText text={review.text} numberOfLines={3} style={styles.reviewComment} />
+        {review.ownerReply && (
+          <View style={styles.ownerReplyCard}>
+            <Text style={styles.ownerReplyLabel}>Owner response</Text>
+            <ExpandableText
+              text={review.ownerReply.body}
+              numberOfLines={3}
+              style={styles.ownerReplyText}
+            />
+          </View>
+        )}
       </View>
     ))
   ) : (
@@ -916,6 +917,16 @@ console.log('[FORMAT DATE]', dateInput);
               numberOfLines={6}
               style={styles.reviewComment}
             />
+            {review.ownerReply && (
+              <View style={styles.ownerReplyCard}>
+                <Text style={styles.ownerReplyLabel}>Owner response</Text>
+                <ExpandableText
+                  text={review.ownerReply.body}
+                  numberOfLines={6}
+                  style={styles.ownerReplyText}
+                />
+              </View>
+            )}
           </View>
         ))}
       </ScrollView>
@@ -1387,6 +1398,27 @@ emptyReviewText: {
     color: colors.secondaryText,
     lineHeight: 22,
   },
+  ownerReplyCard: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: colors.cardBackground,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  ownerReplyLabel: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: colors.primary,
+    marginBottom: 6,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+  },
+  ownerReplyText: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 20,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1563,16 +1595,6 @@ announcementTime: {
     fontSize: 16,
     fontWeight: '700' as const,
     color: colors.primary,
-  },
-  emptyMenuState: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    gap: 12,
-  },
-  emptyMenuText: {
-    fontSize: 15,
-    color: colors.secondaryText,
-    fontWeight: '500' as const,
   },
   emptyAnnouncementState: {
     alignItems: 'center',

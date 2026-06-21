@@ -72,11 +72,22 @@ export type Review = {
   rating: number;
   text: string;
   createdAt: string;
+  ownerReply?: ReviewReply | null;
   user: {
     id: string;
     name: string;
     profile_photo?: string;
   };
+};
+
+export type ReviewReply = {
+  id: string;
+  reviewId: string;
+  truckId: string;
+  ownerId: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type MenuItem = {

@@ -97,7 +97,7 @@ export default function FullMenuScreen() {
       ) : (
         <View style={styles.emptyState}>
           <Utensils size={64} color={colors.secondaryText} />
-          <Text style={styles.emptyText}>Menu Still Being Created</Text>
+          <Text style={styles.emptyText}>Menu coming soon</Text>
         </View>
       )}
 
