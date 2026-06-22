@@ -122,7 +122,7 @@ export default function FullMenuScreen() {
                   <Image 
                     source={{ uri: selectedMenuItem.image }} 
                     style={styles.menuItemModalImage}
-                    contentFit="cover"
+                    contentFit="contain"
                   />
                 ) : (
                   <View style={styles.menuItemModalImagePlaceholder}>
