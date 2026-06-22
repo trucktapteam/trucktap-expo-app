@@ -84,7 +84,6 @@ export type ReviewReply = {
   id: string;
   reviewId: string;
   truckId: string;
-  ownerId: string;
   body: string;
   createdAt: string;
   updatedAt: string;

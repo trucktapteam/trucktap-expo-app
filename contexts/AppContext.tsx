@@ -103,8 +103,11 @@ const isMissingLocationConflictTargetError = (message?: string | null): boolean 
 
 const isMissingRelationError = (message?: string | null): boolean =>
   typeof message === 'string' &&
-  message.toLowerCase().includes('relation') &&
-  message.toLowerCase().includes('does not exist');
+  (
+    (message.toLowerCase().includes('relation') && message.toLowerCase().includes('does not exist'))
+    || message.toLowerCase().includes('schema cache')
+    || message.toLowerCase().includes('could not find the table')
+  );
 
 const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   const dbUpdates: Record<string, any> = {};
@@ -270,6 +273,7 @@ export type AppState = {
   isOwner: boolean;
   isOwnerLoading: boolean;
   refreshOwnedTrucks: () => Promise<void>;
+  refreshReviews: () => Promise<void>;
   addReview: (truckId: string, rating: number, text: string) => void;
   addReviewReply: (reviewId: string, truckId: string, body: string) => Promise<void>;
   updateReviewReply: (replyId: string, body: string) => Promise<void>;
@@ -578,7 +582,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (reviewIds.length > 0) {
       const { data: replyRows, error: replyError } = await supabase
         .from('review_replies')
-        .select('id, review_id, truck_id, owner_id, body, created_at, updated_at')
+        .select('id, review_id, truck_id, body, created_at, updated_at')
         .in('review_id', reviewIds)
         .is('deleted_at', null);
 
@@ -597,7 +601,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
             id: reply.id?.toString() ?? '',
             reviewId,
             truckId: reply.truck_id?.toString?.() ?? '',
-            ownerId: reply.owner_id?.toString?.() ?? '',
             body: reply.body ?? '',
             createdAt: reply.created_at ? String(reply.created_at) : new Date().toISOString(),
             updatedAt: reply.updated_at ? String(reply.updated_at) : new Date().toISOString(),
@@ -832,6 +835,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'reviews' },
+        () => {
+          void fetchReviewsFromSupabase();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'review_replies' },
         () => {
           void fetchReviewsFromSupabase();
         }
@@ -2104,18 +2114,20 @@ if (error) {
       throw new Error('Reply cannot be empty');
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('review_replies')
       .insert({
         review_id: reviewId,
         truck_id: truckId,
         owner_id: authUser.id,
         body: trimmedBody,
-      });
+      })
+      .select('id')
+      .single();
 
-    if (error) {
-      console.log('[AppContext] addReviewReply error:', error.message);
-      throw new Error(`Could not save reply: ${error.message}`);
+    if (error || !data?.id) {
+      console.log('[AppContext] addReviewReply error:', error?.message ?? 'No reply was created');
+      throw new Error(`Could not save reply: ${error?.message ?? 'No reply was created'}`);
     }
 
     await fetchReviewsFromSupabase();
@@ -2139,15 +2151,17 @@ if (error) {
       throw new Error('Reply cannot be empty');
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('review_replies')
       .update({ body: trimmedBody })
       .eq('id', replyId)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .select('id')
+      .single();
 
-    if (error) {
-      console.log('[AppContext] updateReviewReply error:', error.message);
-      throw new Error(`Could not update reply: ${error.message}`);
+    if (error || !data?.id) {
+      console.log('[AppContext] updateReviewReply error:', error?.message ?? 'No reply was updated');
+      throw new Error(`Could not update reply: ${error?.message ?? 'No reply was updated'}`);
     }
 
     await fetchReviewsFromSupabase();
@@ -2166,15 +2180,17 @@ if (error) {
       throw new Error(`User does not own truck ${reply.truckId}`);
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('review_replies')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', replyId)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .select('id')
+      .single();
 
-    if (error) {
-      console.log('[AppContext] deleteReviewReply error:', error.message);
-      throw new Error(`Could not delete reply: ${error.message}`);
+    if (error || !data?.id) {
+      console.log('[AppContext] deleteReviewReply error:', error?.message ?? 'No reply was deleted');
+      throw new Error(`Could not delete reply: ${error?.message ?? 'No reply was deleted'}`);
     }
 
     await fetchReviewsFromSupabase();
@@ -3193,6 +3209,7 @@ if (error) {
     isOwner,
     isOwnerLoading,
     refreshOwnedTrucks,
+    refreshReviews: fetchReviewsFromSupabase,
     supabaseOwnedTrucks,
     addReview,
     addReviewReply,
@@ -3254,7 +3271,7 @@ if (error) {
     toggleFavorite, addMenuImage,
     removeMenuImage, addTruckImage, addGalleryImage, removeGalleryImage,
     removeTruckImage, updateTruckDetails, getUserTruck, getOwnedTrucks,
-    isOwner, isOwnerLoading, refreshOwnedTrucks, supabaseOwnedTrucks, addReview,
+    isOwner, isOwnerLoading, refreshOwnedTrucks, fetchReviewsFromSupabase, supabaseOwnedTrucks, addReview,
     addReviewReply, updateReviewReply, deleteReviewReply,
     getReviews, getAverageRating, addMenuItem, updateMenuItem, deleteMenuItem,
     updateOperatingHours, getOperatingHours, isTruckOpenNow, hasHoursSet,

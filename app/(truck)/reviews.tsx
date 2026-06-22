@@ -12,18 +12,26 @@ import { Review } from '@/types';
 
 export default function TruckReviewsScreen() {
   const router = useRouter();
-  const { getUserTruck, addReviewReply, updateReviewReply, deleteReviewReply } = useApp();
+  const { getUserTruck, refreshReviews, addReviewReply, updateReviewReply, deleteReviewReply } = useApp();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [fadeAnim] = useState(new Animated.Value(0));
   const [replyModalVisible, setReplyModalVisible] = useState<boolean>(false);
   const [replyDraft, setReplyDraft] = useState<string>('');
-  const [selectedReview, setSelectedReview] = useState<Review | null>(null);
+  const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
   const [isSavingReply, setIsSavingReply] = useState<boolean>(false);
   useTruckLifecycleLogger('TruckReviewsScreen');
   
   const truck = getUserTruck();
   const reviews = useTruckReviews(truck?.id || '');
+  const reviewsRef = React.useRef(reviews);
+  const selectedReview = selectedReviewId
+    ? reviews.find(review => review.id === selectedReviewId) ?? null
+    : null;
   const { average, count } = useTruckRating(truck?.id || '');
+
+  React.useEffect(() => {
+    reviewsRef.current = reviews;
+  }, [reviews]);
 
   const ratingBreakdown = useMemo(() => {
     const breakdown = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
@@ -50,25 +58,28 @@ export default function TruckReviewsScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setRefreshing(false);
+    try {
+      await refreshReviews();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const openReplyModal = (review: Review) => {
-    setSelectedReview(review);
+    setSelectedReviewId(review.id);
     setReplyDraft(review.ownerReply?.body ?? '');
     setReplyModalVisible(true);
   };
 
   const closeReplyModal = () => {
     setReplyModalVisible(false);
-    setSelectedReview(null);
+    setSelectedReviewId(null);
     setReplyDraft('');
     setIsSavingReply(false);
   };
 
   const handleSaveReply = async () => {
-    if (!selectedReview || !truck) return;
+    if (!selectedReviewId || !truck) return;
 
     const body = replyDraft.trim();
     if (!body) {
@@ -78,10 +89,15 @@ export default function TruckReviewsScreen() {
 
     try {
       setIsSavingReply(true);
-      if (selectedReview.ownerReply) {
-        await updateReviewReply(selectedReview.ownerReply.id, body);
+      const latestReview = reviewsRef.current.find(review => review.id === selectedReviewId);
+      if (!latestReview) {
+        throw new Error('Review is no longer available. Refresh and try again.');
+      }
+
+      if (latestReview.ownerReply) {
+        await updateReviewReply(latestReview.ownerReply.id, body);
       } else {
-        await addReviewReply(selectedReview.id, truck.id, body);
+        await addReviewReply(latestReview.id, truck.id, body);
       }
       closeReplyModal();
     } catch (error: any) {
@@ -103,7 +119,11 @@ export default function TruckReviewsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteReviewReply(review.ownerReply!.id);
+              const latestReview = reviewsRef.current.find(item => item.id === review.id);
+              if (!latestReview?.ownerReply) {
+                throw new Error('Reply is no longer available. Refresh and try again.');
+              }
+              await deleteReviewReply(latestReview.ownerReply.id);
             } catch (error: any) {
               Alert.alert('Reply not deleted', error?.message ?? 'Could not delete your reply.');
             }

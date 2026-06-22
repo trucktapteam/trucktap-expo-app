@@ -1426,6 +1426,7 @@ emptyReviewText: {
   },
   modalContent: {
     backgroundColor: colors.cardBackground,
+    maxHeight: '85%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
