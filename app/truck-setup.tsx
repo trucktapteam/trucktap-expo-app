@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import AuthPromptModal from '@/components/AuthPromptModal';
 import Toast from '@/components/Toast';
+import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
 
 export default function TruckSetupScreen() {
   const router = useRouter();
@@ -72,8 +73,8 @@ export default function TruckSetupScreen() {
       const insertPayload = {
         owner_id: authUser.id,
         name: truckName.trim(),
-        hero_image: 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=800',
-        logo: 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=200',
+        hero_image: DEFAULT_TRUCK_HERO_IMAGE,
+        logo: DEFAULT_TRUCK_LOGO_IMAGE,
         cuisine_type: 'Unspecified',
         bio: '',
         is_open: false,

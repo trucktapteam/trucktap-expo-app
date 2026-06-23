@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, FoodTruck, Review, ReviewReply, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType, UpcomingStop, UpcomingStopStatus } from '@/types';
 import { teamUpdates } from '@/mocks/data';
 import { DEBUG } from '@/constants/debug';
+import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
 import { useAuth } from '@/contexts/AuthContext';
 import { trackEvent } from '@/lib/analytics';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
@@ -21,8 +22,6 @@ const parseJsonArray = (val: any): any[] => {
 const FOREGROUND_REFRESH_DEBOUNCE_MS = 5000;
 const STALE_OPEN_WINDOW_MS = 12 * 60 * 60 * 1000;
 const ANNOUNCEMENT_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
-const DEFAULT_HERO_IMAGE = 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=800';
-const DEFAULT_LOGO_IMAGE = 'https://images.unsplash.com/photo-1565123409695-7b5ef63a2efb?w=200';
 
 type TruckCheckInAnalytics = {
   allTime: number;
@@ -426,8 +425,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       id: row.id?.toString() ?? '',
       name: row.name ?? '',
       owner_id: row.owner_id ?? '',
-      hero_image: typeof row.hero_image === 'string' && row.hero_image.trim().length > 0 ? row.hero_image.trim() : DEFAULT_HERO_IMAGE,
-      logo: typeof row.logo === 'string' && row.logo.trim().length > 0 ? row.logo.trim() : DEFAULT_LOGO_IMAGE,
+      hero_image: typeof row.hero_image === 'string' && row.hero_image.trim().length > 0 ? row.hero_image.trim() : DEFAULT_TRUCK_HERO_IMAGE,
+      logo: typeof row.logo === 'string' && row.logo.trim().length > 0 ? row.logo.trim() : DEFAULT_TRUCK_LOGO_IMAGE,
       cuisine_type: row.cuisine_type ?? 'Unspecified',
       menu_images: menuImages,
       images: galleryImages,
@@ -2687,7 +2686,7 @@ if (error) {
     const hasMenuItems = menuItems.some(item => item.truck_id?.toString() === requestedId);
     const hasGalleryPhotos = Boolean(
       (truck?.images?.length ?? 0) > 0 ||
-      (truck?.hero_image && truck.hero_image !== DEFAULT_HERO_IMAGE)
+      (truck?.hero_image && truck.hero_image !== DEFAULT_TRUCK_HERO_IMAGE)
     );
     const hasReviews = reviews.some(review => review.truckId?.toString() === requestedId);
 

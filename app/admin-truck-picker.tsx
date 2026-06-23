@@ -7,6 +7,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { FoodTruck } from '@/types';
+import { getTruckAdminStatus, TruckAdminStatus } from '@/lib/truckProfileCompleteness';
 
 export default function AdminTruckPickerScreen() {
   const router = useRouter();
@@ -32,15 +33,20 @@ export default function AdminTruckPickerScreen() {
       ),
     [foodTrucks]
   );
-  const publicTrucks = useMemo(
-    () => trucks.filter(truck => truck.archived !== true && !truck.archivedAt && truck.is_test !== true),
-    [trucks]
-  );
+  const adminStatusByTruckId = useMemo(() => {
+    const statuses = new Map<string, TruckAdminStatus>();
+    trucks.forEach(truck => {
+      statuses.set(truck.id, getTruckAdminStatus(truck, isTruckInactive(truck.id)));
+    });
+    return statuses;
+  }, [isTruckInactive, trucks]);
   const inactiveTrucks = useMemo(
-    () => publicTrucks.filter(truck => isTruckInactive(truck.id)),
-    [publicTrucks, isTruckInactive]
+    () => trucks.filter(truck => adminStatusByTruckId.get(truck.id) === 'Inactive'),
+    [adminStatusByTruckId, trucks]
   );
-  const activeTruckCount = publicTrucks.length - inactiveTrucks.length;
+  const activeTruckCount = trucks.filter(truck => adminStatusByTruckId.get(truck.id) === 'Active').length;
+  const inactiveTruckCount = trucks.filter(truck => adminStatusByTruckId.get(truck.id) === 'Inactive').length;
+  const incompleteTruckCount = trucks.filter(truck => adminStatusByTruckId.get(truck.id) === 'Incomplete').length;
 
   useEffect(() => {
     if (authLoading || !currentUser) return;
@@ -164,8 +170,12 @@ export default function AdminTruckPickerScreen() {
             <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Active Trucks</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-            <Text style={[styles.statValue, { color: colors.text }]}>{inactiveTrucks.length}</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>{inactiveTruckCount}</Text>
             <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Inactive Trucks</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+            <Text style={[styles.statValue, { color: colors.text }]}>{incompleteTruckCount}</Text>
+            <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Incomplete Trucks</Text>
           </View>
         </View>
 
@@ -181,9 +191,14 @@ export default function AdminTruckPickerScreen() {
             {trucks.map((truck) => {
               const activityStatus = getTruckActivityStatus(truck);
               const activityReason = formatActivityReason(activityStatus.activeReason);
-              const isArchivedTruck = truck.archived === true || !!truck.archivedAt;
-              const isTestTruck = truck.is_test === true;
-              const isInactiveTruck = !isArchivedTruck && !isTestTruck && isTruckInactive(truck.id);
+              const adminStatus = adminStatusByTruckId.get(truck.id) ?? 'Active';
+              const statusColor = adminStatus === 'Archived'
+                ? colors.error
+                : adminStatus === 'Incomplete'
+                ? colors.warning
+                : adminStatus === 'Active'
+                ? colors.success
+                : colors.secondaryText;
 
               return (
                 <TouchableOpacity
@@ -201,26 +216,9 @@ export default function AdminTruckPickerScreen() {
                       {truck.cuisine_type || 'Food truck'}
                     </Text>
                     <View style={styles.statusPillRow}>
-                      {activityStatus.activeOnTruckTap ? (
-                        <Text style={[styles.statusPill, { color: colors.success, backgroundColor: `${colors.success}15` }]}>
-                          Active on TruckTap
-                        </Text>
-                      ) : null}
-                      {isInactiveTruck ? (
-                        <Text style={[styles.statusPill, { color: colors.secondaryText, backgroundColor: colors.secondaryBackground }]}>
-                          Inactive
-                        </Text>
-                      ) : null}
-                      {isArchivedTruck ? (
-                        <Text style={[styles.statusPill, { color: colors.error, backgroundColor: `${colors.error}12` }]}>
-                          Archived
-                        </Text>
-                      ) : null}
-                      {isTestTruck ? (
-                        <Text style={[styles.statusPill, { color: colors.secondaryText, backgroundColor: colors.secondaryBackground }]}>
-                          Test truck
-                        </Text>
-                      ) : null}
+                      <Text style={[styles.statusPill, { color: statusColor, backgroundColor: `${statusColor}15` }]}>
+                        {adminStatus}
+                      </Text>
                     </View>
                     <Text style={[styles.activityStatusText, { color: colors.secondaryText }]} numberOfLines={1}>
                       {activityStatus.lastActivityLabel || 'No recent activity yet'}
@@ -371,6 +369,7 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
     marginBottom: 24,
   },

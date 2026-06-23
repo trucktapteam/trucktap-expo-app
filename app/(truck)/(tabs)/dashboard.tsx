@@ -12,6 +12,7 @@ import Toast from '@/components/Toast';
 import { DEBUG } from '@/constants/debug';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import { getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -164,6 +165,10 @@ export default function TruckDashboard() {
   };
 
   const profileComplete = truck ? isProfileComplete(truck.id) : false;
+  const publicProfileCompleteness = useMemo(
+    () => truck ? getTruckProfileCompleteness(truck) : null,
+    [truck]
+  );
   const profileUrl = getTruckShareUrl(truck?.id);
 
   const isArchived = truck ? (truck.archived === true || !!truck.archivedAt) : false;
@@ -458,12 +463,38 @@ export default function TruckDashboard() {
               <Text style={styles.dataValue}>{isArchived ? 'true' : 'false'}</Text>
             </View>
             <View style={styles.dataRow}>
-              <Text style={styles.dataLabel}>profile complete</Text>
+              <Text style={styles.dataLabel}>legacy profile complete</Text>
               <Text style={styles.dataValue}>{profileComplete ? 'true' : 'false'}</Text>
             </View>
             <View style={styles.dataRow}>
               <Text style={styles.dataLabel}>customer visible</Text>
               <Text style={styles.dataValue}>{isVisibleToCustomers ? 'Likely' : 'No'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.inspectionCard}>
+            <Text style={styles.inspectionTitle}>Public profile requirements</Text>
+            {(['name', 'cuisine', 'logo', 'hero'] as const).map(requirement => (
+              <View style={styles.dataRow} key={requirement}>
+                <Text style={styles.dataLabel}>{requirement}</Text>
+                <Text style={styles.dataValue}>
+                  {publicProfileCompleteness?.missing.includes(requirement) ? 'Missing' : 'Complete'}
+                </Text>
+              </View>
+            ))}
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>completion</Text>
+              <Text style={styles.dataValue}>
+                {publicProfileCompleteness?.completedCount ?? 0}/{publicProfileCompleteness?.totalCount ?? 4}
+              </Text>
+            </View>
+            <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>missing fields</Text>
+              <Text style={styles.dataValue}>
+                {publicProfileCompleteness?.missing.length
+                  ? publicProfileCompleteness.missing.join(', ')
+                  : 'None'}
+              </Text>
             </View>
           </View>
 
