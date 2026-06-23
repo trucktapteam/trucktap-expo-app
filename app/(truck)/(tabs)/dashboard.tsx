@@ -474,7 +474,7 @@ export default function TruckDashboard() {
 
           <View style={styles.inspectionCard}>
             <Text style={styles.inspectionTitle}>Public profile requirements</Text>
-            {(['name', 'cuisine', 'logo', 'hero'] as const).map(requirement => (
+            {(['name', 'logo', 'hero'] as const).map(requirement => (
               <View style={styles.dataRow} key={requirement}>
                 <Text style={styles.dataLabel}>{requirement}</Text>
                 <Text style={styles.dataValue}>
@@ -485,7 +485,7 @@ export default function TruckDashboard() {
             <View style={styles.dataRow}>
               <Text style={styles.dataLabel}>completion</Text>
               <Text style={styles.dataValue}>
-                {publicProfileCompleteness?.completedCount ?? 0}/{publicProfileCompleteness?.totalCount ?? 4}
+                {publicProfileCompleteness?.completedCount ?? 0}/{publicProfileCompleteness?.totalCount ?? 3}
               </Text>
             </View>
             <View style={styles.dataRow}>
