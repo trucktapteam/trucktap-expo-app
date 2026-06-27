@@ -1,21 +1,40 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { ArrowLeft, MessageSquare } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { trackEvent } from '@/lib/analytics';
+import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 
 export default function TruckAnnouncementsScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { colors } = useTheme();
-  const { foodTrucks, getAnnouncements, currentUser } = useApp();
+  const { foodTrucks, getAnnouncements, currentUser, isOwnerLoading } = useApp();
+  const { isLoading: authLoading } = useAuth();
   const trackedAnnouncementViewTruckIdRef = useRef<string | null>(null);
 
-  const truck = useMemo(() =>
-    foodTrucks.find(t => t.id === id && t.is_test !== true && t.archived !== true && !t.archivedAt),
+  const requestedTruck = useMemo(() =>
+    foodTrucks.find(t => t.id === id),
     [foodTrucks, id]
+  );
+
+  const incompleteHiddenFromCustomer =
+    !!requestedTruck && !canViewIncompleteTruckProfile(requestedTruck, currentUser);
+  const isWaitingForVisibility =
+    !!requestedTruck && incompleteHiddenFromCustomer && (authLoading || isOwnerLoading);
+
+  const truck = useMemo(() =>
+    requestedTruck &&
+      requestedTruck.is_test !== true &&
+      requestedTruck.archived !== true &&
+      !requestedTruck.archivedAt &&
+      !incompleteHiddenFromCustomer
+      ? requestedTruck
+      : undefined,
+    [incompleteHiddenFromCustomer, requestedTruck]
   );
 
   const announcements = useMemo(() =>
@@ -38,6 +57,14 @@ export default function TruckAnnouncementsScreen() {
 
   const styles = createStyles(colors);
 
+  if (isWaitingForVisibility) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   if (!truck) {
     return (
       <View style={styles.container}>
@@ -49,7 +76,9 @@ export default function TruckAnnouncementsScreen() {
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.center}>
-          <Text style={styles.errorText}>Truck not found</Text>
+          <Text style={styles.errorText}>
+            {incompleteHiddenFromCustomer ? 'This truck profile is still being completed.' : 'Truck not found'}
+          </Text>
         </View>
       </View>
     );
@@ -112,6 +141,12 @@ const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     flexDirection: 'row',

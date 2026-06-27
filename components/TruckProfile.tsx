@@ -17,6 +17,7 @@ import UpcomingStopsRow from '@/components/UpcomingStopsRow';
 import { trackEvent } from '@/lib/analytics';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
+import { isTruckProfileComplete } from '@/lib/truckProfileCompleteness';
 import {
   fetchCurrentUserTruckCheckInCount,
   hasCurrentUserCheckedInToday,
@@ -82,6 +83,18 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     mode === 'customer' && currentUser?.role !== 'truck' && currentUser?.role !== 'admin';
   const canViewTestTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
   const canViewArchivedTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
+  const canViewIncompleteTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
+  const isIncompleteTruckProfile = !!truck && !isTruckProfileComplete(truck);
+  const isIncompleteTruckHiddenFromCustomer =
+    mode === 'customer' && isIncompleteTruckProfile && !canViewIncompleteTruck;
+  const customerCanViewTruck =
+    mode !== 'customer' ||
+    (!!truck &&
+    (
+      (truck.is_test !== true || canViewTestTruck) &&
+      ((truck.archived !== true && !truck.archivedAt) || canViewArchivedTruck) &&
+      !isIncompleteTruckHiddenFromCustomer
+    ));
   
   const reviews = useTruckReviews(truckId);
   const { average, count } = useTruckRating(truckId);
@@ -125,13 +138,13 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
       useNativeDriver: true,
     }).start();
 
-    if (truckId && mode === 'customer') {
+    if (truckId && mode === 'customer' && customerCanViewTruck) {
       incrementView(truckId);
     }
-  }, [fadeAnim, truckId, incrementView, mode]);
+  }, [customerCanViewTruck, fadeAnim, truckId, incrementView, mode]);
 
   React.useEffect(() => {
-    if (!truckId || mode !== 'customer' || trackedProfileViewTruckIdRef.current === truckId) {
+    if (!truckId || mode !== 'customer' || !customerCanViewTruck || trackedProfileViewTruckIdRef.current === truckId) {
       return;
     }
 
@@ -147,7 +160,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
         userId: authUser?.id ?? currentUser?.id ?? null,
       });
     }
-  }, [authUser?.id, currentUser?.id, isCustomerReviewPromptAudience, mode, truckId]);
+  }, [authUser?.id, currentUser?.id, customerCanViewTruck, isCustomerReviewPromptAudience, mode, truckId]);
 
   const refreshCheckInState = useCallback(async () => {
     if (mode !== 'customer' || !truck || !isAuthenticated || !authUser) {
@@ -214,7 +227,8 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     mode === 'customer' &&
     (authLoading || isOwnerLoading) &&
     ((truck.is_test === true && !canViewTestTruck) ||
-      ((truck.archived === true || !!truck.archivedAt) && !canViewArchivedTruck));
+      ((truck.archived === true || !!truck.archivedAt) && !canViewArchivedTruck) ||
+      (isIncompleteTruckProfile && !canViewIncompleteTruck));
 
   if (isWaitingForTruck || isWaitingForVisibility) {
     const styles = createStyles(colors);
@@ -234,6 +248,15 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>Truck not found</Text>
+      </View>
+    );
+  }
+
+  if (isIncompleteTruckHiddenFromCustomer) {
+    const styles = createStyles(colors);
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>This truck profile is still being completed.</Text>
       </View>
     );
   }

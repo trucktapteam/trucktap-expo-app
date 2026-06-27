@@ -5,6 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import TruckProfile from '@/components/TruckProfile';
 import Colors from '@/constants/colors';
+import { canViewIncompleteTruckProfile, isTruckProfileComplete } from '@/lib/truckProfileCompleteness';
 
 const IOS_APP_STORE_URL =
   process.env.EXPO_PUBLIC_IOS_APP_STORE_URL?.trim() || 'https://apps.apple.com/us/search?term=TruckTap';
@@ -16,7 +17,7 @@ const DEFAULT_WEB_HERO_IMAGE = 'https://images.unsplash.com/photo-1565123409695-
 export default function TruckDetailScreen() {
   const { id, preview } = useLocalSearchParams();
   const router = useRouter();
-  const { incrementQrScan, foodTrucks, allTrucksLoading } = useApp();
+  const { currentUser, incrementQrScan, foodTrucks, allTrucksLoading } = useApp();
   const { colors } = useTheme();
   const isPreview = preview === 'true';
   const hasTrackedScan = React.useRef(false);
@@ -32,12 +33,16 @@ export default function TruckDetailScreen() {
     }
 
     const truckExists = foodTrucks.find((truck) => truck.id === id);
-    const isHiddenFromCustomers =
+    const isArchivedOrTestHiddenFromCustomers =
       truckExists?.is_test === true ||
       truckExists?.archived === true ||
       !!truckExists?.archivedAt;
-    if ((!truckExists || isHiddenFromCustomers) && !isPreview) {
+    if ((!truckExists || isArchivedOrTestHiddenFromCustomers) && !isPreview) {
       router.replace('/(customer)/(tabs)/discover' as any);
+      return;
+    }
+
+    if (!isPreview && truckExists && !canViewIncompleteTruckProfile(truckExists, currentUser)) {
       return;
     }
 
@@ -53,22 +58,32 @@ export default function TruckDetailScreen() {
 
       incrementQrScan(id, platform);
     }
-  }, [foodTrucks, id, incrementQrScan, isPreview, router]);
+  }, [currentUser, foodTrucks, id, incrementQrScan, isPreview, router]);
 
   if (Platform.OS === 'web') {
+    const incompleteHiddenFromCustomer =
+      !!truck &&
+      !isPreview &&
+      !isTruckProfileComplete(truck) &&
+      !canViewIncompleteTruckProfile(truck, currentUser);
     const showTruckDetails =
       !!truck &&
       truck.is_test !== true &&
       truck.archived !== true &&
-      !truck.archivedAt;
+      !truck.archivedAt &&
+      (isPreview || !incompleteHiddenFromCustomer);
 
     const title = allTrucksLoading
       ? 'Opening TruckTap'
+      : incompleteHiddenFromCustomer
+      ? 'This truck profile is still being completed.'
       : showTruckDetails
       ? truck.name
       : 'Find this food truck on TruckTap';
     const subtitle = showTruckDetails
       ? [truck.cuisine_type, truck.location.address].filter(Boolean).join(' • ')
+      : incompleteHiddenFromCustomer
+      ? 'Please check back soon.'
       : 'Install TruckTap to see live food truck details, menus, photos, and updates.';
     const heroImage = showTruckDetails ? truck.hero_image || truck.logo || DEFAULT_WEB_HERO_IMAGE : DEFAULT_WEB_HERO_IMAGE;
 

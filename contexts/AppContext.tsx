@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { trackEvent } from '@/lib/analytics';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 
 const parseJsonArray = (val: any): any[] => {
   if (Array.isArray(val)) return val;
@@ -3287,14 +3288,15 @@ if (error) {
 });
 
 export function useFilteredTrucks(searchQuery: string, cuisineFilter: string, openOnly: boolean) {
-  const { foodTrucks, isTruckOpenNow, isTruckInactive } = useApp();
+  const { currentUser, foodTrucks, isTruckOpenNow, isTruckInactive } = useApp();
 
   return useMemo(() => {
     let filtered = foodTrucks.filter(truck =>
       truck.archived !== true &&
       !truck.archivedAt &&
       truck.is_test !== true &&
-      !isTruckInactive(truck.id)
+      !isTruckInactive(truck.id) &&
+      canViewIncompleteTruckProfile(truck, currentUser)
     );
 
     if (openOnly) {
@@ -3320,7 +3322,7 @@ export function useFilteredTrucks(searchQuery: string, cuisineFilter: string, op
     }
 
     return filtered;
-  }, [foodTrucks, searchQuery, cuisineFilter, openOnly, isTruckOpenNow, isTruckInactive]);
+  }, [currentUser, foodTrucks, searchQuery, cuisineFilter, openOnly, isTruckOpenNow, isTruckInactive]);
 }
 
 export function useFavoriteTrucks() {
@@ -3333,7 +3335,8 @@ export function useFavoriteTrucks() {
       truck.archived !== true &&
       !truck.archivedAt &&
       truck.is_test !== true &&
-      !isTruckInactive(truck.id)
+      !isTruckInactive(truck.id) &&
+      canViewIncompleteTruckProfile(truck, currentUser)
     );
   }, [currentUser, foodTrucks, isTruckInactive]);
 }

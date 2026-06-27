@@ -1,25 +1,44 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal } from 'react-native';
+import { ActivityIndicator, View, Text, StyleSheet, FlatList, TouchableOpacity, Modal } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { Image } from 'expo-image';
 import { Utensils, X } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { trackEvent } from '@/lib/analytics';
+import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { MenuItem } from '@/types';
 
 export default function FullMenuScreen() {
   const { id } = useLocalSearchParams();
   const { colors } = useTheme();
-  const { menuItems, foodTrucks, currentUser } = useApp();
+  const { menuItems, foodTrucks, currentUser, isOwnerLoading } = useApp();
+  const { isLoading: authLoading } = useAuth();
   const trackedMenuViewTruckIdRef = useRef<string | null>(null);
   
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
   const [showMenuItemModal, setShowMenuItemModal] = useState<boolean>(false);
   
-  const truck = useMemo(() => 
-    foodTrucks.find(t => t.id === id && t.is_test !== true && t.archived !== true && !t.archivedAt),
+  const requestedTruck = useMemo(() =>
+    foodTrucks.find(t => t.id === id),
     [foodTrucks, id]
+  );
+
+  const incompleteHiddenFromCustomer =
+    !!requestedTruck && !canViewIncompleteTruckProfile(requestedTruck, currentUser);
+  const isWaitingForVisibility =
+    !!requestedTruck && incompleteHiddenFromCustomer && (authLoading || isOwnerLoading);
+
+  const truck = useMemo(() => 
+    requestedTruck &&
+      requestedTruck.is_test !== true &&
+      requestedTruck.archived !== true &&
+      !requestedTruck.archivedAt &&
+      !incompleteHiddenFromCustomer
+      ? requestedTruck
+      : undefined,
+    [incompleteHiddenFromCustomer, requestedTruck]
   );
 
   const truckMenuItems = useMemo(() => 
@@ -42,10 +61,22 @@ export default function FullMenuScreen() {
 
   const styles = createStyles(colors);
 
+  if (isWaitingForVisibility) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   if (!truck) {
     return (
       <View style={styles.container}>
-        <Text style={styles.errorText}>Truck not found</Text>
+        {incompleteHiddenFromCustomer ? (
+          <Text style={styles.errorText}>This truck profile is still being completed.</Text>
+        ) : (
+          <Text style={styles.errorText}>Truck not found</Text>
+        )}
       </View>
     );
   }
@@ -151,6 +182,12 @@ function createStyles(colors: any) {
     container: {
       flex: 1,
       backgroundColor: colors.background,
+    },
+    loadingContainer: {
+      flex: 1,
+      backgroundColor: colors.background,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     errorText: {
       fontSize: 16,

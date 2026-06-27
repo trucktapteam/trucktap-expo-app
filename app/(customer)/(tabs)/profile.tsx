@@ -7,6 +7,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import AuthPromptModal from '@/components/AuthPromptModal';
+import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 
 export default function ProfileScreen() {
   const { currentUser, foodTrucks, getAverageRating, isTruckInactive } = useApp();
@@ -20,7 +21,7 @@ export default function ProfileScreen() {
 
   const styles = createStyles(colors);
   const visibleTrucks = foodTrucks.filter(t =>
-    !t.archived && t.is_test !== true && !isTruckInactive(t.id)
+    !t.archived && t.is_test !== true && !isTruckInactive(t.id) && canViewIncompleteTruckProfile(t, currentUser)
   );
 
   const favoriteTrucks = visibleTrucks.filter(truck =>

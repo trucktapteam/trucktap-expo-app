@@ -1,5 +1,5 @@
 import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
-import { FoodTruck } from '@/types';
+import { FoodTruck, User } from '@/types';
 
 export type TruckProfileRequirement = 'name' | 'logo' | 'hero';
 
@@ -39,6 +39,18 @@ export function getTruckProfileCompleteness(truck: FoodTruck): TruckProfileCompl
 
 export function isTruckProfileComplete(truck: FoodTruck): boolean {
   return getTruckProfileCompleteness(truck).complete;
+}
+
+export function canViewIncompleteTruckProfile(
+  truck: FoodTruck,
+  viewer?: Pick<User, 'id' | 'role' | 'truck_id'> | null
+): boolean {
+  if (isTruckProfileComplete(truck)) return true;
+  if (viewer?.role === 'admin') return true;
+  return (
+    (!!viewer?.id && truck.owner_id === viewer.id) ||
+    (viewer?.role === 'truck' && viewer.truck_id === truck.id)
+  );
 }
 
 export function getTruckAdminStatus(truck: FoodTruck, inactive: boolean): TruckAdminStatus {

@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { ActivityIndicator, View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Image } from 'expo-image';
 import { ArrowLeft, ImageIcon } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import FullImageModal from '@/components/FullImageModal';
+import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 
 const { width } = Dimensions.get('window');
 const SPACING = 12;
@@ -16,16 +18,41 @@ export default function TruckGalleryScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { colors } = useTheme();
-  const { foodTrucks } = useApp();
+  const { currentUser, foodTrucks, isOwnerLoading } = useApp();
+  const { isLoading: authLoading } = useAuth();
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  const truck = useMemo(() =>
-    foodTrucks.find(t => t.id === id && t.is_test !== true && t.archived !== true && !t.archivedAt),
+  const requestedTruck = useMemo(() =>
+    foodTrucks.find(t => t.id === id),
     [foodTrucks, id]
   );
 
+  const incompleteHiddenFromCustomer =
+    !!requestedTruck && !canViewIncompleteTruckProfile(requestedTruck, currentUser);
+  const isWaitingForVisibility =
+    !!requestedTruck && incompleteHiddenFromCustomer && (authLoading || isOwnerLoading);
+
+  const truck = useMemo(() =>
+    requestedTruck &&
+      requestedTruck.is_test !== true &&
+      requestedTruck.archived !== true &&
+      !requestedTruck.archivedAt &&
+      !incompleteHiddenFromCustomer
+      ? requestedTruck
+      : undefined,
+    [incompleteHiddenFromCustomer, requestedTruck]
+  );
+
   const styles = createStyles(colors);
+
+  if (isWaitingForVisibility) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   if (!truck) {
     return (
@@ -38,7 +65,9 @@ export default function TruckGalleryScreen() {
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.center}>
-          <Text style={styles.errorText}>Truck not found</Text>
+          <Text style={styles.errorText}>
+            {incompleteHiddenFromCustomer ? 'This truck profile is still being completed.' : 'Truck not found'}
+          </Text>
         </View>
       </View>
     );
@@ -95,6 +124,12 @@ const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     flexDirection: 'row',
