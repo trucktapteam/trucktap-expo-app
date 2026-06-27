@@ -13,6 +13,8 @@ import { DEBUG } from '@/constants/debug';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
+import { getTruckCommandCenter } from '@/lib/truckCommandCenter';
+import { getTruckCoachMessage } from '@/lib/truckCoach';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -60,19 +62,32 @@ const formatServingLocation = (truck: any): string => {
   return 'Location saved';
 };
 
-const getActivityReasonLabel = (reason?: string): string => {
-  switch (reason) {
-    case 'open_now':
-      return 'Open now';
-    case 'recent_live_activity':
-      return 'Recent live activity';
-    case 'upcoming_stop':
-      return 'Upcoming scheduled stop';
-    case 'recent_meaningful_activity':
-      return 'Recent profile or planning activity';
+const getCommandStatusLabel = (health: string): string => {
+  if (health === 'Hidden') return 'Action Required';
+  return health;
+};
+
+const getCommandStatusExplanation = (health: string): string => {
+  switch (health) {
+    case 'Hidden':
+      return "Customers can't currently discover your truck.";
+    case 'Needs Attention':
+      return 'Your truck is almost ready.';
+    case 'Good':
+      return 'Your truck is visible with opportunities to improve.';
+    case 'Excellent':
+      return 'Your truck is ready and looking great.';
     default:
       return '';
   }
+};
+
+const getCommandVisibilityLabel = (visibility: string, health: string): string => {
+  if (visibility === 'Archived') return 'Archived';
+  if (visibility === 'Test Truck') return 'Test Truck';
+  if (visibility === 'Profile Complete') return 'Visible to Customers';
+  if (health === 'Hidden') return 'Hidden from Customers';
+  return visibility;
 };
 
 export default function TruckDashboard() {
@@ -93,7 +108,10 @@ export default function TruckDashboard() {
     isProfileComplete,
     hasUnreadOwnerUpdates,
     qrShared,
-    getTruckActivityStatus,
+    ownerMessages,
+    announcements,
+    upcomingStops,
+    reviews,
   } = useApp();
   const ownerTruck = getUserTruck();
   const isAdmin = currentUser?.role === 'admin';
@@ -177,8 +195,60 @@ export default function TruckDashboard() {
   const canShareTruck = hasTruckIdentity && hasShareableRoute && !isArchived;
   const liveLocationText = truck ? formatServingLocation(truck) : '';
   const liveUpdatedText = formatLiveUpdatedText(truck?.lastUpdated, liveNowMs);
-  const truckActivityStatus = getTruckActivityStatus(truck);
-  const truckActivityReason = getActivityReasonLabel(truckActivityStatus.activeReason);
+  const commandCenter = useMemo(
+    () => truck
+      ? getTruckCommandCenter({
+        ...truck,
+        ownerMessages,
+        announcements,
+        upcomingStops,
+        reviews,
+      })
+      : null,
+    [announcements, ownerMessages, reviews, truck, upcomingStops]
+  );
+  const commandProfilePercent = commandCenter
+    ? Math.round((commandCenter.profileCompleteness.completedCount / commandCenter.profileCompleteness.totalCount) * 100)
+    : 0;
+  const commandStatusLabel = commandCenter ? getCommandStatusLabel(commandCenter.health) : '';
+  const commandStatusExplanation = commandCenter ? getCommandStatusExplanation(commandCenter.health) : '';
+  const commandVisibilityLabel = commandCenter
+    ? getCommandVisibilityLabel(commandCenter.visibility, commandCenter.health)
+    : '';
+  const truckCoach = commandCenter ? getTruckCoachMessage(commandCenter) : null;
+  const commandActionRoute = useMemo(() => {
+    const action = commandCenter?.nextAction;
+
+    switch (action) {
+      case 'Add Truck Name':
+      case 'Upload Logo':
+      case 'Upload Hero Image':
+        return '/(truck)/edit-profile';
+      case 'Add Upcoming Stop':
+        return '/(truck)/upcoming-stops';
+      case 'Check Messages':
+        return '/(truck)/owner-updates';
+      case 'Add Announcement':
+        return '/(truck)/announcements';
+      case 'Respond to Reviews':
+        return '/(truck)/reviews';
+      default:
+        return null;
+    }
+  }, [commandCenter?.nextAction]);
+
+  const handleCommandCenterAction = () => {
+    if (!commandCenter) return;
+
+    if (commandCenter.nextAction === 'Go LIVE') {
+      handleGoLive();
+      return;
+    }
+
+    if (commandActionRoute) {
+      router.push(commandActionRoute as any);
+    }
+  };
 
   useEffect(() => {
     if (isArchived) {
@@ -637,35 +707,98 @@ export default function TruckDashboard() {
           </Animated.View>
         )}
 
-        <View style={styles.reliabilityCard}>
-          <View style={styles.reliabilityHeader}>
-            <View style={[
-              styles.reliabilityBadge,
-              truckActivityStatus.activeOnTruckTap ? styles.reliabilityBadgeActive : styles.reliabilityBadgeQuiet,
-            ]}>
-              <Text style={[
-                styles.reliabilityBadgeText,
-                truckActivityStatus.activeOnTruckTap ? styles.reliabilityBadgeTextActive : styles.reliabilityBadgeTextQuiet,
-              ]}>
-                {truckActivityStatus.activeOnTruckTap ? 'Active on TruckTap' : 'Keep your profile fresh'}
+        {commandCenter && (
+          <View style={styles.commandCenterCard}>
+            <View style={styles.commandCenterHeader}>
+              <View style={styles.commandCenterIconWrap}>
+                <Sparkles size={22} color={Colors.primary} />
+              </View>
+              <View style={styles.commandCenterTitleWrap}>
+                <Text style={styles.commandCenterEyebrow}>Truck Command Center</Text>
+                <Text style={styles.commandCenterTitle}>Status: {commandStatusLabel}</Text>
+                {commandStatusExplanation ? (
+                  <Text style={styles.commandCenterStatusExplanation}>{commandStatusExplanation}</Text>
+                ) : null}
+              </View>
+            </View>
+
+            <View style={styles.commandCenterStatusRow}>
+              <View style={styles.commandCenterStatusItem}>
+                <Text style={styles.commandCenterLabel}>Customer Visibility</Text>
+                <Text style={styles.commandCenterValue}>{commandVisibilityLabel}</Text>
+              </View>
+              <View style={styles.commandCenterStatusItem}>
+                <Text style={styles.commandCenterLabel}>Profile</Text>
+                <Text style={styles.commandCenterValue}>
+                  {commandCenter.profileCompleteness.completedCount}/{commandCenter.profileCompleteness.totalCount} ({commandProfilePercent}%)
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.commandCenterNextBox}>
+              <Text style={styles.commandCenterLabel}>{truckCoach?.headline ?? "Today's Mission"}</Text>
+              <Text style={styles.commandCenterNextAction}>{truckCoach?.message ?? commandCenter.nextAction}</Text>
+              {truckCoach?.encouragement ? (
+                <Text style={styles.commandCenterCoachText}>{truckCoach.encouragement}</Text>
+              ) : null}
+              {truckCoach?.estimatedTime ? (
+                <Text style={styles.commandCenterEstimatedTime}>Estimated time: {truckCoach.estimatedTime}</Text>
+              ) : null}
+              {truckCoach?.celebration ? (
+                <Text style={styles.commandCenterCelebration}>{truckCoach.celebration}</Text>
+              ) : null}
+            </View>
+
+            {(commandCenter.nextAction === 'Go LIVE' || commandActionRoute) ? (
+              <TouchableOpacity
+                style={styles.commandCenterButton}
+                onPress={handleCommandCenterAction}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.commandCenterButtonText}>{commandCenter.nextAction}</Text>
+                <ChevronRight size={18} color="#fff" />
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.commandCenterPositiveText}>
+                {commandCenter.nextAction === 'No action available'
+                  ? 'No owner action is available for this truck right now.'
+                  : 'No action required right now.'}
               </Text>
+            )}
+          </View>
+        )}
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Business Activity</Text>
+        </View>
+
+        <StatsRow
+          stats={{
+            menuItems: menuItems.length,
+            rating: rating.average || 0,
+          }}
+        />
+
+        {qrStats.totalScans > 0 && (
+          <View style={styles.qrStatsCard}>
+            <View style={styles.qrStatsHeader}>
+              <ScanLine size={20} color={Colors.primary} />
+              <Text style={styles.qrStatsTitle}>QR Engagement</Text>
+            </View>
+            <View style={styles.qrStatsRow}>
+              <View style={styles.qrStatItem}>
+                <Text style={styles.qrStatNumber}>{qrStats.totalScans}</Text>
+                <Text style={styles.qrStatLabel}>Total Scans</Text>
+              </View>
+              {qrStats.lastScanned ? (
+                <View style={styles.qrStatItem}>
+                  <Text style={styles.qrStatNumber}>{formatLastScanned(qrStats.lastScanned)}</Text>
+                  <Text style={styles.qrStatLabel}>Last Scanned</Text>
+                </View>
+              ) : null}
             </View>
           </View>
-          <Text style={styles.reliabilityTitle}>Customer activity signal</Text>
-          {truckActivityStatus.lastActivityLabel ? (
-            <Text style={styles.reliabilityText}>{truckActivityStatus.lastActivityLabel}</Text>
-          ) : (
-            <Text style={styles.reliabilityText}>No recent activity yet</Text>
-          )}
-          {truckActivityReason ? (
-            <Text style={styles.reliabilityMeta}>Reason: {truckActivityReason}</Text>
-          ) : null}
-          {!truckActivityStatus.activeOnTruckTap ? (
-            <Text style={styles.reliabilityGuidance}>
-              Add an upcoming stop, go live, or update your profile to show customers you&apos;re active.
-            </Text>
-          ) : null}
-        </View>
+        )}
 
         {showChecklist && (
           <View style={styles.checklistCard}>
@@ -736,6 +869,10 @@ export default function TruckDashboard() {
             </View>
           </View>
         )}
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Operational Tools</Text>
+        </View>
 
         <View style={styles.liveCard}>
           <View style={styles.liveHeader}>
@@ -822,7 +959,7 @@ export default function TruckDashboard() {
         </TouchableOpacity>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <Text style={styles.sectionTitle}>Owner Tools</Text>
         </View>
 
         <View style={styles.gridContainer}>
@@ -889,15 +1026,8 @@ export default function TruckDashboard() {
           />
         </View>
 
-        <StatsRow 
-          stats={{
-            menuItems: menuItems.length,
-            rating: rating.average || 0,
-          }}
-        />
-
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Your Profile</Text>
+          <Text style={styles.sectionTitle}>Customer-Facing Profile</Text>
         </View>
 
         <TouchableOpacity 
@@ -915,7 +1045,7 @@ export default function TruckDashboard() {
         </TouchableOpacity>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Share Your Truck</Text>
+          <Text style={styles.sectionTitle}>Growth Tools</Text>
         </View>
 
         <View style={styles.shareMainCard}>
@@ -987,27 +1117,6 @@ export default function TruckDashboard() {
             </View>
           </View>
         </View>
-
-        {qrStats.totalScans > 0 && (
-          <View style={styles.qrStatsCard}>
-            <View style={styles.qrStatsHeader}>
-              <ScanLine size={20} color={Colors.primary} />
-              <Text style={styles.qrStatsTitle}>QR Engagement</Text>
-            </View>
-            <View style={styles.qrStatsRow}>
-              <View style={styles.qrStatItem}>
-                <Text style={styles.qrStatNumber}>{qrStats.totalScans}</Text>
-                <Text style={styles.qrStatLabel}>Total Scans</Text>
-              </View>
-              {qrStats.lastScanned ? (
-                <View style={styles.qrStatItem}>
-                  <Text style={styles.qrStatNumber}>{formatLastScanned(qrStats.lastScanned)}</Text>
-                  <Text style={styles.qrStatLabel}>Last Scanned</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        )}
       </ScrollView>
 
       {toastVisible && (
@@ -1218,6 +1327,125 @@ const styles = StyleSheet.create({
   },
   inspectionButtonHalf: {
     flex: 1,
+  },
+  commandCenterCard: {
+    backgroundColor: '#fff',
+    padding: 18,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}22`,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  commandCenterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  commandCenterIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: `${Colors.primary}12`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commandCenterTitleWrap: {
+    flex: 1,
+  },
+  commandCenterEyebrow: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+    marginBottom: 3,
+  },
+  commandCenterTitle: {
+    fontSize: 19,
+    fontWeight: '800' as const,
+    color: Colors.dark,
+  },
+  commandCenterStatusExplanation: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.gray,
+    marginTop: 4,
+  },
+  commandCenterStatusRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  commandCenterStatusItem: {
+    flex: 1,
+    backgroundColor: Colors.lightGray,
+    borderRadius: 12,
+    padding: 12,
+  },
+  commandCenterLabel: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.gray,
+    marginBottom: 4,
+  },
+  commandCenterValue: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  commandCenterNextBox: {
+    backgroundColor: `${Colors.primary}0D`,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}18`,
+  },
+  commandCenterNextAction: {
+    fontSize: 17,
+    fontWeight: '800' as const,
+    color: Colors.dark,
+  },
+  commandCenterCoachText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.gray,
+    marginTop: 6,
+  },
+  commandCenterEstimatedTime: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+    marginTop: 8,
+  },
+  commandCenterCelebration: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: Colors.success,
+    marginTop: 8,
+  },
+  commandCenterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  commandCenterButtonText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#fff',
+  },
+  commandCenterPositiveText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: Colors.gray,
   },
   reliabilityCard: {
     backgroundColor: '#fff',
