@@ -104,5 +104,38 @@ const actionTemplates: Record<TruckNextBestAction, TruckCoachMessage> = {
 };
 
 export function getTruckCoachMessage(commandCenter: TruckCommandCenter): TruckCoachMessage {
+  if (commandCenter.nextAction === 'Go LIVE' && commandCenter.eventReadiness === 'starts_soon') {
+    return {
+      headline: "Today's Mission",
+      message: 'Go LIVE before your event begins.',
+      encouragement: 'Customers will be looking for your truck soon.',
+      estimatedTime: '30 seconds.',
+      celebration: '',
+      severity: 'warning',
+    };
+  }
+
+  if (commandCenter.nextAction === 'Go LIVE' && commandCenter.eventReadiness === 'started') {
+    return {
+      headline: "Today's Mission",
+      message: 'Go LIVE now.',
+      encouragement: "Customers may think you're closed until you Go LIVE.",
+      estimatedTime: '30 seconds.',
+      celebration: '',
+      severity: 'warning',
+    };
+  }
+
+  if (commandCenter.nextAction === "Great Job — You're Ready" && commandCenter.eventReadiness === 'live_ready') {
+    return {
+      headline: 'Great Job!',
+      message: "You're LIVE and ready for customers.",
+      encouragement: 'Keep an eye on your event and stay visible while customers are nearby.',
+      estimatedTime: '',
+      celebration: "You're LIVE and ready for customers.",
+      severity: 'success',
+    };
+  }
+
   return actionTemplates[commandCenter.nextAction] ?? defaultCoachMessage;
 }

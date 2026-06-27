@@ -15,6 +15,8 @@ export type TruckNextBestAction =
   | "Great Job — You're Ready"
   | 'No action available';
 
+export type TruckEventReadiness = 'starts_soon' | 'started' | 'live_ready' | null;
+
 export type TruckChecklistItem = {
   id:
     | 'name'
@@ -42,9 +44,11 @@ export type TruckCommandCenter = {
   nextAction: TruckNextBestAction;
   checklist: TruckChecklistItem[];
   profileCompleteness: TruckProfileCompleteness;
+  eventReadiness: TruckEventReadiness;
 };
 
 const ANNOUNCEMENT_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
+const EVENT_GO_LIVE_WINDOW_MS = 30 * 60 * 1000;
 
 const parseTimestamp = (value?: string | number | null): number | null => {
   if (typeof value === 'number') {
@@ -64,6 +68,41 @@ const isFutureStop = (stop: UpcomingStop, now = Date.now()): boolean => {
 
   const startsAt = parseTimestamp(stop.starts_at);
   return startsAt !== null && startsAt > now;
+};
+
+const isActionableStop = (stop: UpcomingStop): boolean =>
+  stop.status !== 'cancelled' && stop.status !== 'completed' && stop.status !== 'sold_out';
+
+const isStopStartingSoon = (stop: UpcomingStop, now = Date.now()): boolean => {
+  if (!isActionableStop(stop)) return false;
+
+  const startsAt = parseTimestamp(stop.starts_at);
+  return startsAt !== null && startsAt > now && startsAt <= now + EVENT_GO_LIVE_WINDOW_MS;
+};
+
+const isStopInProgress = (stop: UpcomingStop, now = Date.now()): boolean => {
+  if (!isActionableStop(stop)) return false;
+
+  const startsAt = parseTimestamp(stop.starts_at);
+  if (startsAt === null || startsAt > now) return false;
+
+  const endsAt = parseTimestamp(stop.ends_at);
+  return endsAt === null || endsAt > now;
+};
+
+const getEventReadiness = (truck: TruckCommandCenterInput, now = Date.now()): TruckEventReadiness => {
+  if (!truck.upcomingStops) return null;
+
+  const relevantStops = truck.upcomingStops.filter(stop =>
+    stop.truck_id?.toString() === truck.id?.toString()
+  );
+  const hasStartedStop = relevantStops.some(stop => isStopInProgress(stop, now));
+  const hasSoonStop = relevantStops.some(stop => isStopStartingSoon(stop, now));
+
+  if (!hasStartedStop && !hasSoonStop) return null;
+  if (truck.open_now === true) return 'live_ready';
+
+  return hasStartedStop ? 'started' : 'starts_soon';
 };
 
 const getAnnouncementExpiresAt = (announcement: Announcement): number => {
@@ -131,6 +170,7 @@ export function getNextBestAction(truck: TruckCommandCenterInput): TruckNextBest
   if (completeness.missing.includes('name')) return 'Add Truck Name';
   if (completeness.missing.includes('logo')) return 'Upload Logo';
   if (completeness.missing.includes('hero')) return 'Upload Hero Image';
+  if (getEventReadiness(truck) === 'live_ready') return "Great Job — You're Ready";
   if (!truck.open_now) return 'Go LIVE';
   if (truck.upcomingStops && !hasUpcomingStop(truck)) return 'Add Upcoming Stop';
   if (truck.ownerMessages && hasUnreadOwnerMessage(truck)) return 'Check Messages';
@@ -217,6 +257,7 @@ export function getTruckHealth(truck: TruckCommandCenterInput): TruckHealth {
 
 export function getTruckCommandCenter(truck: TruckCommandCenterInput): TruckCommandCenter {
   const profileCompleteness = getTruckProfileCompleteness(truck);
+  const eventReadiness = getEventReadiness(truck);
 
   return {
     health: getTruckHealth(truck),
@@ -224,5 +265,6 @@ export function getTruckCommandCenter(truck: TruckCommandCenterInput): TruckComm
     nextAction: getNextBestAction(truck),
     checklist: getTodayChecklist(truck),
     profileCompleteness,
+    eventReadiness,
   };
 }
