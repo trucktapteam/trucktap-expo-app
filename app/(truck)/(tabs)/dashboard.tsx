@@ -62,6 +62,14 @@ const formatServingLocation = (truck: any): string => {
   return 'Location saved';
 };
 
+const getDailyBriefingGreeting = (): string => {
+  const hour = new Date().getHours();
+
+  if (hour < 12) return 'Good Morning';
+  if (hour < 17) return 'Good Afternoon';
+  return 'Good Evening';
+};
+
 const requiredProfileLabels = {
   name: 'Truck Name',
   logo: 'Logo',
@@ -186,6 +194,7 @@ export default function TruckDashboard() {
     [announcements, ownerMessages, reviews, truck, upcomingStops]
   );
   const truckCoach = commandCenter ? getTruckCoachMessage(commandCenter) : null;
+  const dailyBriefingGreeting = useMemo(() => getDailyBriefingGreeting(), []);
   const scheduledStopWarning = commandCenter?.eventReadiness === 'starts_soon'
     ? {
       message: 'Your stop starts soon. Go LIVE before customers arrive.',
@@ -229,6 +238,7 @@ export default function TruckDashboard() {
         return null;
     }
   }, [commandCenter?.nextAction]);
+  const showCommandAction = !!commandCenter && (commandCenter.nextAction === 'Go LIVE' || !!commandActionRoute);
 
   const handleCommandCenterAction = () => {
     if (!commandCenter) return;
@@ -650,6 +660,9 @@ export default function TruckDashboard() {
         cuisineType={truck.cuisine_type}
         logoUrl={truck.logo}
         isOpen={truckOpenNow}
+        greeting={dailyBriefingGreeting}
+        missionLabel={"Today's Mission:"}
+        missionMessage={truckCoach?.message ?? commandCenter?.nextAction}
       />
 
       <ScrollView 
@@ -800,7 +813,7 @@ export default function TruckDashboard() {
               ) : null}
             </View>
 
-            {(commandCenter.nextAction === 'Go LIVE' || commandActionRoute) ? (
+            {showCommandAction ? (
               <TouchableOpacity
                 style={styles.commandCenterButton}
                 onPress={handleCommandCenterAction}
@@ -1192,8 +1205,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingHorizontal: 16,
+    paddingBottom: 104,
   },
   errorContainer: {
     flex: 1,
@@ -1206,9 +1219,9 @@ const styles = StyleSheet.create({
   },
   adminControlsCard: {
     backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -1219,13 +1232,13 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: Colors.primary,
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: 'center',
     marginBottom: 12,
   },
   adminControlButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600' as const,
   },
   emptyStateContainer: {
@@ -1375,9 +1388,9 @@ const styles = StyleSheet.create({
   },
   commandCenterCard: {
     backgroundColor: '#fff',
-    padding: 18,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 15,
+    borderRadius: 14,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: `${Colors.primary}22`,
     shadowColor: '#000',
@@ -1389,13 +1402,13 @@ const styles = StyleSheet.create({
   commandCenterHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
+    gap: 10,
+    marginBottom: 11,
   },
   commandCenterIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     backgroundColor: `${Colors.primary}12`,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1404,44 +1417,44 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   commandCenterEyebrow: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800' as const,
     color: Colors.primary,
     marginBottom: 3,
   },
   commandCenterTitle: {
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: '800' as const,
     color: Colors.dark,
   },
   commandCenterNextBox: {
     backgroundColor: `${Colors.primary}0D`,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 14,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: `${Colors.primary}18`,
   },
   commandCenterNextAction: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800' as const,
     color: Colors.dark,
   },
   commandCenterCoachText: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
     color: Colors.gray,
     marginTop: 6,
   },
   commandCenterEstimatedTime: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700' as const,
     color: Colors.primary,
     marginTop: 8,
   },
   commandCenterCelebration: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 18,
     color: Colors.success,
     marginTop: 8,
   },
@@ -1451,19 +1464,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 10,
+    paddingVertical: 12,
   },
   commandCenterButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700' as const,
     color: '#fff',
   },
   scheduledStopWarning: {
     backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 14,
     borderWidth: 1,
     borderLeftWidth: 4,
     borderColor: `${Colors.warning}40`,
@@ -1481,35 +1494,35 @@ const styles = StyleSheet.create({
   scheduledStopWarningContent: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
-    marginBottom: 14,
+    gap: 8,
+    marginBottom: 10,
   },
   scheduledStopWarningText: {
     flex: 1,
-    fontSize: 15,
-    lineHeight: 21,
+    fontSize: 14,
+    lineHeight: 20,
     fontWeight: '700' as const,
     color: Colors.dark,
   },
   scheduledStopWarningButton: {
     backgroundColor: Colors.warning,
-    borderRadius: 12,
-    paddingVertical: 13,
+    borderRadius: 10,
+    paddingVertical: 11,
     alignItems: 'center',
   },
   scheduledStopWarningButtonUrgent: {
     backgroundColor: Colors.error,
   },
   scheduledStopWarningButtonText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800' as const,
     color: '#fff',
   },
   incompleteProfileCard: {
     backgroundColor: '#fff',
-    padding: 18,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 15,
+    borderRadius: 14,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: `${Colors.error}25`,
     shadowColor: '#000',
@@ -1521,13 +1534,13 @@ const styles = StyleSheet.create({
   incompleteProfileHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 14,
+    gap: 10,
+    marginBottom: 10,
   },
   incompleteProfileIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     backgroundColor: `${Colors.error}12`,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1536,29 +1549,29 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   incompleteProfileTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800' as const,
     color: Colors.dark,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   incompleteProfileBody: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
     color: Colors.gray,
   },
   incompleteProfileProgress: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700' as const,
     color: Colors.dark,
-    marginBottom: 8,
+    marginBottom: 7,
   },
   incompleteProfileProgressTrack: {
-    height: 8,
+    height: 6,
     width: '100%',
     backgroundColor: `${Colors.primary}18`,
     borderRadius: 999,
     overflow: 'hidden',
-    marginBottom: 14,
+    marginBottom: 11,
   },
   incompleteProfileProgressFill: {
     height: '100%',
@@ -1566,8 +1579,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   incompleteProfileMissingList: {
-    gap: 8,
-    marginBottom: 16,
+    gap: 6,
+    marginBottom: 12,
   },
   incompleteProfileMissingItem: {
     flexDirection: 'row',
@@ -1575,7 +1588,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   incompleteProfileMissingText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600' as const,
     color: Colors.dark,
   },
@@ -1585,19 +1598,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 10,
+    paddingVertical: 12,
   },
   incompleteProfileButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700' as const,
     color: '#fff',
   },
   reliabilityCard: {
     backgroundColor: '#fff',
-    padding: 18,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 15,
+    borderRadius: 14,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: `${Colors.primary}18`,
     shadowColor: '#000',
@@ -1632,13 +1645,13 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   reliabilityTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700' as const,
     color: Colors.dark,
     marginBottom: 6,
   },
   reliabilityText: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.dark,
     marginBottom: 4,
   },
@@ -1648,15 +1661,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   reliabilityGuidance: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 18,
     color: Colors.gray,
   },
   liveCard: {
     backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -1690,26 +1703,26 @@ const styles = StyleSheet.create({
     color: Colors.gray,
   },
   liveTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700' as const,
     color: Colors.dark,
     marginBottom: 8,
   },
   liveDescription: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13,
+    lineHeight: 19,
     color: Colors.gray,
     marginBottom: 6,
   },
   liveMetaText: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.gray,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   liveButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 10,
+    paddingVertical: 12,
     alignItems: 'center',
   },
   liveButtonSecondary: {
@@ -1718,7 +1731,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   liveButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600' as const,
     color: '#fff',
   },
@@ -1732,11 +1745,11 @@ const styles = StyleSheet.create({
   announcementStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 14,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: `${Colors.primary}18`,
     shadowColor: '#000',
@@ -1746,9 +1759,9 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   announcementIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     backgroundColor: `${Colors.primary}12`,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1757,7 +1770,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   announcementTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700' as const,
     color: Colors.dark,
     marginBottom: 2,
@@ -1767,28 +1780,28 @@ const styles = StyleSheet.create({
     color: Colors.gray,
   },
   sectionHeader: {
-    marginBottom: 16,
+    marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700' as const,
     color: Colors.dark,
   },
   upcomingStopsCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 10,
     backgroundColor: `${Colors.primary}0D`,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 14,
+    padding: 13,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: `${Colors.primary}24`,
   },
   upcomingStopsIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1803,13 +1816,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   upcomingStopsTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700' as const,
     color: Colors.dark,
   },
   upcomingStopsSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 17,
     color: Colors.gray,
   },
   newBadge: {
@@ -1830,9 +1843,9 @@ const styles = StyleSheet.create({
   },
   shareCard: {
     backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -1842,19 +1855,19 @@ const styles = StyleSheet.create({
   shareHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 8,
+    gap: 10,
+    marginBottom: 6,
   },
   shareTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700' as const,
     color: Colors.dark,
   },
   shareDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.gray,
-    lineHeight: 20,
-    marginBottom: 16,
+    lineHeight: 18,
+    marginBottom: 12,
   },
   shareActions: {
     flexDirection: 'row',
@@ -1863,8 +1876,8 @@ const styles = StyleSheet.create({
   qrStatsContainer: {
     backgroundColor: `${Colors.primary}08`,
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    padding: 13,
+    marginBottom: 12,
     borderLeftWidth: 3,
     borderLeftColor: Colors.primary,
   },
@@ -1883,7 +1896,7 @@ const styles = StyleSheet.create({
     fontWeight: '500' as const,
   },
   qrStatValue: {
-    fontSize: 24,
+    fontSize: 21,
     fontWeight: '700' as const,
     color: Colors.dark,
     marginTop: 2,
@@ -1906,9 +1919,9 @@ const styles = StyleSheet.create({
   },
   checklistCard: {
     backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 14,
     borderLeftWidth: 4,
     borderLeftColor: Colors.primary,
     shadowColor: '#000',
@@ -1921,10 +1934,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   checklistTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700' as const,
     color: Colors.dark,
   },
@@ -1932,19 +1945,19 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   checklistSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.gray,
-    marginBottom: 16,
+    marginBottom: 12,
     lineHeight: 18,
   },
   checklistItems: {
-    gap: 12,
+    gap: 9,
   },
   checklistItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 4,
+    gap: 10,
+    paddingVertical: 3,
   },
   checklistIcon: {
     width: 24,
@@ -1963,7 +1976,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.gray,
   },
   checklistItemText: {
-    fontSize: 15,
+    fontSize: 14,
     color: Colors.dark,
     fontWeight: '500' as const,
   },
@@ -2050,9 +2063,9 @@ const styles = StyleSheet.create({
   },
   shareMainCard: {
     backgroundColor: '#fff',
-    padding: 24,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 18,
+    borderRadius: 14,
+    marginBottom: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
@@ -2068,13 +2081,13 @@ const styles = StyleSheet.create({
   shareMainHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    marginBottom: 20,
+    gap: 12,
+    marginBottom: 14,
   },
   shareMainIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: `${Colors.primary}15`,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2083,7 +2096,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   shareMainTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700' as const,
     color: Colors.dark,
     marginBottom: 4,
@@ -2092,12 +2105,12 @@ const styles = StyleSheet.create({
     color: Colors.gray,
   },
   shareMainSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.gray,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   shareButtonsContainer: {
-    gap: 12,
+    gap: 10,
   },
   shareButtonsContainerDisabled: {
     opacity: 0.6,
@@ -2108,9 +2121,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     backgroundColor: Colors.primary,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 18,
+    borderRadius: 10,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -2124,13 +2137,13 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
   sharePrimaryButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700' as const,
     color: '#fff',
   },
   shareSecondaryButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   shareSecondaryButton: {
     flex: 1,
@@ -2139,14 +2152,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: `${Colors.primary}10`,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: `${Colors.primary}30`,
   },
   shareSecondaryButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600' as const,
     color: Colors.primary,
   },
@@ -2155,8 +2168,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     backgroundColor: `${Colors.gray}10`,
-    padding: 16,
-    borderRadius: 12,
+    padding: 13,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: `${Colors.gray}20`,
   },
@@ -2169,9 +2182,9 @@ const styles = StyleSheet.create({
   },
   qrStatsCard: {
     backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -2182,7 +2195,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   qrStatsTitle: {
     fontSize: 16,
@@ -2191,13 +2204,13 @@ const styles = StyleSheet.create({
   },
   qrStatsRow: {
     flexDirection: 'row',
-    gap: 20,
+    gap: 14,
   },
   qrStatItem: {
     flex: 1,
   },
   qrStatNumber: {
-    fontSize: 24,
+    fontSize: 21,
     fontWeight: '700' as const,
     color: Colors.primary,
     marginBottom: 4,

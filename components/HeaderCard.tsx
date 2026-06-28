@@ -7,10 +7,22 @@ type HeaderCardProps = {
   cuisineType: string;
   logoUrl?: string;
   isOpen: boolean;
+  greeting?: string;
+  missionLabel?: string;
+  missionMessage?: string;
 };
 
-export default function HeaderCard({ truckName, cuisineType, logoUrl, isOpen }: HeaderCardProps) {
+export default function HeaderCard({
+  truckName,
+  cuisineType,
+  logoUrl,
+  isOpen,
+  greeting = 'Welcome back,',
+  missionLabel,
+  missionMessage,
+}: HeaderCardProps) {
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const showMission = !!missionMessage;
 
   React.useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -24,9 +36,9 @@ export default function HeaderCard({ truckName, cuisineType, logoUrl, isOpen }: 
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
       <View style={styles.content}>
         <View style={styles.textSection}>
-          <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.truckName}>{truckName}</Text>
-          <Text style={styles.cuisineType}>{cuisineType}</Text>
+          <Text style={styles.greeting}>{greeting}</Text>
+          <Text style={styles.truckName} numberOfLines={1}>{truckName}</Text>
+          <Text style={styles.cuisineType} numberOfLines={1}>{cuisineType}</Text>
         </View>
         {logoUrl ? (
           <Image source={{ uri: logoUrl }} style={styles.logo} />
@@ -42,6 +54,16 @@ export default function HeaderCard({ truckName, cuisineType, logoUrl, isOpen }: 
         <View style={[styles.statusDot, isOpen ? styles.dotOpen : styles.dotClosed]} />
         <Text style={styles.statusText}>{isOpen ? 'Open Now' : 'Closed'}</Text>
       </View>
+      {showMission ? (
+        <View style={styles.briefing}>
+          <Text style={styles.missionLine} numberOfLines={1}>
+            {missionLabel ? (
+              <Text style={styles.missionLineLabel}>{missionLabel} </Text>
+            ) : null}
+            {missionMessage}
+          </Text>
+        </View>
+      ) : null}
     </Animated.View>
   );
 }
@@ -49,11 +71,11 @@ export default function HeaderCard({ truckName, cuisineType, logoUrl, isOpen }: 
 const styles = StyleSheet.create({
   container: {
     backgroundColor: Colors.primary,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    padding: 14,
-    paddingBottom: 16,
-    marginBottom: 12,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    padding: 12,
+    paddingBottom: 13,
+    marginBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
@@ -75,35 +97,36 @@ const styles = StyleSheet.create({
     marginBottom: 1,
   },
   truckName: {
-    fontSize: 26,
+    fontSize: 23,
+    lineHeight: 28,
     fontWeight: '800' as const,
     color: '#fff',
     marginBottom: 1,
   },
   cuisineType: {
-    fontSize: 15,
+    fontSize: 14,
     color: 'rgba(255, 255, 255, 0.9)',
     fontWeight: '500' as const,
   },
   logo: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    borderWidth: 3,
+    width: 50,
+    height: 50,
+    borderRadius: 13,
+    borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   logoPlaceholder: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
+    width: 50,
+    height: 50,
+    borderRadius: 13,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   logoPlaceholderText: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700' as const,
     color: '#fff',
   },
@@ -111,8 +134,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
     borderRadius: 20,
   },
   statusOpen: {
@@ -134,8 +157,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.7)',
   },
   statusText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600' as const,
     color: '#fff',
+  },
+  briefing: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.24)',
+  },
+  missionLine: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#fff',
+  },
+  missionLineLabel: {
+    fontWeight: '800' as const,
+    color: 'rgba(255, 255, 255, 0.9)',
   },
 });
