@@ -15,6 +15,7 @@ import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
 import { getTruckCommandCenter } from '@/lib/truckCommandCenter';
 import { getTruckCoachMessage } from '@/lib/truckCoach';
+import { getTruckCoachProgressCelebration } from '@/lib/truckCoachProgress';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -112,6 +113,7 @@ export default function TruckDashboard() {
   const [toastVisible, setToastVisible] = useState(false);
   const [statusToast, setStatusToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' }>({ visible: false, message: '', type: 'success' });
   const [liveNowMs, setLiveNowMs] = useState(Date.now());
+  const [coachProgressCelebration, setCoachProgressCelebration] = useState('');
   
   const bannerOpacity = useRef(new Animated.Value(0)).current;
   const bannerTranslateY = useRef(new Animated.Value(-5)).current;
@@ -194,6 +196,12 @@ export default function TruckDashboard() {
     [announcements, ownerMessages, reviews, truck, upcomingStops]
   );
   const truckCoach = commandCenter ? getTruckCoachMessage(commandCenter) : null;
+  const displayTruckCoach = truckCoach
+    ? {
+      ...truckCoach,
+      celebration: coachProgressCelebration || truckCoach.celebration,
+    }
+    : null;
   const dailyBriefingGreeting = useMemo(() => getDailyBriefingGreeting(), []);
   const scheduledStopWarning = commandCenter?.eventReadiness === 'starts_soon'
     ? {
@@ -256,6 +264,42 @@ export default function TruckDashboard() {
   const handleCompleteProfile = () => {
     router.push('/(truck)/edit-profile' as any);
   };
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!truck || !commandCenter || isAdminViewOnly) {
+      setCoachProgressCelebration('');
+      return () => {
+        mounted = false;
+      };
+    }
+
+    getTruckCoachProgressCelebration({
+      truck,
+      commandCenter,
+      upcomingStops,
+      announcements,
+      reviews,
+    })
+      .then(celebration => {
+        if (mounted) {
+          setCoachProgressCelebration(celebration?.message ?? '');
+        }
+      })
+      .catch(error => {
+        if (__DEV__) {
+          console.log('[Dashboard] Coach progress celebration failed:', error?.message ?? error);
+        }
+        if (mounted) {
+          setCoachProgressCelebration('');
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [announcements, commandCenter, isAdminViewOnly, reviews, truck, upcomingStops]);
 
   useEffect(() => {
     if (isArchived) {
@@ -662,7 +706,7 @@ export default function TruckDashboard() {
         isOpen={truckOpenNow}
         greeting={dailyBriefingGreeting}
         missionLabel={"Today's Mission:"}
-        missionMessage={truckCoach?.message ?? commandCenter?.nextAction}
+        missionMessage={displayTruckCoach?.message ?? commandCenter?.nextAction}
       />
 
       <ScrollView 
@@ -801,15 +845,15 @@ export default function TruckDashboard() {
             </View>
 
             <View style={styles.commandCenterNextBox}>
-              <Text style={styles.commandCenterNextAction}>{truckCoach?.message ?? commandCenter.nextAction}</Text>
-              {truckCoach?.encouragement ? (
-                <Text style={styles.commandCenterCoachText}>{truckCoach.encouragement}</Text>
+              {displayTruckCoach?.celebration ? (
+                <Text style={styles.commandCenterCelebration}>{displayTruckCoach.celebration}</Text>
               ) : null}
-              {truckCoach?.estimatedTime ? (
-                <Text style={styles.commandCenterEstimatedTime}>Estimated time: {truckCoach.estimatedTime}</Text>
+              <Text style={styles.commandCenterNextAction}>{displayTruckCoach?.message ?? commandCenter.nextAction}</Text>
+              {displayTruckCoach?.encouragement ? (
+                <Text style={styles.commandCenterCoachText}>{displayTruckCoach.encouragement}</Text>
               ) : null}
-              {truckCoach?.celebration ? (
-                <Text style={styles.commandCenterCelebration}>{truckCoach.celebration}</Text>
+              {displayTruckCoach?.estimatedTime ? (
+                <Text style={styles.commandCenterEstimatedTime}>Estimated time: {displayTruckCoach.estimatedTime}</Text>
               ) : null}
             </View>
 
