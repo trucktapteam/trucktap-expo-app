@@ -18,6 +18,7 @@ import { trackEvent } from '@/lib/analytics';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
 import { isTruckProfileComplete } from '@/lib/truckProfileCompleteness';
+import { getTruckTrustStatus } from '@/lib/truckTrustStatus';
 import {
   fetchCurrentUserTruckCheckInCount,
   hasCurrentUserCheckedInToday,
@@ -95,6 +96,14 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
       ((truck.archived !== true && !truck.archivedAt) || canViewArchivedTruck) &&
       !isIncompleteTruckHiddenFromCustomer
     ));
+  const trustStatus = useMemo(
+    () => getTruckTrustStatus({
+      truck,
+      profileVisible: customerCanViewTruck,
+      activityStatus,
+    }),
+    [activityStatus, customerCanViewTruck, truck]
+  );
   
   const reviews = useTruckReviews(truckId);
   const { average, count } = useTruckRating(truckId);
@@ -554,7 +563,19 @@ console.log('[FORMAT DATE]', dateInput);
               </View>
               <Text style={styles.cuisine}>{truck.cuisine_type}</Text>
               <View style={styles.trustRow}>
-                {truck.verified && isProfileComplete(truck.id) ? (
+                {mode === 'customer' && trustStatus.state !== 'hidden' ? (
+                  <View style={styles.trustIndicator}>
+                    <Text
+                      style={[
+                        styles.trustText,
+                        trustStatus.tone === 'success' && styles.trustTextSuccess,
+                        trustStatus.tone === 'warning' && styles.trustTextWarning,
+                      ]}
+                    >
+                      {trustStatus.label}
+                    </Text>
+                  </View>
+                ) : truck.verified && isProfileComplete(truck.id) ? (
                   <View style={styles.trustIndicator}>
                     <Shield size={14} color={colors.secondaryText} />
                     <Text style={styles.trustText}>Verified on TruckTap</Text>
@@ -569,11 +590,6 @@ console.log('[FORMAT DATE]', dateInput);
                   </View>
                 ) : null}
               </View>
-              {activityStatus.activeOnTruckTap && (
-                <View style={styles.activityBadge}>
-                  <Text style={styles.activityBadgeText}>🟢 Active on TruckTap</Text>
-                </View>
-              )}
               {count > 0 && (
                 <View style={styles.ratingRow}>
                   {renderStars(average, 18)}
@@ -1129,6 +1145,14 @@ emptyReviewText: {
     color: colors.secondaryText,
     fontWeight: '500' as const,
   },
+  trustTextSuccess: {
+    color: colors.success,
+    fontWeight: '700' as const,
+  },
+  trustTextWarning: {
+    color: colors.warning,
+    fontWeight: '700' as const,
+  },
   trustDot: {
     fontSize: 13,
     color: colors.secondaryText,
@@ -1138,21 +1162,6 @@ emptyReviewText: {
     fontSize: 13,
     color: colors.secondaryText,
     fontStyle: 'italic' as const,
-  },
-  activityBadge: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: `${colors.success}12`,
-    borderWidth: 1,
-    borderColor: `${colors.success}30`,
-  },
-  activityBadgeText: {
-    fontSize: 13,
-    color: colors.success,
-    fontWeight: '700' as const,
   },
   cuisine: {
     fontSize: 17,
