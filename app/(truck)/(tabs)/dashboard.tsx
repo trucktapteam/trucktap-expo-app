@@ -16,6 +16,8 @@ import { getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
 import { getTruckCommandCenter } from '@/lib/truckCommandCenter';
 import { getTruckCoachMessage } from '@/lib/truckCoach';
 import { getTruckCoachProgressCelebration } from '@/lib/truckCoachProgress';
+import { getTruckOpportunities } from '@/lib/truckOpportunities';
+import type { TruckOpportunityAction, TruckOpportunityPriority } from '@/lib/truckOpportunities';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -76,6 +78,12 @@ const requiredProfileLabels = {
   logo: 'Logo',
   hero: 'Hero Image',
 } as const;
+
+const opportunityPriorityLabels: Record<TruckOpportunityPriority, string> = {
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+};
 
 export default function TruckDashboard() {
   const router = useRouter();
@@ -247,6 +255,18 @@ export default function TruckDashboard() {
     }
   }, [commandCenter?.nextAction]);
   const showCommandAction = !!commandCenter && (commandCenter.nextAction === 'Go LIVE' || !!commandActionRoute);
+  const opportunities = useMemo(
+    () => truck
+      ? getTruckOpportunities({
+        ...truck,
+        upcomingStops,
+        announcements,
+        menuItems,
+        reviews,
+      }).slice(0, 3)
+      : [],
+    [announcements, menuItems, reviews, truck, upcomingStops]
+  );
 
   const handleCommandCenterAction = () => {
     if (!commandCenter) return;
@@ -263,6 +283,67 @@ export default function TruckDashboard() {
 
   const handleCompleteProfile = () => {
     router.push('/(truck)/edit-profile' as any);
+  };
+
+  const getOpportunityActionLabel = (action: TruckOpportunityAction): string | null => {
+    switch (action) {
+      case 'schedule':
+        return 'Add stop';
+      case 'announcement':
+        return 'Share update';
+      case 'gallery':
+        return 'Add photos';
+      case 'reviews':
+        return 'Reply';
+      case 'goLive':
+        return 'Go Live';
+      default:
+        return null;
+    }
+  };
+
+  const getOpportunityPriorityPillStyle = (priority: TruckOpportunityPriority) => {
+    switch (priority) {
+      case 'high':
+        return styles.opportunityPriorityHigh;
+      case 'medium':
+        return styles.opportunityPriorityMedium;
+      case 'low':
+        return styles.opportunityPriorityLow;
+    }
+  };
+
+  const getOpportunityPriorityTextStyle = (priority: TruckOpportunityPriority) => {
+    switch (priority) {
+      case 'high':
+        return styles.opportunityPriorityTextHigh;
+      case 'medium':
+        return styles.opportunityPriorityTextMedium;
+      case 'low':
+        return styles.opportunityPriorityTextLow;
+    }
+  };
+
+  const handleOpportunityAction = (action: TruckOpportunityAction) => {
+    switch (action) {
+      case 'schedule':
+        router.push('/(truck)/upcoming-stops' as any);
+        return;
+      case 'announcement':
+        router.push('/(truck)/announcements' as any);
+        return;
+      case 'gallery':
+        router.push('/(truck)/gallery' as any);
+        return;
+      case 'reviews':
+        router.push('/(truck)/reviews' as any);
+        return;
+      case 'goLive':
+        handleGoLive();
+        return;
+      default:
+        return;
+    }
   };
 
   useEffect(() => {
@@ -971,6 +1052,59 @@ export default function TruckDashboard() {
             </View>
           </View>
         )}
+
+        <View style={styles.opportunitiesCard}>
+          <View style={styles.opportunitiesHeader}>
+            <View style={styles.opportunitiesTitleWrap}>
+              <Text style={styles.opportunitiesTitle}>Opportunities</Text>
+              <Text style={styles.opportunitiesSubtitle}>
+                Small ways to keep your truck active and easy to find.
+              </Text>
+            </View>
+          </View>
+
+          {opportunities.length > 0 ? (
+            <View style={styles.opportunitiesList}>
+              {opportunities.map(opportunity => {
+                const actionLabel = getOpportunityActionLabel(opportunity.action);
+
+                return (
+                  <View key={opportunity.id} style={styles.opportunityItem}>
+                    <View style={styles.opportunityContent}>
+                      <View style={styles.opportunityTitleRow}>
+                        <Text style={styles.opportunityTitle}>{opportunity.title}</Text>
+                        <View style={[
+                          styles.opportunityPriorityPill,
+                          getOpportunityPriorityPillStyle(opportunity.priority),
+                        ]}>
+                          <Text style={[
+                            styles.opportunityPriorityText,
+                            getOpportunityPriorityTextStyle(opportunity.priority),
+                          ]}>
+                            {opportunityPriorityLabels[opportunity.priority]}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.opportunityDescription}>{opportunity.description}</Text>
+                    </View>
+                    {actionLabel ? (
+                      <TouchableOpacity
+                        style={styles.opportunityActionButton}
+                        onPress={() => handleOpportunityAction(opportunity.action)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={styles.opportunityActionText}>{actionLabel}</Text>
+                        <ChevronRight size={15} color={Colors.primary} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <Text style={styles.opportunitiesEmptyText}>Looking good — no extra suggestions right now.</Text>
+          )}
+        </View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Operational Tools</Text>
@@ -2026,6 +2160,112 @@ const styles = StyleSheet.create({
   },
   checklistItemTextComplete: {
     textDecorationLine: 'line-through',
+    color: Colors.gray,
+  },
+  opportunitiesCard: {
+    backgroundColor: '#fff',
+    padding: 15,
+    borderRadius: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}18`,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  opportunitiesHeader: {
+    marginBottom: 12,
+  },
+  opportunitiesTitleWrap: {
+    gap: 4,
+  },
+  opportunitiesTitle: {
+    fontSize: 17,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  opportunitiesSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.gray,
+  },
+  opportunitiesList: {
+    gap: 10,
+  },
+  opportunityItem: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  opportunityContent: {
+    gap: 5,
+  },
+  opportunityTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  opportunityTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  opportunityDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.gray,
+  },
+  opportunityPriorityPill: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  opportunityPriorityHigh: {
+    backgroundColor: `${Colors.error}14`,
+  },
+  opportunityPriorityMedium: {
+    backgroundColor: `${Colors.warning}18`,
+  },
+  opportunityPriorityLow: {
+    backgroundColor: `${Colors.primary}12`,
+  },
+  opportunityPriorityText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  opportunityPriorityTextHigh: {
+    color: Colors.error,
+  },
+  opportunityPriorityTextMedium: {
+    color: Colors.warning,
+  },
+  opportunityPriorityTextLow: {
+    color: Colors.primary,
+  },
+  opportunityActionButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: `${Colors.primary}10`,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  opportunityActionText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+  },
+  opportunitiesEmptyText: {
+    fontSize: 13,
+    lineHeight: 19,
     color: Colors.gray,
   },
   cardWithBadge: {
