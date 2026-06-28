@@ -216,6 +216,17 @@ export default function TruckDashboard() {
     ? getCommandVisibilityLabel(commandCenter.visibility, commandCenter.health)
     : '';
   const truckCoach = commandCenter ? getTruckCoachMessage(commandCenter) : null;
+  const scheduledStopWarning = commandCenter?.eventReadiness === 'starts_soon'
+    ? {
+      message: 'Your stop starts soon. Go LIVE before customers arrive.',
+      urgent: false,
+    }
+    : commandCenter?.eventReadiness === 'started'
+      ? {
+        message: "Your scheduled stop has started. Customers may think you're closed until you Go LIVE.",
+        urgent: true,
+      }
+      : null;
   const commandActionRoute = useMemo(() => {
     const action = commandCenter?.nextAction;
 
@@ -705,6 +716,31 @@ export default function TruckDashboard() {
               <Text style={styles.restoreButtonText}>Restore Truck</Text>
             </TouchableOpacity>
           </Animated.View>
+        )}
+
+        {scheduledStopWarning && (
+          <View style={[
+            styles.scheduledStopWarning,
+            scheduledStopWarning.urgent && styles.scheduledStopWarningUrgent,
+          ]}>
+            <View style={styles.scheduledStopWarningContent}>
+              <AlertCircle
+                size={21}
+                color={scheduledStopWarning.urgent ? Colors.error : Colors.warning}
+              />
+              <Text style={styles.scheduledStopWarningText}>{scheduledStopWarning.message}</Text>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.scheduledStopWarningButton,
+                scheduledStopWarning.urgent && styles.scheduledStopWarningButtonUrgent,
+              ]}
+              onPress={handleGoLive}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.scheduledStopWarningButtonText}>Go LIVE</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {commandCenter && (
@@ -1446,6 +1482,52 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: Colors.gray,
+  },
+  scheduledStopWarning: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    borderColor: `${Colors.warning}40`,
+    borderLeftColor: Colors.warning,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  scheduledStopWarningUrgent: {
+    borderColor: `${Colors.error}35`,
+    borderLeftColor: Colors.error,
+  },
+  scheduledStopWarningContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 14,
+  },
+  scheduledStopWarningText: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  scheduledStopWarningButton: {
+    backgroundColor: Colors.warning,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  scheduledStopWarningButtonUrgent: {
+    backgroundColor: Colors.error,
+  },
+  scheduledStopWarningButtonText: {
+    fontSize: 15,
+    fontWeight: '800' as const,
+    color: '#fff',
   },
   reliabilityCard: {
     backgroundColor: '#fff',
