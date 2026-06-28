@@ -62,34 +62,6 @@ const formatServingLocation = (truck: any): string => {
   return 'Location saved';
 };
 
-const getCommandStatusLabel = (health: string): string => {
-  if (health === 'Hidden') return 'Action Required';
-  return health;
-};
-
-const getCommandStatusExplanation = (health: string): string => {
-  switch (health) {
-    case 'Hidden':
-      return "Customers can't currently discover your truck.";
-    case 'Needs Attention':
-      return 'Your truck is almost ready.';
-    case 'Good':
-      return 'Your truck is visible with opportunities to improve.';
-    case 'Excellent':
-      return 'Your truck is ready and looking great.';
-    default:
-      return '';
-  }
-};
-
-const getCommandVisibilityLabel = (visibility: string, health: string): string => {
-  if (visibility === 'Archived') return 'Archived';
-  if (visibility === 'Test Truck') return 'Test Truck';
-  if (visibility === 'Profile Complete') return 'Visible to Customers';
-  if (health === 'Hidden') return 'Hidden from Customers';
-  return visibility;
-};
-
 const requiredProfileLabels = {
   name: 'Truck Name',
   logo: 'Logo',
@@ -213,14 +185,6 @@ export default function TruckDashboard() {
       : null,
     [announcements, ownerMessages, reviews, truck, upcomingStops]
   );
-  const commandProfilePercent = commandCenter
-    ? Math.round((commandCenter.profileCompleteness.completedCount / commandCenter.profileCompleteness.totalCount) * 100)
-    : 0;
-  const commandStatusLabel = commandCenter ? getCommandStatusLabel(commandCenter.health) : '';
-  const commandStatusExplanation = commandCenter ? getCommandStatusExplanation(commandCenter.health) : '';
-  const commandVisibilityLabel = commandCenter
-    ? getCommandVisibilityLabel(commandCenter.visibility, commandCenter.health)
-    : '';
   const truckCoach = commandCenter ? getTruckCoachMessage(commandCenter) : null;
   const scheduledStopWarning = commandCenter?.eventReadiness === 'starts_soon'
     ? {
@@ -818,29 +782,12 @@ export default function TruckDashboard() {
                 <Sparkles size={22} color={Colors.primary} />
               </View>
               <View style={styles.commandCenterTitleWrap}>
-                <Text style={styles.commandCenterEyebrow}>Truck Command Center</Text>
-                <Text style={styles.commandCenterTitle}>Status: {commandStatusLabel}</Text>
-                {commandStatusExplanation ? (
-                  <Text style={styles.commandCenterStatusExplanation}>{commandStatusExplanation}</Text>
-                ) : null}
-              </View>
-            </View>
-
-            <View style={styles.commandCenterStatusRow}>
-              <View style={styles.commandCenterStatusItem}>
-                <Text style={styles.commandCenterLabel}>Customer Visibility</Text>
-                <Text style={styles.commandCenterValue}>{commandVisibilityLabel}</Text>
-              </View>
-              <View style={styles.commandCenterStatusItem}>
-                <Text style={styles.commandCenterLabel}>Profile</Text>
-                <Text style={styles.commandCenterValue}>
-                  {commandCenter.profileCompleteness.completedCount}/{commandCenter.profileCompleteness.totalCount} ({commandProfilePercent}%)
-                </Text>
+                <Text style={styles.commandCenterEyebrow}>TruckTap Coach</Text>
+                <Text style={styles.commandCenterTitle}>{"Today's Mission"}</Text>
               </View>
             </View>
 
             <View style={styles.commandCenterNextBox}>
-              <Text style={styles.commandCenterLabel}>{truckCoach?.headline ?? "Today's Mission"}</Text>
               <Text style={styles.commandCenterNextAction}>{truckCoach?.message ?? commandCenter.nextAction}</Text>
               {truckCoach?.encouragement ? (
                 <Text style={styles.commandCenterCoachText}>{truckCoach.encouragement}</Text>
@@ -862,13 +809,7 @@ export default function TruckDashboard() {
                 <Text style={styles.commandCenterButtonText}>{commandCenter.nextAction}</Text>
                 <ChevronRight size={18} color="#fff" />
               </TouchableOpacity>
-            ) : (
-              <Text style={styles.commandCenterPositiveText}>
-                {commandCenter.nextAction === 'No action available'
-                  ? 'No owner action is available for this truck right now.'
-                  : 'No action required right now.'}
-              </Text>
-            )}
+            ) : null}
           </View>
         )}
 
@@ -1473,34 +1414,6 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
     color: Colors.dark,
   },
-  commandCenterStatusExplanation: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: Colors.gray,
-    marginTop: 4,
-  },
-  commandCenterStatusRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 14,
-  },
-  commandCenterStatusItem: {
-    flex: 1,
-    backgroundColor: Colors.lightGray,
-    borderRadius: 12,
-    padding: 12,
-  },
-  commandCenterLabel: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: Colors.gray,
-    marginBottom: 4,
-  },
-  commandCenterValue: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: Colors.dark,
-  },
   commandCenterNextBox: {
     backgroundColor: `${Colors.primary}0D`,
     borderRadius: 12,
@@ -1545,11 +1458,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700' as const,
     color: '#fff',
-  },
-  commandCenterPositiveText: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: Colors.gray,
   },
   scheduledStopWarning: {
     backgroundColor: '#fff',
