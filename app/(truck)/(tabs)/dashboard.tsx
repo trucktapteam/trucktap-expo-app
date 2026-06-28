@@ -90,6 +90,12 @@ const getCommandVisibilityLabel = (visibility: string, health: string): string =
   return visibility;
 };
 
+const requiredProfileLabels = {
+  name: 'Truck Name',
+  logo: 'Logo',
+  hero: 'Hero Image',
+} as const;
+
 export default function TruckDashboard() {
   const router = useRouter();
   const pathname = usePathname();
@@ -227,6 +233,17 @@ export default function TruckDashboard() {
         urgent: true,
       }
       : null;
+  const incompleteProfileEducation = commandCenter &&
+    commandCenter.health === 'Hidden' &&
+    !isArchived &&
+    truck?.is_test !== true &&
+    !commandCenter.profileCompleteness.complete
+    ? {
+      completedCount: commandCenter.profileCompleteness.completedCount,
+      totalCount: commandCenter.profileCompleteness.totalCount,
+      missingLabels: commandCenter.profileCompleteness.missing.map(requirement => requiredProfileLabels[requirement]),
+    }
+    : null;
   const commandActionRoute = useMemo(() => {
     const action = commandCenter?.nextAction;
 
@@ -259,6 +276,10 @@ export default function TruckDashboard() {
     if (commandActionRoute) {
       router.push(commandActionRoute as any);
     }
+  };
+
+  const handleCompleteProfile = () => {
+    router.push('/(truck)/edit-profile' as any);
   };
 
   useEffect(() => {
@@ -739,6 +760,44 @@ export default function TruckDashboard() {
               activeOpacity={0.75}
             >
               <Text style={styles.scheduledStopWarningButtonText}>Go LIVE</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {incompleteProfileEducation && (
+          <View style={styles.incompleteProfileCard}>
+            <View style={styles.incompleteProfileHeader}>
+              <View style={styles.incompleteProfileIconWrap}>
+                <AlertCircle size={22} color={Colors.error} />
+              </View>
+              <View style={styles.incompleteProfileTitleWrap}>
+                <Text style={styles.incompleteProfileTitle}>Your truck is hidden from customers</Text>
+                <Text style={styles.incompleteProfileBody}>
+                  Complete your profile so customers can find your truck on the map and in search.
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.incompleteProfileProgress}>
+              {incompleteProfileEducation.completedCount} of {incompleteProfileEducation.totalCount} required steps complete
+            </Text>
+
+            <View style={styles.incompleteProfileMissingList}>
+              {incompleteProfileEducation.missingLabels.map(label => (
+                <View key={label} style={styles.incompleteProfileMissingItem}>
+                  <AlertCircle size={16} color={Colors.error} />
+                  <Text style={styles.incompleteProfileMissingText}>{label}</Text>
+                </View>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.incompleteProfileButton}
+              onPress={handleCompleteProfile}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.incompleteProfileButtonText}>Complete Profile</Text>
+              <ChevronRight size={18} color="#fff" />
             </TouchableOpacity>
           </View>
         )}
@@ -1527,6 +1586,81 @@ const styles = StyleSheet.create({
   scheduledStopWarningButtonText: {
     fontSize: 15,
     fontWeight: '800' as const,
+    color: '#fff',
+  },
+  incompleteProfileCard: {
+    backgroundColor: '#fff',
+    padding: 18,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: `${Colors.error}25`,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  incompleteProfileHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+  incompleteProfileIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: `${Colors.error}12`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  incompleteProfileTitleWrap: {
+    flex: 1,
+  },
+  incompleteProfileTitle: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+    color: Colors.dark,
+    marginBottom: 6,
+  },
+  incompleteProfileBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.gray,
+  },
+  incompleteProfileProgress: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 12,
+  },
+  incompleteProfileMissingList: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  incompleteProfileMissingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  incompleteProfileMissingText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.dark,
+  },
+  incompleteProfileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  incompleteProfileButtonText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
     color: '#fff',
   },
   reliabilityCard: {
