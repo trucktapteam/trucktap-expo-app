@@ -16,6 +16,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import AuthPromptModal from '@/components/AuthPromptModal';
 import { FoodTruck } from '@/types';
 import { DEBUG } from '@/constants/debug';
+import { isTruckVisibilitySetupComplete } from '@/lib/truckVisibilitySetup';
 
 export default function TruckLoginScreen() {
   const router = useRouter();
@@ -62,8 +63,11 @@ export default function TruckLoginScreen() {
       truck_id: truck.id,
     });
     completeOnboarding();
-    if (DEBUG) console.log('[TruckLogin] Navigating to dashboard for truck:', truck.id);
-    router.replace('/(truck)/(tabs)/dashboard' as any);
+    const targetRoute = isTruckVisibilitySetupComplete(truck)
+      ? '/(truck)/(tabs)/dashboard'
+      : '/(truck)/visibility-wizard';
+    if (DEBUG) console.log('[TruckLogin] Navigating for truck:', truck.id, targetRoute);
+    router.replace(targetRoute as any);
   };
 
   const enterAdminTools = () => {

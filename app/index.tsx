@@ -5,10 +5,11 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { DEBUG } from '@/constants/debug';
+import { isTruckVisibilitySetupComplete } from '@/lib/truckVisibilitySetup';
 
 export default function Index() {
   const router = useRouter();
-  const { isOwner, isOwnerLoading } = useApp();
+  const { currentUser, getUserTruck, isOwner, isOwnerLoading } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { colors } = useTheme();
   const [didNavigate, setDidNavigate] = useState(false);
@@ -30,11 +31,22 @@ export default function Index() {
         return;
       }
 
-      const targetRoute = isOwner
+      const truck = getUserTruck();
+      const ownerNeedsVisibilityWizard =
+        isOwner &&
+        currentUser?.role !== 'admin' &&
+        !!truck &&
+        !isTruckVisibilitySetupComplete(truck);
+      const targetRoute = ownerNeedsVisibilityWizard
+        ? '/(truck)/visibility-wizard'
+        : isOwner
         ? '/(truck)/(tabs)/dashboard'
         : '/(customer)/(tabs)/discover';
 
-      if (DEBUG) console.log('[Index] Navigating to:', targetRoute);
+      if (DEBUG) console.log('[Index] Navigating to:', targetRoute, {
+        truckId: truck?.id ?? null,
+        role: currentUser?.role ?? null,
+      });
       setDidNavigate(true);
 
       requestAnimationFrame(() => {
@@ -49,7 +61,15 @@ export default function Index() {
           setDidNavigate(true);
           router.replace('/(customer)/(tabs)/discover' as any);
         } else {
-          const targetRoute = isOwner
+          const truck = getUserTruck();
+          const ownerNeedsVisibilityWizard =
+            isOwner &&
+            currentUser?.role !== 'admin' &&
+            !!truck &&
+            !isTruckVisibilitySetupComplete(truck);
+          const targetRoute = ownerNeedsVisibilityWizard
+            ? '/(truck)/visibility-wizard'
+            : isOwner
             ? '/(truck)/(tabs)/dashboard'
             : '/(customer)/(tabs)/discover';
           if (DEBUG) console.log('[Index] Failsafe navigating to:', targetRoute);
@@ -63,7 +83,7 @@ export default function Index() {
       clearTimeout(timer);
       clearTimeout(failsafeTimer);
     };
-  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, didNavigate]);
+  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, didNavigate, getUserTruck, currentUser?.role]);
 
   if (didNavigate) {
     return null;

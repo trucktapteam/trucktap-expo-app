@@ -14,7 +14,7 @@ import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/
 
 export default function TruckSetupScreen() {
   const router = useRouter();
-  const { completeOnboarding, refreshOwnedTrucks } = useApp();
+  const { completeOnboarding, currentUser, refreshOwnedTrucks, setCurrentUser } = useApp();
   const { colors } = useTheme();
   const { isAuthenticated, user: authUser, isLoading: authLoading } = useAuth();
   const [truckName, setTruckName] = useState('');
@@ -137,8 +137,23 @@ export default function TruckSetupScreen() {
       await refreshOwnedTrucks();
 
       completeOnboarding();
-      console.log('[TruckSetup] Navigating to dashboard');
-      router.replace('/(truck)/(tabs)/dashboard' as any);
+
+      if (currentUser?.role === 'admin') {
+        console.log('[TruckSetup] Admin created truck, navigating to dashboard');
+        router.replace('/(truck)/(tabs)/dashboard' as any);
+        return;
+      }
+
+      setCurrentUser({
+        id: authUser.id,
+        name: authUser.name,
+        email: authUser.email,
+        favorites: currentUser?.favorites ?? [],
+        role: 'truck',
+        truck_id: data.id.toString(),
+      });
+      console.log('[TruckSetup] Navigating to visibility wizard');
+      router.replace('/(truck)/visibility-wizard?start=name' as any);
     } catch (err: any) {
       console.log('[TruckSetup] Unexpected error:', err);
       setToast({ visible: true, message: err?.message ?? 'An unexpected error occurred', type: 'error' });
