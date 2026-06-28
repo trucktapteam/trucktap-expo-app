@@ -241,6 +241,7 @@ export default function TruckDashboard() {
     ? {
       completedCount: commandCenter.profileCompleteness.completedCount,
       totalCount: commandCenter.profileCompleteness.totalCount,
+      progressPercent: (commandCenter.profileCompleteness.completedCount / commandCenter.profileCompleteness.totalCount) * 100,
       missingLabels: commandCenter.profileCompleteness.missing.map(requirement => requiredProfileLabels[requirement]),
     }
     : null;
@@ -781,6 +782,14 @@ export default function TruckDashboard() {
             <Text style={styles.incompleteProfileProgress}>
               {incompleteProfileEducation.completedCount} of {incompleteProfileEducation.totalCount} required steps complete
             </Text>
+            <View style={styles.incompleteProfileProgressTrack}>
+              <View
+                style={[
+                  styles.incompleteProfileProgressFill,
+                  { width: `${incompleteProfileEducation.progressPercent}%` },
+                ]}
+              />
+            </View>
 
             <View style={styles.incompleteProfileMissingList}>
               {incompleteProfileEducation.missingLabels.map(label => (
@@ -1633,7 +1642,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700' as const,
     color: Colors.dark,
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  incompleteProfileProgressTrack: {
+    height: 8,
+    width: '100%',
+    backgroundColor: `${Colors.primary}18`,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  incompleteProfileProgressFill: {
+    height: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 999,
   },
   incompleteProfileMissingList: {
     gap: 8,
