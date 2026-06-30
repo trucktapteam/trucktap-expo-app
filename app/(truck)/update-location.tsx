@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { MapPin, ArrowLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -9,6 +9,13 @@ import { useApp } from '@/contexts/AppContext';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const GPS_LOOKUP_TIMEOUT_MS = 15000;
+
+type PendingLocation = {
+  latitude: number;
+  longitude: number;
+  address: string;
+  source: 'gps' | 'manual' | 'scheduled_stop';
+};
 
 const getCurrentPositionWithTimeout = (
   options: Parameters<typeof Location.getCurrentPositionAsync>[0],
@@ -25,18 +32,17 @@ const getCurrentPositionWithTimeout = (
 
 export default function UpdateLocationScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ stopLocation?: string; stopId?: string }>();
   const { currentUser, getUserTruck, updateTruckDetails } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('UpdateLocationScreen');
+  const scheduledStopPrefill = typeof params.stopLocation === 'string' ? params.stopLocation.trim() : '';
+  const scheduledStopPrefillKey = `${params.stopId ?? ''}:${scheduledStopPrefill}`;
+  const handledScheduledStopPrefillRef = useRef('');
 
   const [isLoading, setIsLoading] = useState(false);
-  const [manualAddress, setManualAddress] = useState('');
-  const [pendingLocation, setPendingLocation] = useState<{
-    latitude: number;
-    longitude: number;
-    address: string;
-    source: 'gps' | 'manual';
-  } | null>(null);
+  const [manualAddress, setManualAddress] = useState(scheduledStopPrefill);
+  const [pendingLocation, setPendingLocation] = useState<PendingLocation | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -259,6 +265,74 @@ export default function UpdateLocationScreen() {
     }
   };
 
+  const prefillScheduledStopLocation = async (locationText: string, prefillKey: string) => {
+    try {
+      setIsLoading(true);
+      setPendingLocation(null);
+
+      const geocode = await Location.geocodeAsync(locationText);
+
+      if (!geocode.length) {
+        Alert.alert('Location not found', 'Try searching for a more specific address or landmark before going live.');
+        return;
+      }
+
+      const { latitude, longitude } = geocode[0];
+      let resolvedAddress = locationText;
+
+      try {
+        const reverseGeocode = await Location.reverseGeocodeAsync({
+          latitude,
+          longitude,
+        });
+
+        if (reverseGeocode && reverseGeocode.length > 0) {
+          const result = reverseGeocode[0];
+          const formatted = [
+            result.name,
+            result.street,
+            result.city,
+            result.region,
+          ]
+            .filter(Boolean)
+            .join(', ');
+
+          if (formatted) {
+            resolvedAddress = formatted;
+          }
+        }
+      } catch (error) {
+        console.log('Reverse geocoding scheduled stop location failed:', error);
+      }
+
+      setPendingLocation({
+        latitude,
+        longitude,
+        address: resolvedAddress,
+        source: 'scheduled_stop',
+      });
+    } catch (error) {
+      console.error('Error geocoding scheduled stop location:', error);
+      Alert.alert(
+        'Error',
+        'Failed to set that scheduled stop location. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      handledScheduledStopPrefillRef.current = prefillKey;
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!scheduledStopPrefill || handledScheduledStopPrefillRef.current === scheduledStopPrefillKey) {
+      return;
+    }
+
+    setManualAddress(scheduledStopPrefill);
+    void prefillScheduledStopLocation(scheduledStopPrefill, scheduledStopPrefillKey);
+  }, [scheduledStopPrefill, scheduledStopPrefillKey]);
+
   const handleConfirmPendingLocation = async () => {
     if (!pendingLocation) return;
     setIsLoading(true);
@@ -356,7 +430,11 @@ export default function UpdateLocationScreen() {
           {pendingLocation && (
             <View style={styles.previewCard}>
               <Text style={styles.locationLabel}>
-                {pendingLocation.source === 'gps' ? 'Current Location Preview' : 'Search Result'}
+                {pendingLocation.source === 'gps'
+                  ? 'Current Location Preview'
+                  : pendingLocation.source === 'scheduled_stop'
+                    ? 'Scheduled Stop Location'
+                    : 'Search Result'}
               </Text>
               <Text style={styles.locationAddress}>{pendingLocation.address}</Text>
               <Text style={styles.locationCoords}>

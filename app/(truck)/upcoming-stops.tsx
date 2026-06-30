@@ -15,6 +15,8 @@ const STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'so
 const REMINDER_SETTINGS_KEY = 'upcomingStopReminderSettings';
 const REMINDER_IDS_KEY = 'upcomingStopReminderIds';
 const DEFAULT_REMINDER_MINUTES = 30;
+const GO_LIVE_WINDOW_MINUTES = 30;
+const GO_LIVE_WINDOW_MS = GO_LIVE_WINDOW_MINUTES * 60 * 1000;
 const DEV_TEST_REMINDER_SECONDS = 60;
 const REMINDER_NOTIFICATION_CHANNEL_ID = 'upcoming-stop-reminders';
 const REMINDER_CANCEL_STATUSES: UpcomingStopStatus[] = ['cancelled', 'completed', 'sold_out'];
@@ -85,14 +87,14 @@ const getUpcomingStopReminderTime = (stop: UpcomingStop, minutesBefore: number) 
 const getReminderNotificationTrigger = (fireAt: Date, now = new Date()) => {
   if (Platform.OS === 'android') {
     return {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL as const,
       seconds: Math.max(1, Math.floor((fireAt.getTime() - now.getTime()) / 1000)),
       channelId: REMINDER_NOTIFICATION_CHANNEL_ID,
     };
   }
 
   return {
-    type: Notifications.SchedulableTriggerInputTypes.DATE,
+    type: Notifications.SchedulableTriggerInputTypes.DATE as const,
     date: fireAt,
   };
 };
@@ -136,6 +138,20 @@ const getStatusColor = (status: UpcomingStopStatus) => {
   }
 };
 
+const canStopGoLive = (stop: UpcomingStop, nowMs: number) => {
+  if (REMINDER_CANCEL_STATUSES.includes(stop.status)) return false;
+
+  const startsAtMs = Date.parse(stop.starts_at);
+  const endsAtMs = Date.parse(stop.ends_at);
+  if (!Number.isFinite(startsAtMs) || !Number.isFinite(endsAtMs)) return false;
+  if (endsAtMs <= nowMs) return false;
+
+  const activeNow = startsAtMs <= nowMs && nowMs < endsAtMs;
+  const startsWithinWindow = startsAtMs > nowMs && startsAtMs - nowMs <= GO_LIVE_WINDOW_MS;
+
+  return activeNow || startsWithinWindow;
+};
+
 const getTimePeriod = (date: Date): TimePeriod =>
   date.getHours() >= 12 ? 'PM' : 'AM';
 
@@ -177,6 +193,7 @@ export default function UpcomingStopsScreen() {
   const [busyStopId, setBusyStopId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(Date.now());
   const [activePicker, setActivePicker] = useState<PickerTarget>(null);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() =>
     normalizeReminderSettings()
@@ -198,6 +215,14 @@ export default function UpcomingStopsScreen() {
   React.useEffect(() => {
     reminderIdsRef.current = reminderIds;
   }, [reminderIds]);
+
+  React.useEffect(() => {
+    const intervalId = setInterval(() => {
+      setNowMs(Date.now());
+    }, 60000);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   React.useEffect(() => {
     const loadReminderState = async () => {
@@ -665,6 +690,16 @@ export default function UpcomingStopsScreen() {
     }
   };
 
+  const handleGoLiveFromStop = (stop: UpcomingStop) => {
+    router.push({
+      pathname: '/(truck)/update-location',
+      params: {
+        stopId: stop.id,
+        stopLocation: stop.location_text,
+      },
+    } as any);
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <KeyboardAvoidingView
@@ -892,8 +927,11 @@ export default function UpcomingStopsScreen() {
                 stop={stop}
                 busy={busyStopId === stop.id}
                 reminderOn={hasActiveReminder(stop)}
+                truckOpenNow={truck.open_now}
+                nowMs={nowMs}
                 onStatusChange={handleStatusChange}
                 onDelete={handleDelete}
+                onGoLive={handleGoLiveFromStop}
               />
             ))
           )}
@@ -907,8 +945,11 @@ type StopCardProps = {
   stop: UpcomingStop;
   busy: boolean;
   reminderOn: boolean;
+  truckOpenNow: boolean;
+  nowMs: number;
   onStatusChange: (stop: UpcomingStop, status: UpcomingStopStatus) => void;
   onDelete: (stop: UpcomingStop) => void;
+  onGoLive: (stop: UpcomingStop) => void;
 };
 
 type PickerButtonProps = {
@@ -955,9 +996,10 @@ function PeriodSegmentedControl({ value, onChange }: PeriodSegmentedControlProps
   );
 }
 
-function StopCard({ stop, busy, reminderOn, onStatusChange, onDelete }: StopCardProps) {
+function StopCard({ stop, busy, reminderOn, truckOpenNow, nowMs, onStatusChange, onDelete, onGoLive }: StopCardProps) {
   const statusColor = getStatusColor(stop.status);
-  const ended = Date.parse(stop.ends_at) <= Date.now();
+  const ended = Date.parse(stop.ends_at) <= nowMs;
+  const showGoLiveAction = canStopGoLive(stop, nowMs);
 
   return (
     <View style={styles.stopCard}>
@@ -986,6 +1028,22 @@ function StopCard({ stop, busy, reminderOn, onStatusChange, onDelete }: StopCard
       <Text style={styles.stopTime}>{formatDateTime(stop.starts_at)} - {formatDateTime(stop.ends_at)}</Text>
       <Text style={styles.stopLocation}>{stop.location_text}</Text>
       {stop.note ? <Text style={styles.stopNote}>{stop.note}</Text> : null}
+
+      {showGoLiveAction ? (
+        <View style={styles.goLivePanel}>
+          {!truckOpenNow ? <Text style={styles.goLiveReadyText}>Ready to Go LIVE</Text> : null}
+          <TouchableOpacity
+            style={[styles.goLiveButton, truckOpenNow && styles.liveNowButton]}
+            onPress={() => onGoLive(stop)}
+            disabled={busy || truckOpenNow}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.goLiveButtonText, truckOpenNow && styles.liveNowButtonText]}>
+              {truckOpenNow ? '\uD83D\uDFE2 LIVE NOW' : '\uD83D\uDE9A Go LIVE'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <View style={styles.statusRow}>
         {STATUSES.map(status => (
@@ -1460,6 +1518,43 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: Colors.gray,
     marginBottom: 12,
+  },
+  goLivePanel: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}22`,
+    backgroundColor: `${Colors.primary}08`,
+    padding: 12,
+    marginTop: 8,
+    marginBottom: 12,
+    gap: 10,
+  },
+  goLiveReadyText: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+  },
+  goLiveButton: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  liveNowButton: {
+    backgroundColor: `${Colors.success}18`,
+    borderWidth: 1,
+    borderColor: `${Colors.success}35`,
+  },
+  goLiveButtonText: {
+    fontSize: 16,
+    fontWeight: '900' as const,
+    color: Colors.light,
+  },
+  liveNowButtonText: {
+    color: Colors.success,
   },
   statusRow: {
     flexDirection: 'row',
