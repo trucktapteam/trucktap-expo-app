@@ -217,7 +217,7 @@ export default function VisibilityWizardScreen() {
           <View style={styles.successIcon}>
             <CheckCircle2 size={42} color={Colors.success} />
           </View>
-          <Text style={styles.successTitle}>🎉 Your truck is now visible to customers.</Text>
+          <Text style={styles.successTitle}>Your truck is now visible to customers.</Text>
           <Text style={styles.successText}>
             You can add menu items, photos, announcements, and stops from the dashboard.
           </Text>
