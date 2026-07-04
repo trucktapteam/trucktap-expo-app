@@ -79,6 +79,12 @@ export default function TruckSetupScreen() {
         bio: '',
         is_open: false,
         phone: '',
+        website: '',
+        facebook_url: '',
+        instagram_url: '',
+        tiktok_url: '',
+        service_area: '',
+        trust_badges: [],
         is_verified: false,
       };
 

@@ -14,6 +14,7 @@ import { getTruckShareUrl } from '@/lib/truckShare';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
 import { getTruckCommandCenter } from '@/lib/truckCommandCenter';
+import { isTruckVisibilitySetupComplete } from '@/lib/truckVisibilitySetup';
 import { getTruckCoachMessage } from '@/lib/truckCoach';
 import { getTruckCoachProgressCelebration } from '@/lib/truckCoachProgress';
 import { getTruckOpportunities } from '@/lib/truckOpportunities';
@@ -73,10 +74,13 @@ const getDailyBriefingGreeting = (): string => {
   return 'Good Evening';
 };
 
+let hasShownOwnerSetupPromptThisSession = false;
+
 const requiredProfileLabels = {
   name: 'Truck Name',
   logo: 'Logo',
   hero: 'Hero Image',
+  service_area: 'Primary Service Area',
 } as const;
 
 const opportunityPriorityLabels: Record<TruckOpportunityPriority, string> = {
@@ -120,6 +124,7 @@ export default function TruckDashboard() {
   const [statusToast, setStatusToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' }>({ visible: false, message: '', type: 'success' });
   const [liveNowMs, setLiveNowMs] = useState(Date.now());
   const [coachProgressCelebration, setCoachProgressCelebration] = useState('');
+  const [showWelcomeSetupPrompt, setShowWelcomeSetupPrompt] = useState(!hasShownOwnerSetupPromptThisSession);
   
   const bannerOpacity = useRef(new Animated.Value(0)).current;
   const bannerTranslateY = useRef(new Animated.Value(-5)).current;
@@ -193,9 +198,11 @@ export default function TruckDashboard() {
         announcements,
         upcomingStops,
         reviews,
+        menuItems,
+        hasOperatingHours: hoursSet,
       })
       : null,
-    [announcements, ownerMessages, reviews, truck, upcomingStops]
+    [announcements, hoursSet, menuItems, ownerMessages, reviews, truck, upcomingStops]
   );
   const truckCoach = commandCenter ? getTruckCoachMessage(commandCenter) : null;
   const displayTruckCoach = truckCoach
@@ -228,6 +235,14 @@ export default function TruckDashboard() {
       missingLabels: commandCenter.profileCompleteness.missing.map(requirement => requiredProfileLabels[requirement]),
     }
     : null;
+  const shouldShowSetupPrompt =
+    !isAdminViewOnly &&
+    !isArchived &&
+    !!truck &&
+    !isTruckVisibilitySetupComplete(truck) &&
+    showWelcomeSetupPrompt &&
+    !hasShownOwnerSetupPromptThisSession;
+
   const commandActionRoute = useMemo(() => {
     const action = commandCenter?.nextAction;
 
@@ -235,7 +250,14 @@ export default function TruckDashboard() {
       case 'Add Truck Name':
       case 'Upload Logo':
       case 'Upload Hero Image':
+      case 'Add Service Area':
         return '/(truck)/edit-profile';
+      case 'Add Menu':
+        return '/(truck)/menu-editor';
+      case 'Add Gallery Photos':
+        return '/(truck)/gallery';
+      case 'Add Operating Hours':
+        return '/(truck)/operating-hours';
       case 'Add Upcoming Stop':
         return '/(truck)/upcoming-stops';
       case 'Check Messages':
@@ -249,6 +271,17 @@ export default function TruckDashboard() {
     }
   }, [commandCenter?.nextAction]);
   const showCommandAction = !!commandCenter && (commandCenter.nextAction === 'Go LIVE' || !!commandActionRoute);
+
+  const handleDismissSetupPrompt = () => {
+    hasShownOwnerSetupPromptThisSession = true;
+    setShowWelcomeSetupPrompt(false);
+  };
+
+  const handleOpenVisibilityWizard = () => {
+    hasShownOwnerSetupPromptThisSession = true;
+    setShowWelcomeSetupPrompt(false);
+    router.push('/(truck)/visibility-wizard' as any);
+  };
   const opportunities = useMemo(
     () => truck
       ? getTruckOpportunities({
@@ -784,7 +817,7 @@ export default function TruckDashboard() {
         logoUrl={truck.logo}
         isOpen={truckOpenNow}
         greeting={dailyBriefingGreeting}
-        missionLabel={"Today's Mission:"}
+        missionLabel="Next Action:"
         missionMessage={displayTruckCoach?.message ?? commandCenter?.nextAction}
         onCustomerViewPress={handleBrowseAsCustomer}
       />
@@ -866,6 +899,38 @@ export default function TruckDashboard() {
           </View>
         )}
 
+        {shouldShowSetupPrompt ? (
+          <View style={styles.welcomeSetupPromptCard}>
+            <View style={styles.welcomeSetupPromptHeader}>
+              <View style={styles.welcomeSetupPromptIconWrap}>
+                <AlertCircle size={22} color={Colors.warning} />
+              </View>
+              <View style={styles.welcomeSetupPromptTitleWrap}>
+                <Text style={styles.welcomeSetupPromptTitle}>Welcome to TruckTap!</Text>
+                <Text style={styles.welcomeSetupPromptBody}>
+                  Your dashboard is ready. Customers cannot discover your truck until you complete a few quick setup steps.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.welcomeSetupPromptActions}>
+              <TouchableOpacity
+                style={styles.welcomeSetupPromptPrimaryButton}
+                onPress={handleOpenVisibilityWizard}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.welcomeSetupPromptPrimaryText}>Complete Setup</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.welcomeSetupPromptSecondaryButton}
+                onPress={handleDismissSetupPrompt}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.welcomeSetupPromptSecondaryText}>I&apos;ll Do It Later</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
         {incompleteProfileEducation && (
           <View style={styles.incompleteProfileCard}>
             <View style={styles.incompleteProfileHeader}>
@@ -926,7 +991,7 @@ export default function TruckDashboard() {
           </View>
           {truckOpenNow ? (
             <>
-              <Text style={styles.liveTitle}>{"You're live and visible to nearby customers"}</Text>
+              <Text style={styles.liveTitle}>{"You're live and customers can find you."}</Text>
               <Text style={styles.liveDescription}>
                 Serving at: {liveLocationText}
               </Text>
@@ -950,9 +1015,9 @@ export default function TruckDashboard() {
             </>
           ) : (
             <>
-              <Text style={styles.liveTitle}>Go Live and Start Getting Customers</Text>
+              <Text style={styles.liveTitle}>Go live to start serving customers</Text>
               <Text style={styles.liveDescription}>
-                Confirm your serving location to mark your truck open and appear on the map.
+                Confirm your location to show your truck as open on the map.
               </Text>
               <TouchableOpacity
                 style={styles.liveButton}
@@ -973,7 +1038,7 @@ export default function TruckDashboard() {
               </View>
               <View style={styles.commandCenterTitleWrap}>
                 <Text style={styles.commandCenterEyebrow}>TruckTap Coach</Text>
-                <Text style={styles.commandCenterTitle}>{"Today's Mission"}</Text>
+                <Text style={styles.commandCenterTitle}>Next Action</Text>
               </View>
             </View>
 
@@ -1008,7 +1073,7 @@ export default function TruckDashboard() {
             <View style={styles.opportunitiesTitleWrap}>
               <Text style={styles.opportunitiesTitle}>Opportunities</Text>
               <Text style={styles.opportunitiesSubtitle}>
-                Small ways to keep your truck active and easy to find.
+                Quick checks to keep your truck easy to find.
               </Text>
             </View>
           </View>
@@ -1052,7 +1117,7 @@ export default function TruckDashboard() {
               })}
             </View>
           ) : (
-            <Text style={styles.opportunitiesEmptyText}>Looking good — no extra suggestions right now.</Text>
+            <Text style={styles.opportunitiesEmptyText}>You&apos;re all caught up.</Text>
           )}
         </View>
 
@@ -1624,6 +1689,72 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800' as const,
     color: '#fff',
+  },
+  welcomeSetupPromptCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  welcomeSetupPromptHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  welcomeSetupPromptIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: `${Colors.warning}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  welcomeSetupPromptTitleWrap: {
+    flex: 1,
+  },
+  welcomeSetupPromptTitle: {
+    fontSize: 17,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 6,
+  },
+  welcomeSetupPromptBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.gray,
+  },
+  welcomeSetupPromptActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  welcomeSetupPromptPrimaryButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  welcomeSetupPromptPrimaryText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  welcomeSetupPromptSecondaryButton: {
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: Colors.lightGray,
+  },
+  welcomeSetupPromptSecondaryText: {
+    color: Colors.dark,
+    fontSize: 14,
+    fontWeight: '600' as const,
   },
   incompleteProfileCard: {
     backgroundColor: '#fff',

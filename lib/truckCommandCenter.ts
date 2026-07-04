@@ -1,5 +1,6 @@
 import { getTruckProfileCompleteness, TruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
-import { Announcement, FoodTruck, OwnerMessage, Review, UpcomingStop } from '@/types';
+import { getMenuBoardImageFromMenuImages } from '@/lib/truckMenu';
+import { Announcement, FoodTruck, MenuItem, OwnerMessage, Review, UpcomingStop } from '@/types';
 
 export type TruckHealth = 'Excellent' | 'Good' | 'Needs Attention' | 'Hidden';
 
@@ -7,6 +8,10 @@ export type TruckNextBestAction =
   | 'Add Truck Name'
   | 'Upload Logo'
   | 'Upload Hero Image'
+  | 'Add Service Area'
+  | 'Add Menu'
+  | 'Add Gallery Photos'
+  | 'Add Operating Hours'
   | 'Go LIVE'
   | 'Add Upcoming Stop'
   | 'Check Messages'
@@ -22,6 +27,10 @@ export type TruckChecklistItem = {
     | 'name'
     | 'logo'
     | 'hero'
+    | 'service_area'
+    | 'menu'
+    | 'gallery'
+    | 'hours'
     | 'live'
     | 'upcoming_stop'
     | 'messages'
@@ -36,6 +45,8 @@ export type TruckCommandCenterInput = FoodTruck & {
   announcements?: Announcement[];
   upcomingStops?: UpcomingStop[];
   reviews?: Review[];
+  menuItems?: MenuItem[];
+  hasOperatingHours?: boolean;
 };
 
 export type TruckCommandCenter = {
@@ -131,6 +142,26 @@ const hasUpcomingStop = (truck: TruckCommandCenterInput): boolean => {
   );
 };
 
+const hasServiceArea = (truck: TruckCommandCenterInput): boolean =>
+  typeof truck.service_area === 'string' && truck.service_area.trim().length > 0;
+
+const hasMenuContent = (truck: TruckCommandCenterInput): boolean => {
+  const truckMenuItems = truck.menuItems?.filter(item =>
+    item.truck_id?.toString() === truck.id?.toString()
+  ) ?? [];
+
+  return truckMenuItems.length > 0 || !!getMenuBoardImageFromMenuImages(truck.menu_images);
+};
+
+const hasGalleryPhotos = (truck: TruckCommandCenterInput): boolean =>
+  Array.isArray(truck.images) &&
+  truck.images.filter(image => typeof image === 'string' && image.trim().length > 0).length >= 3;
+
+const hasOperatingHours = (truck: TruckCommandCenterInput): boolean =>
+  truck.hasOperatingHours === true ||
+  !!truck.operatingHours ||
+  (typeof truck.hours === 'string' && truck.hours.trim().length > 0);
+
 const hasActiveAnnouncement = (truck: TruckCommandCenterInput): boolean => {
   if (!truck.announcements) return false;
 
@@ -170,9 +201,13 @@ export function getNextBestAction(truck: TruckCommandCenterInput): TruckNextBest
   if (completeness.missing.includes('name')) return 'Add Truck Name';
   if (completeness.missing.includes('logo')) return 'Upload Logo';
   if (completeness.missing.includes('hero')) return 'Upload Hero Image';
+  if (!hasServiceArea(truck)) return 'Add Service Area';
+  if (!hasMenuContent(truck)) return 'Add Menu';
+  if (!hasGalleryPhotos(truck)) return 'Add Gallery Photos';
+  if (!hasOperatingHours(truck)) return 'Add Operating Hours';
+  if (truck.upcomingStops && !hasUpcomingStop(truck)) return 'Add Upcoming Stop';
   if (getEventReadiness(truck) === 'live_ready') return "Great Job — You're Ready";
   if (!truck.open_now) return 'Go LIVE';
-  if (truck.upcomingStops && !hasUpcomingStop(truck)) return 'Add Upcoming Stop';
   if (truck.ownerMessages && hasUnreadOwnerMessage(truck)) return 'Check Messages';
   if (truck.announcements && !hasActiveAnnouncement(truck)) return 'Add Announcement';
   if (truck.reviews && hasUnrepliedReview(truck)) return 'Respond to Reviews';
@@ -197,6 +232,26 @@ export function getTodayChecklist(truck: TruckCommandCenterInput): TruckChecklis
       id: 'hero',
       label: 'Upload Hero Image',
       completed: !completeness.missing.includes('hero'),
+    },
+    {
+      id: 'service_area',
+      label: 'Add Service Area',
+      completed: hasServiceArea(truck),
+    },
+    {
+      id: 'menu',
+      label: 'Add Menu',
+      completed: hasMenuContent(truck),
+    },
+    {
+      id: 'gallery',
+      label: 'Add Gallery Photos',
+      completed: hasGalleryPhotos(truck),
+    },
+    {
+      id: 'hours',
+      label: 'Add Operating Hours',
+      completed: hasOperatingHours(truck),
     },
     {
       id: 'live',

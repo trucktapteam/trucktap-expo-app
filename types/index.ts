@@ -31,6 +31,11 @@ export type FoodTruck = {
   bio: string;
   phone: string;
   website?: string;
+  facebook_url?: string;
+  instagram_url?: string;
+  tiktok_url?: string;
+  service_area?: string;
+  trust_badges?: string[];
   operatingHours?: OperatingHours;
   verified: boolean;
   lastUpdated?: string;

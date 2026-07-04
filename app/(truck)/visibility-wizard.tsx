@@ -25,7 +25,7 @@ import {
 } from '@/lib/truckVisibilitySetup';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
-const steps: TruckVisibilitySetupRequirement[] = ['name', 'logo', 'hero'];
+const steps: TruckVisibilitySetupRequirement[] = ['name', 'logo', 'hero', 'service_area'];
 
 const getStepIndex = (requirement: TruckVisibilitySetupRequirement): number =>
   Math.max(0, steps.indexOf(requirement));
@@ -45,6 +45,7 @@ export default function VisibilityWizardScreen() {
   const [name, setName] = useState('');
   const [logo, setLogo] = useState('');
   const [heroImage, setHeroImage] = useState('');
+  const [serviceArea, setServiceArea] = useState('');
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const appliedStartParamRef = useRef(false);
@@ -57,6 +58,7 @@ export default function VisibilityWizardScreen() {
     setName(truck.name || '');
     setLogo(truck.logo || '');
     setHeroImage(truck.hero_image || '');
+    setServiceArea(truck.service_area || '');
 
     if (status?.complete && !showSuccess && !saving) {
       router.replace('/(truck)/(tabs)/dashboard' as any);
@@ -100,6 +102,27 @@ export default function VisibilityWizardScreen() {
       await updateTruckDetails(truck.id, { name: trimmed });
       const nextStatus = getTruckVisibilitySetupStatus({ ...truck, name: trimmed });
       goToNextStep(nextStatus.missing.filter(requirement => requirement !== 'name'));
+    } catch (error: any) {
+      Alert.alert('Could not save', error?.message ?? 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveServiceArea = async () => {
+    if (!truck) return;
+
+    const trimmed = serviceArea.trim();
+    if (!trimmed) {
+      Alert.alert('Service area required', 'Enter the main area where customers can usually find you.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateTruckDetails(truck.id, { service_area: trimmed });
+      const nextStatus = getTruckVisibilitySetupStatus({ ...truck, service_area: trimmed });
+      goToNextStep(nextStatus.missing.filter(requirement => requirement !== 'service_area'));
     } catch (error: any) {
       Alert.alert('Could not save', error?.message ?? 'Please try again.');
     } finally {
@@ -200,6 +223,10 @@ export default function VisibilityWizardScreen() {
     router.replace('/(truck)/(tabs)/dashboard' as any);
   };
 
+  const handleSkipForNow = () => {
+    router.replace('/(truck)/(tabs)/dashboard' as any);
+  };
+
   if (!truck) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -276,6 +303,14 @@ export default function VisibilityWizardScreen() {
               >
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Continue</Text>}
               </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.skipButton}
+                onPress={handleSkipForNow}
+                disabled={saving}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.skipButtonText}>Skip for now</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
 
@@ -294,6 +329,14 @@ export default function VisibilityWizardScreen() {
               >
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Upload Logo</Text>}
               </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.skipButton}
+                onPress={handleSkipForNow}
+                disabled={saving}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.skipButtonText}>Skip for now</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
 
@@ -311,6 +354,44 @@ export default function VisibilityWizardScreen() {
                 activeOpacity={0.75}
               >
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Upload Hero Image</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.skipButton}
+                onPress={handleSkipForNow}
+                disabled={saving}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.skipButtonText}>Skip for now</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {activeStep === 'service_area' ? (
+            <View style={styles.stepCard}>
+              <Text style={styles.stepTitle}>Where do you usually serve?</Text>
+              <Text style={styles.stepSubtitle}>Add a simple area like Elizabethtown, KY or Hardin County / Central KY.</Text>
+              <TextInput
+                style={styles.input}
+                value={serviceArea}
+                onChangeText={setServiceArea}
+                placeholder="e.g., Elizabethtown, KY"
+                placeholderTextColor={Colors.gray}
+              />
+              <TouchableOpacity
+                style={[styles.primaryButton, (!serviceArea.trim() || saving) && styles.buttonDisabled]}
+                onPress={handleSaveServiceArea}
+                disabled={!serviceArea.trim() || saving}
+                activeOpacity={0.75}
+              >
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Continue</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.skipButton}
+                onPress={handleSkipForNow}
+                disabled={saving}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.skipButtonText}>Skip for now</Text>
               </TouchableOpacity>
             </View>
           ) : null}
@@ -402,6 +483,18 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '800' as const,
+  },
+  skipButton: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  skipButtonText: {
+    color: Colors.gray,
+    fontSize: 15,
     fontWeight: '800' as const,
   },
   buttonDisabled: {

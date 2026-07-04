@@ -1,12 +1,12 @@
 import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
 import { FoodTruck, User } from '@/types';
 
-export type TruckProfileRequirement = 'name' | 'logo' | 'hero';
+export type TruckProfileRequirement = 'name' | 'logo' | 'hero' | 'service_area';
 
 export type TruckProfileCompleteness = {
   complete: boolean;
   completedCount: number;
-  totalCount: 3;
+  totalCount: 4;
   missing: TruckProfileRequirement[];
 };
 
@@ -18,21 +18,23 @@ export function getTruckProfileCompleteness(truck: FoodTruck): TruckProfileCompl
   const name = normalize(truck.name);
   const logo = normalize(truck.logo);
   const hero = normalize(truck.hero_image);
+  const serviceArea = normalize(truck.service_area);
 
   const requirements: Record<TruckProfileRequirement, boolean> = {
     name: name.length > 0,
     logo: logo.length > 0 && logo !== DEFAULT_TRUCK_LOGO_IMAGE,
     hero: hero.length > 0 && hero !== DEFAULT_TRUCK_HERO_IMAGE,
+    service_area: serviceArea.length > 0,
   };
 
   const missing = (Object.keys(requirements) as TruckProfileRequirement[])
     .filter(requirement => !requirements[requirement]);
-  const completedCount = 3 - missing.length;
+  const completedCount = 4 - missing.length;
 
   return {
     complete: missing.length === 0,
     completedCount,
-    totalCount: 3,
+    totalCount: 4,
     missing,
   };
 }

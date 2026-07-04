@@ -229,6 +229,7 @@ export default function CustomerHomeScreen() {
           truck.name || '',
           truck.cuisine_type || '',
           truck.bio || '',
+          truck.service_area || '',
           truck.location?.address || '',
           ...(truck.search_keywords || []),
         ];
@@ -264,6 +265,7 @@ export default function CustomerHomeScreen() {
           truck.name || '',
           truck.cuisine_type || '',
           truck.bio || '',
+          truck.service_area || '',
           truck.location?.address || '',
           ...(truck.search_keywords || []),
         ];
@@ -978,6 +980,9 @@ export default function CustomerHomeScreen() {
               const currentLocation = openNow ? getTruckDisplayLocation(truck) : null;
               const profileSnippet = (truck.bio || (truck as any).description || '').trim();
               const fallbackLocation = formatCardLocationFallback(truck.location?.address);
+              const cardBadges = (truck.trust_badges ?? []).filter(badge =>
+                badge === 'veteran_owned' || badge === 'family_owned'
+              );
 
               return (
                 <React.Fragment key={truck.id}>
@@ -1012,6 +1017,18 @@ export default function CustomerHomeScreen() {
                               </Text>
                             </View>
                           </View>
+                          {truck.service_area ? (
+                            <Text style={styles.truckServiceArea} numberOfLines={1}>{truck.service_area}</Text>
+                          ) : null}
+                          {cardBadges.length > 0 ? (
+                            <View style={styles.cardBadgeRow}>
+                              {cardBadges.slice(0, 2).map(badge => (
+                                <Text key={badge} style={styles.cardBadgeText}>
+                                  {badge === 'family_owned' ? 'Family Owned' : 'Veteran Owned'}
+                                </Text>
+                              ))}
+                            </View>
+                          ) : null}
                         </View>
                       </View>
 
@@ -1607,6 +1624,27 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 14,
     color: colors.secondaryText,
     marginTop: 2,
+  },
+  truckServiceArea: {
+    fontSize: 12,
+    color: colors.secondaryText,
+    fontWeight: '600' as const,
+    marginTop: 2,
+  },
+  cardBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 5,
+  },
+  cardBadgeText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: colors.primary,
+    backgroundColor: `${colors.primary}10`,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
   },
   locationLines: {
     gap: 3,

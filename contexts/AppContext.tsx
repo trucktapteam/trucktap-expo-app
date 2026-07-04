@@ -126,6 +126,11 @@ const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   }
   if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
   if (updates.website !== undefined) dbUpdates.website = updates.website;
+  if (updates.facebook_url !== undefined) dbUpdates.facebook_url = updates.facebook_url;
+  if (updates.instagram_url !== undefined) dbUpdates.instagram_url = updates.instagram_url;
+  if (updates.tiktok_url !== undefined) dbUpdates.tiktok_url = updates.tiktok_url;
+  if (updates.service_area !== undefined) dbUpdates.service_area = updates.service_area;
+  if (updates.trust_badges !== undefined) dbUpdates.trust_badges = updates.trust_badges;
   if (updates.open_now !== undefined) dbUpdates.is_open = updates.open_now;
   if (updates.archived !== undefined) dbUpdates.archived = updates.archived;
   if (Object.prototype.hasOwnProperty.call(updates, 'archivedAt')) {
@@ -441,6 +446,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
       bio: row.bio ?? row.description ?? '',
       phone: row.phone ?? '',
       website: row.website ?? '',
+      facebook_url: row.facebook_url ?? '',
+      instagram_url: row.instagram_url ?? '',
+      tiktok_url: row.tiktok_url ?? '',
+      service_area: row.service_area ?? '',
+      trust_badges: parseJsonArray(row.trust_badges),
       operatingHours: row.operating_hours ?? undefined,
       verified: false,
       lastUpdated: row.updated_at ?? row.created_at ?? undefined,

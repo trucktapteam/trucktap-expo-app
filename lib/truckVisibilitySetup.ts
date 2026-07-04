@@ -1,7 +1,7 @@
 import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
 import { FoodTruck } from '@/types';
 
-export type TruckVisibilitySetupRequirement = 'name' | 'logo' | 'hero';
+export type TruckVisibilitySetupRequirement = 'name' | 'logo' | 'hero' | 'service_area';
 
 export type TruckVisibilitySetupStatus = {
   complete: boolean;
@@ -14,11 +14,13 @@ export function getTruckVisibilitySetupStatus(truck: FoodTruck): TruckVisibility
   const name = normalize(truck.name);
   const logo = normalize(truck.logo);
   const hero = normalize(truck.hero_image);
+  const serviceArea = normalize(truck.service_area);
 
   const requirements: Record<TruckVisibilitySetupRequirement, boolean> = {
     name: name.length > 0,
     logo: logo.length > 0 && logo !== DEFAULT_TRUCK_LOGO_IMAGE,
     hero: hero.length > 0 && hero !== DEFAULT_TRUCK_HERO_IMAGE,
+    service_area: serviceArea.length > 0,
   };
 
   const missing = (Object.keys(requirements) as TruckVisibilitySetupRequirement[])

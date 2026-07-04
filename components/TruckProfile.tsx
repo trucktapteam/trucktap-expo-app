@@ -2,7 +2,7 @@ import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, TextInput, Modal, Alert, Platform, Animated, Share, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { CalendarDays, MapPin, Clock, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Globe } from 'lucide-react-native';
+import { CalendarDays, MapPin, Clock, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Globe, Users, ShieldCheck } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -92,6 +92,11 @@ const getProfileLinkLabel = (url: string) => {
   } catch {
     return 'Open profile link';
   }
+};
+
+const trustBadgeLabels: Record<string, string> = {
+  veteran_owned: 'Veteran Owned',
+  family_owned: 'Family Owned',
 };
 
 const getDistanceInFeet = (
@@ -344,7 +349,13 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const customerLocationText = isClosedCustomerView
     ? 'Not currently serving'
     : truck.location.address || 'Serving location not set';
-  const externalProfileUrl = normalizeExternalProfileUrl(truck.website);
+  const socialLinks = [
+    { key: 'website', label: 'Website', url: normalizeExternalProfileUrl(truck.website) },
+    { key: 'facebook', label: 'Facebook', url: normalizeExternalProfileUrl(truck.facebook_url) },
+    { key: 'instagram', label: 'Instagram', url: normalizeExternalProfileUrl(truck.instagram_url) },
+    { key: 'tiktok', label: 'TikTok', url: normalizeExternalProfileUrl(truck.tiktok_url) },
+  ].filter(link => link.url);
+  const trustBadges = (truck.trust_badges ?? []).filter(badge => !!trustBadgeLabels[badge]);
 
   const handleNavigate = () => {
     if (isClosedCustomerView) {
@@ -409,10 +420,10 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     });
   };
 
-  const handleOpenExternalProfileLink = () => {
-    if (!externalProfileUrl) return;
+  const handleOpenExternalProfileLink = (url: string) => {
+    if (!url) return;
 
-    Linking.openURL(externalProfileUrl).catch((err) => {
+    Linking.openURL(url).catch((err) => {
       console.error('Failed to open profile link:', err);
       Alert.alert('Error', 'Unable to open this link');
     });
@@ -661,6 +672,26 @@ console.log('[FORMAT DATE]', dateInput);
                 )}
               </View>
               <Text style={styles.cuisine}>{truck.cuisine_type}</Text>
+              {truck.service_area ? (
+                <View style={styles.serviceAreaRow}>
+                  <MapPin size={14} color={colors.secondaryText} />
+                  <Text style={styles.serviceAreaText} numberOfLines={1}>{truck.service_area}</Text>
+                </View>
+              ) : null}
+              {trustBadges.length > 0 ? (
+                <View style={styles.badgeRow}>
+                  {trustBadges.map((badge) => (
+                    <View key={badge} style={styles.profileBadge}>
+                      {badge === 'family_owned' ? (
+                        <Users size={13} color={colors.primary} />
+                      ) : (
+                        <ShieldCheck size={13} color={colors.primary} />
+                      )}
+                      <Text style={styles.profileBadgeText}>{trustBadgeLabels[badge]}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               <View style={styles.trustRow}>
                 {mode === 'customer' && trustStatus.state !== 'hidden' ? (
                   <View style={styles.trustIndicator}>
@@ -762,19 +793,20 @@ console.log('[FORMAT DATE]', dateInput);
                 <Clock size={20} color={colors.secondaryText} />
                 <Text style={styles.infoText}>{formatOperatingHours(truck.id)}</Text>
               </View>
-              {externalProfileUrl ? (
+              {socialLinks.map(link => (
                 <TouchableOpacity
+                  key={link.key}
                   style={styles.infoRow}
-                  onPress={handleOpenExternalProfileLink}
+                  onPress={() => handleOpenExternalProfileLink(link.url)}
                   activeOpacity={0.7}
                   accessibilityRole="link"
                 >
                   <Globe size={20} color={colors.primary} />
                   <Text style={[styles.infoText, styles.profileLinkText]} numberOfLines={1}>
-                    {getProfileLinkLabel(externalProfileUrl)}
+                    {link.label}: {getProfileLinkLabel(link.url)}
                   </Text>
                 </TouchableOpacity>
-              ) : null}
+              ))}
               <View style={styles.bioDivider} />
               <ExpandableText text={truck.bio} numberOfLines={3} style={styles.bioText} />
             </View>
@@ -1603,6 +1635,40 @@ emptyReviewText: {
     fontSize: 15,
     color: colors.secondaryText,
     fontWeight: '600' as const,
+  },
+  serviceAreaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  serviceAreaText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.secondaryText,
+    fontWeight: '600' as const,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  profileBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: `${colors.primary}10`,
+    borderWidth: 1,
+    borderColor: `${colors.primary}22`,
+  },
+  profileBadgeText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: colors.primary,
   },
   reviewCard: {
     backgroundColor: colors.secondaryBackground,

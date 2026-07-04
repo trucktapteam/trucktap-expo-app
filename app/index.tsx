@@ -5,7 +5,6 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { DEBUG } from '@/constants/debug';
-import { isTruckVisibilitySetupComplete } from '@/lib/truckVisibilitySetup';
 
 export default function Index() {
   const router = useRouter();
@@ -32,14 +31,7 @@ export default function Index() {
       }
 
       const truck = getUserTruck();
-      const ownerNeedsVisibilityWizard =
-        isOwner &&
-        currentUser?.role !== 'admin' &&
-        !!truck &&
-        !isTruckVisibilitySetupComplete(truck);
-      const targetRoute = ownerNeedsVisibilityWizard
-        ? '/(truck)/visibility-wizard'
-        : isOwner
+      const targetRoute = isOwner
         ? '/(truck)/(tabs)/dashboard'
         : '/(customer)/(tabs)/discover';
 
@@ -62,14 +54,7 @@ export default function Index() {
           router.replace('/(customer)/(tabs)/discover' as any);
         } else {
           const truck = getUserTruck();
-          const ownerNeedsVisibilityWizard =
-            isOwner &&
-            currentUser?.role !== 'admin' &&
-            !!truck &&
-            !isTruckVisibilitySetupComplete(truck);
-          const targetRoute = ownerNeedsVisibilityWizard
-            ? '/(truck)/visibility-wizard'
-            : isOwner
+          const targetRoute = isOwner
             ? '/(truck)/(tabs)/dashboard'
             : '/(customer)/(tabs)/discover';
           if (DEBUG) console.log('[Index] Failsafe navigating to:', targetRoute);

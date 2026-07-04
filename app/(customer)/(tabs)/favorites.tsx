@@ -89,6 +89,21 @@ export default function FavoritesScreen() {
                   <View style={styles.truckInfo}>
                     <Text style={styles.truckName} numberOfLines={1}>{truck.name}</Text>
                     <Text style={styles.truckCuisine}>{truck.cuisine_type}</Text>
+                    {truck.service_area ? (
+                      <Text style={styles.truckServiceArea} numberOfLines={1}>{truck.service_area}</Text>
+                    ) : null}
+                    {(truck.trust_badges ?? []).length > 0 ? (
+                      <View style={styles.cardBadgeRow}>
+                        {(truck.trust_badges ?? [])
+                          .filter(badge => badge === 'veteran_owned' || badge === 'family_owned')
+                          .slice(0, 2)
+                          .map(badge => (
+                            <Text key={badge} style={styles.cardBadgeText}>
+                              {badge === 'family_owned' ? 'Family' : 'Veteran'}
+                            </Text>
+                          ))}
+                      </View>
+                    ) : null}
                     {rating.count > 0 ? (
                       <View style={styles.ratingRow}>
                         <Star size={13} color={colors.starYellow} fill={colors.starYellow} />
@@ -220,6 +235,27 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 14,
     color: colors.secondaryText,
     marginBottom: 6,
+  },
+  truckServiceArea: {
+    fontSize: 12,
+    color: colors.secondaryText,
+    fontWeight: '600' as const,
+    marginBottom: 6,
+  },
+  cardBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginBottom: 8,
+  },
+  cardBadgeText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: colors.primary,
+    backgroundColor: `${colors.primary}10`,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
   },
   ratingRow: {
     flexDirection: 'row',

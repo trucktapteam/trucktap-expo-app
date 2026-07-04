@@ -14,7 +14,7 @@ export default function TruckTabsLayout() {
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         headerShown: true,
-        header: () => <LogoHeader showModeSwitch={false} />,
+        header: () => <LogoHeader showModeSwitch />,
         tabBarStyle: {
           backgroundColor: colors.cardBackground,
           borderTopWidth: 1,

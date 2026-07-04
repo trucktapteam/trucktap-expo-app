@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePathname, useRouter, useSegments } from 'expo-router';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { ChevronLeft, Camera, MapPin, Phone, Globe } from 'lucide-react-native';
+import { ChevronLeft, Camera, MapPin, Phone, Globe, Users, ShieldCheck } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -37,6 +37,11 @@ const CUISINES = [
   'Mediterranean',
   'Other',
 ];
+
+const TRUST_BADGES = [
+  { id: 'veteran_owned', label: 'Veteran Owned' },
+  { id: 'family_owned', label: 'Family Owned' },
+] as const;
 
 const normalizeProfileUrl = (value: string) => {
   const trimmed = value.trim();
@@ -70,6 +75,11 @@ export default function EditProfile() {
   const [phone, setPhone] = useState<string>('');
   const [bio, setBio] = useState<string>('');
   const [website, setWebsite] = useState<string>('');
+  const [facebookUrl, setFacebookUrl] = useState<string>('');
+  const [instagramUrl, setInstagramUrl] = useState<string>('');
+  const [tiktokUrl, setTiktokUrl] = useState<string>('');
+  const [serviceArea, setServiceArea] = useState<string>('');
+  const [trustBadges, setTrustBadges] = useState<string[]>([]);
   const [address, setAddress] = useState<string>('');
   const [heroImage, setHeroImage] = useState<string>('');
   const [logo, setLogo] = useState<string>('');
@@ -105,6 +115,11 @@ export default function EditProfile() {
     setPhone(truck.phone || '');
     setBio(truck.bio || '');
     setWebsite(truck.website || '');
+    setFacebookUrl(truck.facebook_url || '');
+    setInstagramUrl(truck.instagram_url || '');
+    setTiktokUrl(truck.tiktok_url || '');
+    setServiceArea(truck.service_area || '');
+    setTrustBadges(Array.isArray(truck.trust_badges) ? truck.trust_badges : []);
     setAddress(truck.location?.address || '');
     setHeroImage(truck.hero_image || '');
     setLogo(truck.logo || '');
@@ -127,13 +142,18 @@ export default function EditProfile() {
       phone !== (truck.phone || '') ||
       bio !== (truck.bio || '') ||
       website !== (truck.website || '') ||
+      facebookUrl !== (truck.facebook_url || '') ||
+      instagramUrl !== (truck.instagram_url || '') ||
+      tiktokUrl !== (truck.tiktok_url || '') ||
+      serviceArea !== (truck.service_area || '') ||
+      trustBadges.join('|') !== (truck.trust_badges || []).join('|') ||
       address !== (truck.location?.address || '') ||
       heroImage !== (truck.hero_image || '') ||
       logo !== (truck.logo || '');
 
     console.log('[EditProfile] hasChanges:', changed);
     setHasChanges(changed);
-  }, [name, cuisineType, phone, bio, website, address, heroImage, logo, truck]);
+  }, [name, cuisineType, phone, bio, website, facebookUrl, instagramUrl, tiktokUrl, serviceArea, trustBadges, address, heroImage, logo, truck]);
 
   const formatPhoneNumber = useCallback((text: string) => {
     const cleaned = text.replace(/\D/g, '');
@@ -188,7 +208,19 @@ export default function EditProfile() {
     }
 
     if (!isValidProfileUrl(website)) {
-      newErrors.website = 'Enter a valid website or profile link';
+      newErrors.website = 'Enter a valid website link';
+    }
+
+    if (!isValidProfileUrl(facebookUrl)) {
+      newErrors.facebookUrl = 'Enter a valid Facebook link';
+    }
+
+    if (!isValidProfileUrl(instagramUrl)) {
+      newErrors.instagramUrl = 'Enter a valid Instagram link';
+    }
+
+    if (!isValidProfileUrl(tiktokUrl)) {
+      newErrors.tiktokUrl = 'Enter a valid TikTok link';
     }
 
     setErrors(newErrors);
@@ -198,7 +230,15 @@ export default function EditProfile() {
     }
     
     return Object.keys(newErrors).length === 0;
-  }, [name, cuisineType, phone, website]);
+  }, [name, cuisineType, phone, website, facebookUrl, instagramUrl, tiktokUrl]);
+
+  const toggleTrustBadge = useCallback((badgeId: string) => {
+    setTrustBadges(prev =>
+      prev.includes(badgeId)
+        ? prev.filter(id => id !== badgeId)
+        : [...prev, badgeId]
+    );
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!isAuthenticated) {
@@ -223,6 +263,11 @@ export default function EditProfile() {
         hero_image: heroImage,
         logo: logo,
         website: normalizeProfileUrl(website),
+        facebook_url: normalizeProfileUrl(facebookUrl),
+        instagram_url: normalizeProfileUrl(instagramUrl),
+        tiktok_url: normalizeProfileUrl(tiktokUrl),
+        service_area: serviceArea.trim(),
+        trust_badges: trustBadges.filter(id => TRUST_BADGES.some(badge => badge.id === id)),
       };
 
       if (
@@ -265,6 +310,11 @@ export default function EditProfile() {
     phone,
     bio,
     website,
+    facebookUrl,
+    instagramUrl,
+    tiktokUrl,
+    serviceArea,
+    trustBadges,
     address,
     heroImage,
     logo,
@@ -594,6 +644,20 @@ export default function EditProfile() {
               <Text style={styles.sectionTitle}>Details</Text>
               <View style={styles.card}>
                 <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Primary Service Area</Text>
+                  <View style={styles.inputWithIcon}>
+                    <MapPin size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, styles.inputWithIconText]}
+                      value={serviceArea}
+                      onChangeText={setServiceArea}
+                      placeholder="Elizabethtown, KY or Hardin County / Central KY"
+                      placeholderTextColor={Colors.gray}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Bio / Description</Text>
                   <TextInput
                     style={[styles.input, styles.textArea]}
@@ -608,6 +672,32 @@ export default function EditProfile() {
                   <Text style={styles.charCounter}>
                     {bio.length}/300 characters
                   </Text>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Trust Badges (Optional)</Text>
+                  <View style={styles.badgeSelector}>
+                    {TRUST_BADGES.map((badge) => {
+                      const selected = trustBadges.includes(badge.id);
+                      return (
+                        <TouchableOpacity
+                          key={badge.id}
+                          style={[styles.badgeChip, selected && styles.badgeChipActive]}
+                          onPress={() => toggleTrustBadge(badge.id)}
+                          activeOpacity={0.75}
+                        >
+                          {badge.id === 'family_owned' ? (
+                            <Users size={15} color={selected ? '#fff' : Colors.primary} />
+                          ) : (
+                            <ShieldCheck size={15} color={selected ? '#fff' : Colors.primary} />
+                          )}
+                          <Text style={[styles.badgeChipText, selected && styles.badgeChipTextActive]}>
+                            {badge.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
             </View>
@@ -653,7 +743,7 @@ export default function EditProfile() {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Website or Profile Link (Optional)</Text>
+                  <Text style={styles.label}>Website (Optional)</Text>
                   <View style={styles.inputWithIcon}>
                     <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
                     <TextInput
@@ -665,13 +755,79 @@ export default function EditProfile() {
                           setErrors((prev) => ({ ...prev, website: '' }));
                         }
                       }}
-                      placeholder="example.com or instagram.com/yourtruck"
+                      placeholder="example.com"
                       placeholderTextColor={Colors.gray}
                       autoCapitalize="none"
                       keyboardType="url"
                     />
                   </View>
                   {errors.website ? <Text style={styles.errorText}>{errors.website}</Text> : null}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Facebook (Optional)</Text>
+                  <View style={styles.inputWithIcon}>
+                    <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, styles.inputWithIconText, errors.facebookUrl && styles.inputError]}
+                      value={facebookUrl}
+                      onChangeText={(text) => {
+                        setFacebookUrl(text);
+                        if (errors.facebookUrl) {
+                          setErrors((prev) => ({ ...prev, facebookUrl: '' }));
+                        }
+                      }}
+                      placeholder="facebook.com/yourtruck"
+                      placeholderTextColor={Colors.gray}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
+                  </View>
+                  {errors.facebookUrl ? <Text style={styles.errorText}>{errors.facebookUrl}</Text> : null}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Instagram (Optional)</Text>
+                  <View style={styles.inputWithIcon}>
+                    <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, styles.inputWithIconText, errors.instagramUrl && styles.inputError]}
+                      value={instagramUrl}
+                      onChangeText={(text) => {
+                        setInstagramUrl(text);
+                        if (errors.instagramUrl) {
+                          setErrors((prev) => ({ ...prev, instagramUrl: '' }));
+                        }
+                      }}
+                      placeholder="instagram.com/yourtruck"
+                      placeholderTextColor={Colors.gray}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
+                  </View>
+                  {errors.instagramUrl ? <Text style={styles.errorText}>{errors.instagramUrl}</Text> : null}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>TikTok (Optional)</Text>
+                  <View style={styles.inputWithIcon}>
+                    <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, styles.inputWithIconText, errors.tiktokUrl && styles.inputError]}
+                      value={tiktokUrl}
+                      onChangeText={(text) => {
+                        setTiktokUrl(text);
+                        if (errors.tiktokUrl) {
+                          setErrors((prev) => ({ ...prev, tiktokUrl: '' }));
+                        }
+                      }}
+                      placeholder="tiktok.com/@yourtruck"
+                      placeholderTextColor={Colors.gray}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
+                  </View>
+                  {errors.tiktokUrl ? <Text style={styles.errorText}>{errors.tiktokUrl}</Text> : null}
                 </View>
               </View>
             </View>
@@ -920,6 +1076,34 @@ const styles = StyleSheet.create({
     color: Colors.gray,
     textAlign: 'right',
     marginTop: 4,
+  },
+  badgeSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  badgeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: `${Colors.primary}10`,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}28`,
+  },
+  badgeChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  badgeChipText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  badgeChipTextActive: {
+    color: '#fff',
   },
   inputWithIcon: {
     flexDirection: 'row',

@@ -10,7 +10,7 @@ import AuthPromptModal from '@/components/AuthPromptModal';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 
 export default function ProfileScreen() {
-  const { currentUser, foodTrucks, getAverageRating, isTruckInactive } = useApp();
+  const { currentUser, foodTrucks, getAverageRating, isTruckInactive, isOwner } = useApp();
   console.log('[ProfileScreen] currentUser:', currentUser);
   const { colors } = useTheme();
   const { isAuthenticated } = useAuth();
@@ -20,6 +20,7 @@ export default function ProfileScreen() {
  
 
   const styles = createStyles(colors);
+  const showOwnerPromo = !isAuthenticated || !isOwner;
   const visibleTrucks = foodTrucks.filter(t =>
     !t.archived && t.is_test !== true && !isTruckInactive(t.id) && canViewIncompleteTruckProfile(t, currentUser)
   );
@@ -49,6 +50,10 @@ const handleCreateAccount = () => {
     pathname: '/customer-login',
     params: { mode: 'signup' },
   } as any);
+};
+
+const handleBecomeOwner = () => {
+  router.push('/truck-login' as any);
 };
 
   return (
@@ -118,6 +123,16 @@ const handleCreateAccount = () => {
     <TouchableOpacity onPress={handleCreateAccount}>
       <Text style={styles.createAccountText}>Create Account</Text>
     </TouchableOpacity>
+
+    {showOwnerPromo ? (
+      <TouchableOpacity style={styles.ownerPromoCard} onPress={handleBecomeOwner} activeOpacity={0.8}>
+        <Text style={styles.ownerPromoTitle}>Own a Food Truck?</Text>
+        <Text style={styles.ownerPromoSubtitle}>
+          Run your truck from TruckTap. Go LIVE, update your menu, and reach more customers.
+        </Text>
+        <Text style={styles.ownerPromoCta}>Become a Truck Owner →</Text>
+      </TouchableOpacity>
+    ) : null}
 
     <View style={styles.statsContainer}>
       <View style={styles.statItem}>
@@ -269,8 +284,34 @@ createAccountText: {
   fontSize: 15,
   fontWeight: '600' as const,
   color: colors.primary,
-  marginBottom: 20,
+  marginBottom: 12,
 },
+  ownerPromoCard: {
+    width: '100%',
+    backgroundColor: `${colors.primary}10`,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: `${colors.primary}30`,
+  },
+  ownerPromoTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: colors.text,
+    marginBottom: 6,
+  },
+  ownerPromoSubtitle: {
+    fontSize: 14,
+    color: colors.secondaryText,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  ownerPromoCta: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: colors.primary,
+  },
   avatarContainer: {
     marginBottom: 16,
   },

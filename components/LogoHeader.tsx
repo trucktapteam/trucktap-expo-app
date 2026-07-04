@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import ModeSwitchToggle from '@/components/ModeSwitchToggle';
@@ -18,13 +18,17 @@ type LogoHeaderProps = {
 export default function LogoHeader({ showModeSwitch = true }: LogoHeaderProps) {
   const { colors } = useTheme();
   const router = useRouter();
+  const segments = useSegments();
   const { signOut, user, isAuthenticated } = useAuth();
   const { currentUser, isOwner } = useApp();
   const insets = useSafeAreaInsets();
+  const isOwnerExperience = segments[0] === '(truck)';
   const canOpenOwnerDashboard =
     showModeSwitch &&
     isAuthenticated &&
     (isOwner || currentUser?.role === 'truck' || currentUser?.role === 'admin');
+  const headerSubtitle = isOwnerExperience ? 'Manage your truck' : 'Find your next meal';
+  const switchMode: 'owner' | 'customer' = isOwnerExperience ? 'owner' : 'customer';
 
   const handleDebugClear = async () => {
     if (!__DEV__) return;
@@ -68,14 +72,20 @@ export default function LogoHeader({ showModeSwitch = true }: LogoHeaderProps) {
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       <View style={styles.titleContainer}>
         <Text style={[styles.title, { color: colors.text }]}>TruckTap</Text>
-        <Text style={[styles.subtitle, { color: colors.secondaryText }]}>Find your next meal</Text>
+        <Text style={[styles.subtitle, { color: colors.secondaryText }]}>{headerSubtitle}</Text>
       </View>
       <View style={styles.rightControls}>
         {canOpenOwnerDashboard ? (
           <ModeSwitchToggle
-            mode="customer"
+            mode={switchMode}
             compact
-            onPress={() => router.push('/(truck)/(tabs)/dashboard' as any)}
+            onPress={() => {
+              if (isOwnerExperience) {
+                router.push('/(customer)/(tabs)/discover' as any);
+              } else {
+                router.push('/(truck)/(tabs)/dashboard' as any);
+              }
+            }}
           />
         ) : null}
 
@@ -123,8 +133,10 @@ const styles = StyleSheet.create({
   rightControls: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 6,
     flexShrink: 0,
+    marginLeft: 'auto',
   },
   logo: {
     width: 32,
