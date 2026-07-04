@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, X, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight } from 'lucide-react-native';
+import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckMenu, useTruckRating } from '@/contexts/AppContext';
 import * as Clipboard from 'expo-clipboard';
@@ -97,8 +97,6 @@ export default function TruckDashboard() {
     getUserTruck,
     updateTruckDetails,
     getQrScanStats,
-    checklistDismissed,
-    dismissChecklist,
     hasHoursSet,
     isProfileComplete,
     hasUnreadOwnerUpdates,
@@ -134,17 +132,13 @@ export default function TruckDashboard() {
   const truckOpenNow = truck?.open_now ?? false;
 
   const hoursSet = truck ? hasHoursSet(truck.id) : false;
-  const hasPhotos = !!(truck && truck.images.length > 0);
-  const hasMenu = menuItems.length > 0;
   const hasUnread = hasUnreadOwnerUpdates();
 
   useEffect(() => {
     if (truck) {
-      if (DEBUG) console.log('[Checklist] hoursSet:', hoursSet, 'hasMenu:', hasMenu, 'hasPhotos:', hasPhotos, 'hasSharedQr:', qrShared);
+      if (DEBUG) console.log('[Dashboard] hoursSet:', hoursSet, 'hasSharedQr:', qrShared);
     }
-  }, [truck, hoursSet, hasMenu, hasPhotos, qrShared, menuItems.length]);
-
-  const showChecklist = !checklistDismissed && (!hasMenu || !hasPhotos || !hoursSet);
+  }, [truck, hoursSet, qrShared]);
 
   const handleGoLive = () => {
     if (__DEV__) {
@@ -283,6 +277,10 @@ export default function TruckDashboard() {
 
   const handleCompleteProfile = () => {
     router.push('/(truck)/edit-profile' as any);
+  };
+
+  const handleBrowseAsCustomer = () => {
+    router.push('/(customer)/(tabs)/discover' as any);
   };
 
   const getOpportunityActionLabel = (action: TruckOpportunityAction): string | null => {
@@ -788,6 +786,7 @@ export default function TruckDashboard() {
         greeting={dailyBriefingGreeting}
         missionLabel={"Today's Mission:"}
         missionMessage={displayTruckCoach?.message ?? commandCenter?.nextAction}
+        onCustomerViewPress={handleBrowseAsCustomer}
       />
 
       <ScrollView 
@@ -913,6 +912,59 @@ export default function TruckDashboard() {
           </View>
         )}
 
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Today&apos;s Status</Text>
+        </View>
+
+        <View style={styles.liveCard}>
+          <View style={styles.liveHeader}>
+            <View style={[styles.liveBadge, truckOpenNow ? styles.liveBadgeOn : styles.liveBadgeOff]}>
+              <Text style={[styles.liveBadgeText, truckOpenNow ? styles.liveBadgeTextOn : styles.liveBadgeTextOff]}>
+                {truckOpenNow ? "You're Live • Customers can see you now" : 'Not Currently Serving'}
+              </Text>
+            </View>
+          </View>
+          {truckOpenNow ? (
+            <>
+              <Text style={styles.liveTitle}>{"You're live and visible to nearby customers"}</Text>
+              <Text style={styles.liveDescription}>
+                Serving at: {liveLocationText}
+              </Text>
+              <Text style={styles.liveMetaText}>{liveUpdatedText}</Text>
+              <View style={styles.liveActions}>
+                <TouchableOpacity
+                  style={styles.liveButton}
+                  onPress={() => router.push('/(truck)/update-location' as any)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.liveButtonText}>Update Location</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.liveButton, styles.liveButtonSecondary]}
+                  onPress={handleStopServing}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.liveButtonText, styles.liveButtonTextSecondary]}>Stop Serving</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.liveTitle}>Go Live and Start Getting Customers</Text>
+              <Text style={styles.liveDescription}>
+                Confirm your serving location to mark your truck open and appear on the map.
+              </Text>
+              <TouchableOpacity
+                style={styles.liveButton}
+                onPress={handleGoLive}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.liveButtonText}>Go Live</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
         {commandCenter && (
           <View style={styles.commandCenterCard}>
             <View style={styles.commandCenterHeader}>
@@ -948,108 +1000,6 @@ export default function TruckDashboard() {
                 <ChevronRight size={18} color="#fff" />
               </TouchableOpacity>
             ) : null}
-          </View>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Business Activity</Text>
-        </View>
-
-        <StatsRow
-          stats={{
-            menuItems: menuItems.length,
-            rating: rating.average || 0,
-          }}
-        />
-
-        {qrStats.totalScans > 0 && (
-          <View style={styles.qrStatsCard}>
-            <View style={styles.qrStatsHeader}>
-              <ScanLine size={20} color={Colors.primary} />
-              <Text style={styles.qrStatsTitle}>QR Engagement</Text>
-            </View>
-            <View style={styles.qrStatsRow}>
-              <View style={styles.qrStatItem}>
-                <Text style={styles.qrStatNumber}>{qrStats.totalScans}</Text>
-                <Text style={styles.qrStatLabel}>Total Scans</Text>
-              </View>
-              {qrStats.lastScanned ? (
-                <View style={styles.qrStatItem}>
-                  <Text style={styles.qrStatNumber}>{formatLastScanned(qrStats.lastScanned)}</Text>
-                  <Text style={styles.qrStatLabel}>Last Scanned</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        )}
-
-        {showChecklist && (
-          <View style={styles.checklistCard}>
-            <View style={styles.checklistHeader}>
-              <Text style={styles.checklistTitle}>Getting Started</Text>
-              <TouchableOpacity 
-                onPress={dismissChecklist}
-                style={styles.checklistDismiss}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <X size={20} color={Colors.gray} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.checklistSubtitle}>Complete these steps to get the most out of TruckTap</Text>
-            
-            <View style={styles.checklistItems}>
-              <TouchableOpacity 
-                style={styles.checklistItem}
-                onPress={() => router.push('/(truck)/menu-editor' as any)}
-                disabled={hasMenu}
-              >
-                <View style={[styles.checklistIcon, hasMenu && styles.checklistIconComplete]}>
-                  {hasMenu ? (
-                    <CheckCircle2 size={20} color={Colors.success} />
-                  ) : (
-                    <View style={styles.checklistIconEmpty} />
-                  )}
-                </View>
-                <Text style={[styles.checklistItemText, hasMenu && styles.checklistItemTextComplete]}>
-                  Add menu
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.checklistItem}
-                onPress={() => router.push('/(truck)/gallery' as any)}
-                disabled={hasPhotos}
-              >
-                <View style={[styles.checklistIcon, hasPhotos && styles.checklistIconComplete]}>
-                  {hasPhotos ? (
-                    <CheckCircle2 size={20} color={Colors.success} />
-                  ) : (
-                    <View style={styles.checklistIconEmpty} />
-                  )}
-                </View>
-                <Text style={[styles.checklistItemText, hasPhotos && styles.checklistItemTextComplete]}>
-                  Upload photos
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.checklistItem}
-                onPress={() => router.push('/(truck)/operating-hours' as any)}
-                disabled={hoursSet}
-              >
-                <View style={[styles.checklistIcon, hoursSet && styles.checklistIconComplete]}>
-                  {hoursSet ? (
-                    <CheckCircle2 size={20} color={Colors.success} />
-                  ) : (
-                    <View style={styles.checklistIconEmpty} />
-                  )}
-                </View>
-                <Text style={[styles.checklistItemText, hoursSet && styles.checklistItemTextComplete]}>
-                  Set hours
-                </Text>
-              </TouchableOpacity>
-                   
-            </View>
           </View>
         )}
 
@@ -1106,59 +1056,6 @@ export default function TruckDashboard() {
           )}
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Operational Tools</Text>
-        </View>
-
-        <View style={styles.liveCard}>
-          <View style={styles.liveHeader}>
-            <View style={[styles.liveBadge, truckOpenNow ? styles.liveBadgeOn : styles.liveBadgeOff]}>
-              <Text style={[styles.liveBadgeText, truckOpenNow ? styles.liveBadgeTextOn : styles.liveBadgeTextOff]}>
-                {truckOpenNow ? "You're Live • Customers can see you now" : 'Not Currently Serving'}
-              </Text>
-            </View>
-          </View>
-          {truckOpenNow ? (
-            <>
-              <Text style={styles.liveTitle}>{"You're live and visible to nearby customers"}</Text>
-              <Text style={styles.liveDescription}>
-                Serving at: {liveLocationText}
-              </Text>
-              <Text style={styles.liveMetaText}>{liveUpdatedText}</Text>
-              <View style={styles.liveActions}>
-                <TouchableOpacity
-                  style={styles.liveButton}
-                  onPress={() => router.push('/(truck)/update-location' as any)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.liveButtonText}>Update Location</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.liveButton, styles.liveButtonSecondary]}
-                  onPress={handleStopServing}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.liveButtonText, styles.liveButtonTextSecondary]}>Stop Serving</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={styles.liveTitle}>Go Live and Start Getting Customers</Text>
-              <Text style={styles.liveDescription}>
-                Confirm your serving location to mark your truck open and appear on the map.
-              </Text>
-              <TouchableOpacity
-                style={styles.liveButton}
-                onPress={handleGoLive}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.liveButtonText}>Go Live</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-
         <TouchableOpacity
           style={styles.upcomingStopsCard}
           onPress={() => router.push('/(truck)/upcoming-stops' as any)}
@@ -1193,6 +1090,38 @@ export default function TruckDashboard() {
           </View>
           <ChevronRight size={18} color={Colors.gray} />
         </TouchableOpacity>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Business Activity</Text>
+        </View>
+
+        <StatsRow
+          stats={{
+            menuItems: menuItems.length,
+            rating: rating.average || 0,
+          }}
+        />
+
+        {qrStats.totalScans > 0 && (
+          <View style={styles.qrStatsCard}>
+            <View style={styles.qrStatsHeader}>
+              <ScanLine size={20} color={Colors.primary} />
+              <Text style={styles.qrStatsTitle}>QR Engagement</Text>
+            </View>
+            <View style={styles.qrStatsRow}>
+              <View style={styles.qrStatItem}>
+                <Text style={styles.qrStatNumber}>{qrStats.totalScans}</Text>
+                <Text style={styles.qrStatLabel}>Total Scans</Text>
+              </View>
+              {qrStats.lastScanned ? (
+                <View style={styles.qrStatItem}>
+                  <Text style={styles.qrStatNumber}>{formatLastScanned(qrStats.lastScanned)}</Text>
+                  <Text style={styles.qrStatLabel}>Last Scanned</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        )}
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Owner Tools</Text>

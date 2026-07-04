@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
-import { Heart, MapPin, Star, ChevronRight, User, Edit2, Settings, Truck } from 'lucide-react-native';
+import { Heart, MapPin, Star, ChevronRight, User, Edit2, Settings } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -50,16 +50,6 @@ const handleCreateAccount = () => {
     params: { mode: 'signup' },
   } as any);
 };
-
-  const handleTrucksEnterHere = () => {
-    if (currentUser?.role === 'admin') {
-      router.push('/(truck)/(tabs)/dashboard' as any);
-    } else if (currentUser?.role === 'truck' && currentUser?.truck_id) {
-      router.push('/(truck)/(tabs)/dashboard' as any);
-    } else {
-      router.push('/truck-login' as any);
-    }
-  };
 
   return (
     <View style={styles.container}>
@@ -178,19 +168,6 @@ const handleCreateAccount = () => {
             <ChevronRight size={20} color={colors.secondaryText} />
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.actionCard}
-            onPress={handleTrucksEnterHere}
-          >
-            <View style={styles.actionIconContainer}>
-              <Truck size={22} color={colors.primary} />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>🚚 Trucks Enter Here</Text>
-              <Text style={styles.actionSubtitle}>Access truck owner dashboard</Text>
-            </View>
-            <ChevronRight size={20} color={colors.secondaryText} />
-          </TouchableOpacity>
         </View>
 
         {favoriteTrucks.length > 0 && (

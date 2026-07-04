@@ -4,14 +4,22 @@ import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
+import ModeSwitchToggle from '@/components/ModeSwitchToggle';
 
 const LOGO = require('@/assets/images/icon.png');
 
 export default function CustomerDiscoverHeader() {
   const { colors } = useTheme();
+  const { currentUser, isOwner } = useApp();
+  const { isAuthenticated } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const styles = createStyles(colors);
+  const canOpenOwnerDashboard =
+    isAuthenticated &&
+    (isOwner || currentUser?.role === 'truck' || currentUser?.role === 'admin');
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 4 }]}>
@@ -20,15 +28,25 @@ export default function CustomerDiscoverHeader() {
         <Text style={styles.subtitle}>Discover food trucks near you</Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.profileButton}
-        activeOpacity={0.8}
-        onPress={() => router.push('/(customer)/(tabs)/profile' as any)}
-        accessibilityRole="button"
-        accessibilityLabel="Open profile"
-      >
-        <Image source={LOGO} style={styles.profileImage} contentFit="contain" />
-      </TouchableOpacity>
+      <View style={styles.rightControls}>
+        {canOpenOwnerDashboard ? (
+          <ModeSwitchToggle
+            mode="customer"
+            compact
+            onPress={() => router.push('/(truck)/(tabs)/dashboard' as any)}
+          />
+        ) : null}
+
+        <TouchableOpacity
+          style={styles.profileButton}
+          activeOpacity={0.8}
+          onPress={() => router.push('/(customer)/(tabs)/profile' as any)}
+          accessibilityRole="button"
+          accessibilityLabel="Open profile"
+        >
+          <Image source={LOGO} style={styles.profileImage} contentFit="contain" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -46,6 +64,12 @@ const createStyles = (colors: any) =>
     brandBlock: {
       flex: 1,
       paddingRight: 12,
+    },
+    rightControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      flexShrink: 0,
     },
     title: {
       fontSize: 24,

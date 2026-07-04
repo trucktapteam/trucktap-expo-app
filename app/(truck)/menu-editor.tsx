@@ -9,6 +9,7 @@ import {
   TextInput,
   Alert,
   Switch,
+  ActivityIndicator,
   Platform,
   Animated,
   LayoutAnimation,
@@ -26,6 +27,7 @@ import { useApp } from '@/contexts/AppContext';
 import { MenuItem } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import { buildMenuImagesWithMenuBoard, getMenuBoardImageFromMenuImages } from '@/lib/truckMenu';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -69,6 +71,7 @@ export default function MenuEditor() {
     updateMenuItem,
     deleteMenuItem,
     addMenuImage,
+    updateTruckDetails,
     beginImagePickerSession,
     endImagePickerSession,
   } = useApp();
@@ -90,6 +93,7 @@ export default function MenuEditor() {
   const [savedItemId, setSavedItemId] = useState<string | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   const [isPickingImage, setIsPickingImage] = useState<boolean>(false);
+  const [isUploadingMenuBoard, setIsUploadingMenuBoard] = useState<boolean>(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const modalSlideAnim = useRef(new Animated.Value(300)).current;
 
@@ -97,6 +101,11 @@ export default function MenuEditor() {
     if (!truck) return [];
     return menuItems.filter(item => item.truck_id === truck.id);
   }, [menuItems, truck]);
+
+  const menuBoardImageUrl = useMemo(
+    () => getMenuBoardImageFromMenuImages(truck?.menu_images),
+    [truck?.menu_images]
+  );
 
   useTruckLifecycleLogger('MenuEditor');
 
@@ -189,16 +198,14 @@ export default function MenuEditor() {
       });
     }
 
-    if (!formName.trim() || !formDescription.trim() || !formPrice.trim()) {
-      Alert.alert('Error', 'Please fill in all required fields');
+    if (!formName.trim()) {
+      Alert.alert('Error', 'Please enter an item name');
       return;
     }
 
-    const price = parseFloat(formPrice);
-    if (isNaN(price) || price <= 0) {
-      Alert.alert('Error', 'Please enter a valid price');
-      return;
-    }
+    const trimmedPrice = formPrice.trim();
+    const parsedPrice = trimmedPrice ? parseFloat(trimmedPrice) : 0;
+    const price = Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : 0;
 
     if (!truck) return;
 
@@ -363,6 +370,75 @@ export default function MenuEditor() {
     },
     []
   );
+
+  const uploadMenuBoardImageAsync = useCallback(
+    async (uri: string, truckId: string): Promise<string> => {
+      try {
+        const response = await fetch(uri);
+        const arrayBuffer = await response.arrayBuffer();
+        const filePath = `${truckId}/menu-board-${Date.now()}.jpg`;
+
+        const { error: uploadError } = await supabase.storage.from('truck-images').upload(filePath, arrayBuffer, {
+          upsert: true,
+          contentType: 'image/jpeg',
+        });
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        const { data: { publicUrl } } = supabase.storage.from('truck-images').getPublicUrl(filePath);
+        return publicUrl;
+      } catch (err) {
+        console.error('[MenuEditor] uploadMenuBoardImageAsync error:', err);
+        throw err;
+      }
+    },
+    []
+  );
+
+  const handleUploadMenuBoard = useCallback(async () => {
+    if (isUploadingMenuBoard) return;
+
+    if (!truck?.id) {
+      Alert.alert('Upload Failed', 'We could not find your truck to attach the menu board photo.');
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      Alert.alert('Upload Failed', 'Menu board uploads are available on mobile app builds.');
+      return;
+    }
+
+    setIsUploadingMenuBoard(true);
+    beginImagePickerSession('MenuEditor:MenuBoard');
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 5],
+        quality: 0.85,
+      });
+
+      const asset = result.canceled ? null : result.assets?.[0] ?? null;
+      const localUri = asset?.uri ?? null;
+
+      if (!localUri) {
+        return;
+      }
+
+      const publicUrl = await uploadMenuBoardImageAsync(localUri, truck.id);
+      const nextMenuImages = buildMenuImagesWithMenuBoard(truck.menu_images, publicUrl);
+      await updateTruckDetails(truck.id, { menu_images: nextMenuImages });
+    } catch (error) {
+      console.error('[MenuEditor] failed to upload menu board image:', error);
+      Alert.alert('Upload Failed', 'Failed to upload your menu board photo. Please try again.');
+    } finally {
+      setIsUploadingMenuBoard(false);
+      endImagePickerSession('MenuEditor:MenuBoard');
+    }
+  }, [beginImagePickerSession, endImagePickerSession, isUploadingMenuBoard, truck, updateTruckDetails, uploadMenuBoardImageAsync]);
 
   const pickImage = useCallback(async () => {
     if (isPickingImage) {
@@ -545,11 +621,13 @@ export default function MenuEditor() {
             <Text style={styles.menuName} numberOfLines={1}>
               {item.name}
             </Text>
-            <Text style={styles.menuDescription} numberOfLines={1}>
-              {item.description}
-            </Text>
+            {item.description ? (
+              <Text style={styles.menuDescription} numberOfLines={1}>
+                {item.description}
+              </Text>
+            ) : null}
             <View style={styles.menuFooter}>
-              <Text style={styles.menuPrice}>${item.price.toFixed(2)}</Text>
+              {item.price > 0 ? <Text style={styles.menuPrice}>${item.price.toFixed(2)}</Text> : null}
               {item.category ? (
                 <View style={[styles.categoryBadge, { backgroundColor: categoryColor }]}>
                   <Text style={styles.categoryBadgeText}>{item.category}</Text>
@@ -677,6 +755,29 @@ export default function MenuEditor() {
         )}
       </View>
 
+      <View style={styles.quickMenuCard}>
+        <View style={styles.quickMenuHeader}>
+          <View style={styles.quickMenuTextBlock}>
+            <Text style={styles.quickMenuTitle}>Quick Menu</Text>
+            <Text style={styles.quickMenuSubtitle}>
+              Upload a photo of your full menu board so customers can zoom in and read it.
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.quickMenuButton} onPress={handleUploadMenuBoard} disabled={isUploadingMenuBoard}>
+            {isUploadingMenuBoard ? <ActivityIndicator size="small" color="#fff" /> : <Camera size={18} color="#fff" />}
+            <Text style={styles.quickMenuButtonText}>Upload Menu Board</Text>
+          </TouchableOpacity>
+        </View>
+        {menuBoardImageUrl ? (
+          <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardPreview} contentFit="cover" />
+        ) : null}
+      </View>
+
+      <View style={styles.sectionHeaderBlock}>
+        <Text style={styles.sectionHeaderTitle}>Detailed Menu Items</Text>
+        <Text style={styles.sectionHeaderSubtitle}>Add items one at a time when you have time.</Text>
+      </View>
+
       <View style={styles.filtersContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScrollContainer}>
           <View style={styles.filtersScrollContent}>
@@ -776,7 +877,7 @@ export default function MenuEditor() {
                       <Text style={styles.previewName} numberOfLines={1}>
                         {item.name}
                       </Text>
-                      <Text style={styles.previewPrice}>${item.price.toFixed(2)}</Text>
+                      {item.price > 0 ? <Text style={styles.previewPrice}>${item.price.toFixed(2)}</Text> : null}
                     </View>
                   </View>
                 ))}
@@ -872,7 +973,7 @@ export default function MenuEditor() {
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Price *</Text>
+              <Text style={styles.label}>Price (Optional)</Text>
               <View style={styles.priceInputContainer}>
                 <Text style={styles.currencySymbol}>$</Text>
                 <TextInput
@@ -887,7 +988,7 @@ export default function MenuEditor() {
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Description *</Text>
+              <Text style={styles.label}>Description (Optional)</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
                 value={formDescription}
@@ -1048,6 +1149,74 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.danger,
     fontWeight: '600' as const,
+  },
+  quickMenuCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginTop: 16,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  quickMenuHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  quickMenuTextBlock: {
+    flex: 1,
+  },
+  quickMenuTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 4,
+  },
+  quickMenuSubtitle: {
+    fontSize: 13,
+    color: Colors.gray,
+    lineHeight: 18,
+  },
+  quickMenuButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  quickMenuButtonText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: '#fff',
+  },
+  menuBoardPreview: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  sectionHeaderBlock: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+    backgroundColor: '#fff',
+  },
+  sectionHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 2,
+  },
+  sectionHeaderSubtitle: {
+    fontSize: 13,
+    color: Colors.gray,
   },
   filtersContainer: {
     paddingVertical: 12,

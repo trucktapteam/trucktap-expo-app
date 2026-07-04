@@ -38,6 +38,24 @@ const CUISINES = [
   'Other',
 ];
 
+const normalizeProfileUrl = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+};
+
+const isValidProfileUrl = (value: string) => {
+  const normalized = normalizeProfileUrl(value);
+  if (!normalized) return true;
+
+  try {
+    const url = new URL(normalized);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+};
+
 export default function EditProfile() {
   const router = useRouter();
   const pathname = usePathname();
@@ -169,8 +187,8 @@ export default function EditProfile() {
       newErrors.phone = 'Please enter a valid 10-digit phone number';
     }
 
-    if (website.trim() && !website.match(/^https?:\/\//)) {
-      newErrors.website = 'Website must start with http:// or https://';
+    if (!isValidProfileUrl(website)) {
+      newErrors.website = 'Enter a valid website or profile link';
     }
 
     setErrors(newErrors);
@@ -204,7 +222,7 @@ export default function EditProfile() {
         bio: bio.trim(),
         hero_image: heroImage,
         logo: logo,
-        website: website.trim(),
+        website: normalizeProfileUrl(website),
       };
 
       if (
@@ -635,7 +653,7 @@ export default function EditProfile() {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Website (Optional)</Text>
+                  <Text style={styles.label}>Website or Profile Link (Optional)</Text>
                   <View style={styles.inputWithIcon}>
                     <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
                     <TextInput
@@ -647,7 +665,7 @@ export default function EditProfile() {
                           setErrors((prev) => ({ ...prev, website: '' }));
                         }
                       }}
-                      placeholder="https://example.com"
+                      placeholder="example.com or instagram.com/yourtruck"
                       placeholderTextColor={Colors.gray}
                       autoCapitalize="none"
                       keyboardType="url"

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, Animated } from 'react-native';
 import Colors from '@/constants/colors';
+import ModeSwitchToggle from '@/components/ModeSwitchToggle';
 
 type HeaderCardProps = {
   truckName: string;
@@ -10,6 +11,7 @@ type HeaderCardProps = {
   greeting?: string;
   missionLabel?: string;
   missionMessage?: string;
+  onCustomerViewPress?: () => void;
 };
 
 export default function HeaderCard({
@@ -20,6 +22,7 @@ export default function HeaderCard({
   greeting = 'Welcome back,',
   missionLabel,
   missionMessage,
+  onCustomerViewPress,
 }: HeaderCardProps) {
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const showMission = !!missionMessage;
@@ -54,6 +57,11 @@ export default function HeaderCard({
         <View style={[styles.statusDot, isOpen ? styles.dotOpen : styles.dotClosed]} />
         <Text style={styles.statusText}>{isOpen ? 'Open Now' : 'Closed'}</Text>
       </View>
+      {onCustomerViewPress ? (
+        <View style={styles.modeSwitchWrap}>
+          <ModeSwitchToggle mode="owner" onPress={onCustomerViewPress} />
+        </View>
+      ) : null}
       {showMission ? (
         <View style={styles.briefing}>
           <Text style={styles.missionLine} numberOfLines={1}>
@@ -160,6 +168,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600' as const,
     color: '#fff',
+  },
+  modeSwitchWrap: {
+    marginTop: 8,
   },
   briefing: {
     marginTop: 8,

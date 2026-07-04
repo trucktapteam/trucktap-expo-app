@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { CalendarDays, Clock, MapPin } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { UpcomingStop, UpcomingStopStatus } from '@/types';
 
 type UpcomingStopsRowProps = {
   stops: UpcomingStop[];
+  onStopPress?: (stop: UpcomingStop) => void;
 };
 
 const statusLabels: Record<UpcomingStopStatus, string> = {
@@ -42,7 +43,7 @@ const getStatusColor = (status: UpcomingStopStatus, colors: any) => {
   }
 };
 
-export default function UpcomingStopsRow({ stops }: UpcomingStopsRowProps) {
+export default function UpcomingStopsRow({ stops, onStopPress }: UpcomingStopsRowProps) {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
   const cardWidth = Math.min(260, Math.max(180, Math.floor((width - 44) / 1.95)));
@@ -77,7 +78,15 @@ export default function UpcomingStopsRow({ stops }: UpcomingStopsRowProps) {
           const statusColor = getStatusColor(stop.status, colors);
 
           return (
-            <View key={stop.id} style={styles.card}>
+            <TouchableOpacity
+              key={stop.id}
+              style={styles.card}
+              onPress={() => onStopPress?.(stop)}
+              activeOpacity={onStopPress ? 0.72 : 1}
+              disabled={!onStopPress}
+              accessibilityRole={onStopPress ? 'button' : undefined}
+              accessibilityLabel={`View stop details for ${stop.location_text}`}
+            >
               <View style={styles.locationRow}>
                 <MapPin size={15} color={colors.primary} />
                 <Text style={styles.locationText} numberOfLines={2}>{stop.location_text}</Text>
@@ -97,7 +106,7 @@ export default function UpcomingStopsRow({ stops }: UpcomingStopsRowProps) {
                   {statusLabels[stop.status]}
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </ScrollView>

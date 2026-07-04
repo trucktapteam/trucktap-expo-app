@@ -6,9 +6,11 @@ import { Utensils, X } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
+import FullImageModal from '@/components/FullImageModal';
 import { trackEvent } from '@/lib/analytics';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { MenuItem } from '@/types';
+import { getMenuBoardImageFromMenuImages } from '@/lib/truckMenu';
 
 export default function FullMenuScreen() {
   const { id } = useLocalSearchParams();
@@ -18,6 +20,7 @@ export default function FullMenuScreen() {
   const trackedMenuViewTruckIdRef = useRef<string | null>(null);
   
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showMenuItemModal, setShowMenuItemModal] = useState<boolean>(false);
   
   const requestedTruck = useMemo(() =>
@@ -44,6 +47,10 @@ export default function FullMenuScreen() {
   const truckMenuItems = useMemo(() => 
     menuItems.filter(item => item.truck_id === id && item.available),
     [menuItems, id]
+  );
+  const menuBoardImageUrl = useMemo(
+    () => getMenuBoardImageFromMenuImages(truck?.menu_images),
+    [truck?.menu_images]
   );
 
   useEffect(() => {
@@ -102,7 +109,7 @@ export default function FullMenuScreen() {
         {item.description ? (
           <Text style={styles.menuItemDescription} numberOfLines={2}>{item.description}</Text>
         ) : null}
-        <Text style={styles.menuItemPrice}>${item.price.toFixed(2)}</Text>
+        {item.price > 0 ? <Text style={styles.menuItemPrice}>${item.price.toFixed(2)}</Text> : null}
       </View>
     </TouchableOpacity>
   );
@@ -117,9 +124,19 @@ export default function FullMenuScreen() {
         }}
       />
       
-      {truckMenuItems.length > 0 ? (
+      {(truckMenuItems.length > 0 || menuBoardImageUrl) ? (
         <FlatList
           data={truckMenuItems}
+          ListHeaderComponent={
+            menuBoardImageUrl ? (
+              <TouchableOpacity style={styles.menuBoardCard} onPress={() => setSelectedImage(menuBoardImageUrl)} activeOpacity={0.8}>
+                <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardImage} contentFit="cover" />
+                <View style={styles.menuBoardOverlay}>
+                  <Text style={styles.menuBoardOverlayText}>View Full Menu</Text>
+                </View>
+              </TouchableOpacity>
+            ) : null
+          }
           renderItem={renderMenuItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -131,6 +148,12 @@ export default function FullMenuScreen() {
           <Text style={styles.emptyText}>Menu coming soon</Text>
         </View>
       )}
+
+      <FullImageModal
+        visible={selectedImage !== null}
+        image={selectedImage}
+        onClose={() => setSelectedImage(null)}
+      />
 
       <Modal
         visible={showMenuItemModal}
@@ -163,7 +186,7 @@ export default function FullMenuScreen() {
                 
                 <View style={styles.menuItemModalInfo}>
                   <Text style={styles.menuItemModalName}>{selectedMenuItem.name}</Text>
-                  <Text style={styles.menuItemModalPrice}>${selectedMenuItem.price.toFixed(2)}</Text>
+                  {selectedMenuItem.price > 0 ? <Text style={styles.menuItemModalPrice}>${selectedMenuItem.price.toFixed(2)}</Text> : null}
                   {selectedMenuItem.description ? (
                     <Text style={styles.menuItemModalDescription}>{selectedMenuItem.description}</Text>
                   ) : null}
@@ -198,6 +221,30 @@ function createStyles(colors: any) {
     listContent: {
       padding: 16,
       paddingBottom: 32,
+    },
+    menuBoardCard: {
+      borderRadius: 16,
+      overflow: 'hidden',
+      marginBottom: 16,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    menuBoardImage: {
+      width: '100%',
+      height: 220,
+    },
+    menuBoardOverlay: {
+      position: 'absolute',
+      inset: 0,
+      backgroundColor: 'rgba(0,0,0,0.35)',
+      justifyContent: 'flex-end',
+      padding: 16,
+    },
+    menuBoardOverlayText: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: '#fff',
     },
     menuItem: {
       flexDirection: 'row',

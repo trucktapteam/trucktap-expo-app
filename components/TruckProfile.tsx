@@ -2,7 +2,7 @@ import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, TextInput, Modal, Alert, Platform, Animated, Share, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { MapPin, Clock, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil } from 'lucide-react-native';
+import { CalendarDays, MapPin, Clock, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Globe } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -24,11 +24,75 @@ import {
   hasCurrentUserCheckedInToday,
   insertCurrentUserTruckCheckIn,
 } from '@/lib/truckCheckins';
-import { MenuItem } from '@/types';
+import { MenuItem, UpcomingStop, UpcomingStopStatus } from '@/types';
+import { getMenuBoardImageFromMenuImages } from '@/lib/truckMenu';
 
 const CHECK_IN_RADIUS_FEET = 1320;
 const FEET_PER_METER = 3.28084;
 const EARTH_RADIUS_METERS = 6371000;
+
+const upcomingStopStatusLabels: Record<UpcomingStopStatus, string> = {
+  scheduled: 'Scheduled',
+  delayed: 'Delayed',
+  cancelled: 'Cancelled',
+  sold_out: 'Sold Out',
+  completed: 'Completed',
+};
+
+type UpcomingStopDetails = UpcomingStop & {
+  title?: string | null;
+  event_title?: string | null;
+  name?: string | null;
+  description?: string | null;
+  notes?: string | null;
+};
+
+const getUpcomingStopTitle = (stop: UpcomingStop) => {
+  const details = stop as UpcomingStopDetails;
+  const title = details.title ?? details.event_title ?? details.name;
+  return typeof title === 'string' && title.trim().length > 0 ? title.trim() : 'Upcoming Stop';
+};
+
+const getUpcomingStopDescription = (stop: UpcomingStop) => {
+  const details = stop as UpcomingStopDetails;
+  const description = details.note ?? details.description ?? details.notes;
+  return typeof description === 'string' && description.trim().length > 0 ? description.trim() : '';
+};
+
+const formatStopDate = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+const formatStopTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+const normalizeExternalProfileUrl = (value?: string | null) => {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return '';
+
+  const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const url = new URL(normalized);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? normalized : '';
+  } catch {
+    return '';
+  }
+};
+
+const getProfileLinkLabel = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return 'Open profile link';
+  }
+};
 
 const getDistanceInFeet = (
   start: { latitude: number; longitude: number },
@@ -112,6 +176,10 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     menuItems.filter(item => item.truck_id === truckId && item.available),
     [menuItems, truckId]
   );
+  const menuBoardImageUrl = useMemo(
+    () => getMenuBoardImageFromMenuImages(truck?.menu_images),
+    [truck?.menu_images]
+  );
   
   const isFavorite = useMemo(() => 
     mode === 'customer' && currentUser?.favorites.includes(truckId) || false,
@@ -130,6 +198,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const [authAction, setAuthAction] = useState<string>('');
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
   const [showMenuItemModal, setShowMenuItemModal] = useState<boolean>(false);
+  const [selectedUpcomingStop, setSelectedUpcomingStop] = useState<UpcomingStop | null>(null);
   const [showAllReviewsModal, setShowAllReviewsModal] = useState(false);
   const [checkInCount, setCheckInCount] = useState<number>(0);
   const [checkedInToday, setCheckedInToday] = useState<boolean>(false);
@@ -275,6 +344,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const customerLocationText = isClosedCustomerView
     ? 'Not currently serving'
     : truck.location.address || 'Serving location not set';
+  const externalProfileUrl = normalizeExternalProfileUrl(truck.website);
 
   const handleNavigate = () => {
     if (isClosedCustomerView) {
@@ -310,12 +380,41 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     });
   };
 
+  const handleNavigateToUpcomingStop = (stop: UpcomingStop) => {
+    const locationText = stop.location_text.trim();
+
+    if (!locationText) {
+      Alert.alert('Location unavailable', 'This stop does not have a location yet.');
+      return;
+    }
+
+    const encodedLocation = encodeURIComponent(locationText);
+    const url = Platform.select({
+      ios: `http://maps.apple.com/?daddr=${encodedLocation}`,
+      default: `https://www.google.com/maps/dir/?api=1&destination=${encodedLocation}`,
+    });
+
+    Linking.openURL(url).catch((err) => {
+      console.error('Failed to open maps for upcoming stop:', err);
+      Alert.alert('Error', 'Unable to open maps');
+    });
+  };
+
   const handleCall = () => {
     if (!hasValidPhone) return;
     const phoneUrl = `tel:${truck.phone}`;
     Linking.openURL(phoneUrl).catch((err) => {
       console.error('Failed to open phone:', err);
       Alert.alert('Error', 'Unable to make call');
+    });
+  };
+
+  const handleOpenExternalProfileLink = () => {
+    if (!externalProfileUrl) return;
+
+    Linking.openURL(externalProfileUrl).catch((err) => {
+      console.error('Failed to open profile link:', err);
+      Alert.alert('Error', 'Unable to open this link');
     });
   };
 
@@ -663,6 +762,19 @@ console.log('[FORMAT DATE]', dateInput);
                 <Clock size={20} color={colors.secondaryText} />
                 <Text style={styles.infoText}>{formatOperatingHours(truck.id)}</Text>
               </View>
+              {externalProfileUrl ? (
+                <TouchableOpacity
+                  style={styles.infoRow}
+                  onPress={handleOpenExternalProfileLink}
+                  activeOpacity={0.7}
+                  accessibilityRole="link"
+                >
+                  <Globe size={20} color={colors.primary} />
+                  <Text style={[styles.infoText, styles.profileLinkText]} numberOfLines={1}>
+                    {getProfileLinkLabel(externalProfileUrl)}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
               <View style={styles.bioDivider} />
               <ExpandableText text={truck.bio} numberOfLines={3} style={styles.bioText} />
             </View>
@@ -704,7 +816,7 @@ console.log('[FORMAT DATE]', dateInput);
             )}
           </TruckSectionCard>
 
-          {truckMenuItems.length > 0 && (
+          {(truckMenuItems.length > 0 || menuBoardImageUrl) && (
             <TruckSectionCard>
               <View style={styles.sectionHeaderRow}>
                <Text style={{ color: '#111111', fontSize: 20, fontWeight: '700' }}>Menu</Text>
@@ -717,6 +829,18 @@ console.log('[FORMAT DATE]', dateInput);
                   <ChevronRight size={16} color={colors.primary} />
                 </TouchableOpacity>
               </View>
+              {menuBoardImageUrl ? (
+                <TouchableOpacity
+                  style={styles.menuBoardCard}
+                  onPress={() => setSelectedImage(menuBoardImageUrl)}
+                  activeOpacity={0.8}
+                >
+                  <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardImage} contentFit="cover" />
+                  <View style={styles.menuBoardOverlay}>
+                    <Text style={styles.menuBoardOverlayText}>View Full Menu</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -742,7 +866,7 @@ console.log('[FORMAT DATE]', dateInput);
                     )}
                     <View style={styles.menuItemInfo}>
                       <Text style={styles.menuItemName} numberOfLines={2}>{item.name}</Text>
-                      <Text style={styles.menuItemPrice}>${item.price.toFixed(2)}</Text>
+                      {item.price > 0 ? <Text style={styles.menuItemPrice}>${item.price.toFixed(2)}</Text> : null}
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -750,7 +874,10 @@ console.log('[FORMAT DATE]', dateInput);
             </TruckSectionCard>
           )}
 
-          <UpcomingStopsRow stops={getUpcomingStops(truck.id)} />
+          <UpcomingStopsRow
+            stops={getUpcomingStops(truck.id)}
+            onStopPress={setSelectedUpcomingStop}
+          />
 
           {mode === 'customer' && (
             <View style={styles.checkInInlineSection}>
@@ -907,6 +1034,79 @@ console.log('[FORMAT DATE]', dateInput);
         onPhotoView={() => incrementPhotoView(truck.id)}
       />
 
+      <Modal
+        visible={!!selectedUpcomingStop}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setSelectedUpcomingStop(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.stopDetailModalContent}>
+            <TouchableOpacity
+              style={styles.stopDetailClose}
+              onPress={() => setSelectedUpcomingStop(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Close stop details"
+            >
+              <X size={22} color={colors.text} />
+            </TouchableOpacity>
+
+            {selectedUpcomingStop && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={styles.stopDetailEyebrow}>Scheduled stop</Text>
+                <Text style={styles.stopDetailTitle}>{getUpcomingStopTitle(selectedUpcomingStop)}</Text>
+
+                {selectedUpcomingStop.status !== 'scheduled' ? (
+                  <View style={styles.stopDetailStatusBadge}>
+                    <Text style={styles.stopDetailStatusText}>
+                      {upcomingStopStatusLabels[selectedUpcomingStop.status]}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.stopDetailInfoBlock}>
+                  <View style={styles.stopDetailInfoRow}>
+                    <CalendarDays size={18} color={colors.primary} />
+                    <Text style={styles.stopDetailInfoText}>
+                      {formatStopDate(selectedUpcomingStop.starts_at)}
+                    </Text>
+                  </View>
+                  <View style={styles.stopDetailInfoRow}>
+                    <Clock size={18} color={colors.primary} />
+                    <Text style={styles.stopDetailInfoText}>
+                      {formatStopTime(selectedUpcomingStop.starts_at)} - {formatStopTime(selectedUpcomingStop.ends_at)}
+                    </Text>
+                  </View>
+                  <View style={styles.stopDetailInfoRow}>
+                    <MapPin size={18} color={colors.primary} />
+                    <Text style={styles.stopDetailInfoText}>
+                      {selectedUpcomingStop.location_text || 'Location not set'}
+                    </Text>
+                  </View>
+                </View>
+
+                {getUpcomingStopDescription(selectedUpcomingStop) ? (
+                  <Text style={styles.stopDetailDescription}>
+                    {getUpcomingStopDescription(selectedUpcomingStop)}
+                  </Text>
+                ) : null}
+
+                {selectedUpcomingStop.location_text.trim().length > 0 ? (
+                  <TouchableOpacity
+                    style={styles.stopDetailNavigateButton}
+                    onPress={() => handleNavigateToUpcomingStop(selectedUpcomingStop)}
+                    activeOpacity={0.8}
+                  >
+                    <Navigation size={18} color={colors.background} />
+                    <Text style={styles.stopDetailNavigateText}>Navigate</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       <AuthPromptModal
         visible={showAuthPrompt}
         onClose={() => setShowAuthPrompt(false)}
@@ -1055,7 +1255,7 @@ console.log('[FORMAT DATE]', dateInput);
                     
                     <View style={styles.menuItemModalInfo}>
                       <Text style={styles.menuItemModalName}>{selectedMenuItem.name}</Text>
-                      <Text style={styles.menuItemModalPrice}>${selectedMenuItem.price.toFixed(2)}</Text>
+                      {selectedMenuItem.price > 0 ? <Text style={styles.menuItemModalPrice}>${selectedMenuItem.price.toFixed(2)}</Text> : null}
                       {selectedMenuItem.description ? (
                         <Text style={styles.menuItemModalDescription}>{selectedMenuItem.description}</Text>
                       ) : null}
@@ -1361,6 +1561,10 @@ emptyReviewText: {
     color: colors.secondaryText,
     lineHeight: 20,
   },
+  profileLinkText: {
+    color: colors.primary,
+    fontWeight: '700' as const,
+  },
   menuScrollContent: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -1463,6 +1667,94 @@ emptyReviewText: {
     borderTopRightRadius: 24,
     padding: 24,
     paddingBottom: 40,
+  },
+  stopDetailModalContent: {
+    backgroundColor: colors.cardBackground,
+    maxHeight: '82%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 36,
+  },
+  stopDetailClose: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.secondaryBackground,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopDetailEyebrow: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: colors.primary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.6,
+    marginBottom: 8,
+    paddingRight: 44,
+  },
+  stopDetailTitle: {
+    fontSize: 26,
+    fontWeight: '800' as const,
+    color: colors.text,
+    lineHeight: 31,
+    paddingRight: 44,
+    marginBottom: 12,
+  },
+  stopDetailStatusBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: `${colors.warning}18`,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 16,
+  },
+  stopDetailStatusText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: colors.warning,
+    textTransform: 'uppercase' as const,
+  },
+  stopDetailInfoBlock: {
+    gap: 12,
+    marginTop: 4,
+    marginBottom: 18,
+  },
+  stopDetailInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  stopDetailInfoText: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.text,
+    lineHeight: 22,
+    fontWeight: '600' as const,
+  },
+  stopDetailDescription: {
+    fontSize: 15,
+    color: colors.secondaryText,
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  stopDetailNavigateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 15,
+  },
+  stopDetailNavigateText: {
+    fontSize: 16,
+    fontWeight: '800' as const,
+    color: colors.background,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1628,6 +1920,35 @@ announcementTime: {
     fontSize: 16,
     fontWeight: '700' as const,
     color: colors.primary,
+  },
+  menuBoardCard: {
+    width: 180,
+    height: 140,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginRight: 12,
+    backgroundColor: colors.cardBackground,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  menuBoardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  menuBoardOverlay: {
+    position: 'absolute',
+    inset: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
+    padding: 12,
+  },
+  menuBoardOverlayText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#fff',
   },
   emptyAnnouncementState: {
     alignItems: 'center',

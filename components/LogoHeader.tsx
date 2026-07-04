@@ -6,14 +6,25 @@ import { useTheme } from '@/contexts/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApp } from '@/contexts/AppContext';
+import ModeSwitchToggle from '@/components/ModeSwitchToggle';
 
 const LOGO = require('@/assets/images/icon.png');
 
-export default function LogoHeader() {
+type LogoHeaderProps = {
+  showModeSwitch?: boolean;
+};
+
+export default function LogoHeader({ showModeSwitch = true }: LogoHeaderProps) {
   const { colors } = useTheme();
   const router = useRouter();
   const { signOut, user, isAuthenticated } = useAuth();
+  const { currentUser, isOwner } = useApp();
   const insets = useSafeAreaInsets();
+  const canOpenOwnerDashboard =
+    showModeSwitch &&
+    isAuthenticated &&
+    (isOwner || currentUser?.role === 'truck' || currentUser?.role === 'admin');
 
   const handleDebugClear = async () => {
     if (!__DEV__) return;
@@ -59,19 +70,29 @@ export default function LogoHeader() {
         <Text style={[styles.title, { color: colors.text }]}>TruckTap</Text>
         <Text style={[styles.subtitle, { color: colors.secondaryText }]}>Find your next meal</Text>
       </View>
-      <TouchableOpacity
-        onLongPress={__DEV__ ? handleDebugClear : undefined}
-        delayLongPress={2000}
-        disabled={!__DEV__}
-        activeOpacity={__DEV__ ? 0.7 : 1}
-        style={styles.logoContainer}
-      >
-        <Image
-          source={LOGO}
-          style={styles.logo}
-          contentFit="contain"
-        />
-      </TouchableOpacity>
+      <View style={styles.rightControls}>
+        {canOpenOwnerDashboard ? (
+          <ModeSwitchToggle
+            mode="customer"
+            compact
+            onPress={() => router.push('/(truck)/(tabs)/dashboard' as any)}
+          />
+        ) : null}
+
+        <TouchableOpacity
+          onLongPress={__DEV__ ? handleDebugClear : undefined}
+          delayLongPress={2000}
+          disabled={!__DEV__}
+          activeOpacity={__DEV__ ? 0.7 : 1}
+          style={styles.logoContainer}
+        >
+          <Image
+            source={LOGO}
+            style={styles.logo}
+            contentFit="contain"
+          />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -86,6 +107,7 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     flex: 1,
+    paddingRight: 12,
   },
   title: {
     fontSize: 24,
@@ -97,6 +119,12 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     padding: 4,
+  },
+  rightControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
   },
   logo: {
     width: 32,
