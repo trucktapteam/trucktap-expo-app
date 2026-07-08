@@ -12,6 +12,7 @@ import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpott
 import { FoodTruck, Sighting } from '@/types';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { getTruckDisplayLocation } from '@/lib/truckLocation';
+import { canViewIncompleteTruckProfile, getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
 
 const TRUCK_MARKER_COLOR = '#f97316';
 const FOREGROUND_SCREEN_REFRESH_DEBOUNCE_MS = 5000;
@@ -114,7 +115,7 @@ const openSightingNavigation = (latitude?: number, longitude?: number) => {
 
 export default function CustomerHomeScreen() {
   const router = useRouter();
-  const { currentUser, isTruckOpenNow, getNextUpcomingStopForTruck, getTruckActivityStatus, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews, showClosed, setShowClosed } = useApp();
+  const { currentUser, foodTrucks, isTruckOpenNow, getNextUpcomingStopForTruck, getTruckActivityStatus, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews, showClosed, setShowClosed } = useApp();
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -136,6 +137,7 @@ export default function CustomerHomeScreen() {
   const appStateRef = useRef(RNAppState.currentState);
   const lastForegroundRefreshAtRef = useRef(0);
   const foregroundRefreshInFlightRef = useRef(false);
+  const lastDiscoverDebugSignatureRef = useRef('');
 
   const allTrucks = useFilteredTrucks('', 'All', false);
   const isAdmin = currentUser?.role === 'admin';
@@ -279,6 +281,132 @@ export default function CustomerHomeScreen() {
 
     return sortTrucksByReliability(result);
   }, [allTrucks, centerPoint, customerRadius, isAdmin, searchQuery, showClosed, openTruckIds, sortTrucksByReliability]);
+
+  useEffect(() => {
+    if (!__DEV__) return;
+
+    const trimmedQuery = searchQuery.trim().toLowerCase();
+    const matchesSearch = (truck: FoodTruck) => {
+      if (!trimmedQuery) return true;
+
+      const searchableFields = [
+        truck.name || '',
+        truck.cuisine_type || '',
+        truck.bio || '',
+        truck.service_area || '',
+        truck.location?.address || '',
+        ...(truck.search_keywords || []),
+      ];
+
+      return searchableFields.some(field => field.toLowerCase().includes(trimmedQuery));
+    };
+    const distanceFromCenter = (truck: FoodTruck): number | null => {
+      if (!centerPoint || !hasCoordinates(truck)) return null;
+      return calculateDistance(
+        centerPoint.latitude,
+        centerPoint.longitude,
+        truck.location.latitude,
+        truck.location.longitude
+      );
+    };
+    const completeTrucks = foodTrucks.filter(truck => getTruckProfileCompleteness(truck).complete);
+    const completeClosedTrucks = completeTrucks.filter(truck => !isTruckOpenNow(truck.id));
+    const incompleteFiltered = foodTrucks.filter(truck =>
+      truck.archived !== true &&
+      !truck.archivedAt &&
+      truck.is_test !== true &&
+      !canViewIncompleteTruckProfile(truck, currentUser)
+    );
+    const incompleteSamples = incompleteFiltered.slice(0, 12).map(truck => ({
+      id: truck.id,
+      name: truck.name,
+      missing: getTruckProfileCompleteness(truck).missing,
+      hasValidLocation: hasCoordinates(truck),
+      openNow: isTruckOpenNow(truck.id),
+      serviceArea: truck.service_area || null,
+    }));
+
+    const mapAfterArchived = allTrucks.filter(truck => truck?.archived !== true && !truck?.archivedAt);
+    const mapAfterValidLocation = mapAfterArchived.filter(hasMapLocation);
+    const mapAfterSearch = mapAfterValidLocation.filter(matchesSearch);
+    const mapAfterShowClosed = showClosed
+      ? mapAfterSearch
+      : mapAfterSearch.filter(truck => openTruckIds.has(truck.id));
+
+    const listAfterArchived = allTrucks.filter(truck => truck?.archived !== true && !truck?.archivedAt);
+    const listAfterRadius = listAfterArchived.filter(truck => {
+      if (!isAdmin && centerPoint && hasCoordinates(truck)) {
+        const distance = distanceFromCenter(truck);
+        return distance === null || distance <= customerRadius;
+      }
+      return true;
+    });
+    const listAfterSearch = listAfterRadius.filter(matchesSearch);
+    const listAfterShowClosed = showClosed
+      ? listAfterSearch
+      : listAfterSearch.filter(truck => openTruckIds.has(truck.id));
+
+    const debugPayload = {
+      source: 'CustomerDiscover',
+      viewerRole: currentUser?.role ?? 'guest',
+      showClosed,
+      searchQuery,
+      customerRadius,
+      hasCenterPoint: !!centerPoint,
+      totalTrucksLoaded: foodTrucks.length,
+      rawValidLocationCount: foodTrucks.filter(hasCoordinates).length,
+      sharedVisibleCountBeforeDiscoverFilters: allTrucks.length,
+      hiddenIncompleteProfileFilteredBeforeDiscover: incompleteFiltered.length,
+      incompleteSamples,
+      completeClosedTruckCount: completeClosedTrucks.length,
+      completeClosedTrucksWouldPassShowClosed: showClosed,
+      mapPipeline: {
+        beforeFilters: allTrucks.length,
+        afterArchivedFilter: mapAfterArchived.length,
+        afterValidLocationFilter: mapAfterValidLocation.length,
+        validLocationFiltered: mapAfterArchived.length - mapAfterValidLocation.length,
+        afterSearchFilter: mapAfterSearch.length,
+        searchFiltered: mapAfterValidLocation.length - mapAfterSearch.length,
+        afterShowClosedFilter: mapAfterShowClosed.length,
+        showClosedFiltered: mapAfterSearch.length - mapAfterShowClosed.length,
+        renderedCount: mapTrucks.length,
+      },
+      listPipeline: {
+        beforeFilters: allTrucks.length,
+        afterArchivedFilter: listAfterArchived.length,
+        afterRadiusFilter: listAfterRadius.length,
+        radiusFiltered: listAfterArchived.length - listAfterRadius.length,
+        afterSearchFilter: listAfterSearch.length,
+        searchFiltered: listAfterRadius.length - listAfterSearch.length,
+        afterShowClosedFilter: listAfterShowClosed.length,
+        showClosedFiltered: listAfterSearch.length - listAfterShowClosed.length,
+        renderedCount: listTrucks.length,
+      },
+      currentBehaviorNotes: {
+        showClosedIncludesCompleteClosedListTrucks: showClosed,
+        mapRequiresValidCurrentLocationEvenWhenShowClosed: true,
+        listRequiresValidCurrentLocationOnlyForRadiusCheck: !!centerPoint && !isAdmin,
+      },
+    };
+    const debugSignature = JSON.stringify(debugPayload);
+    if (lastDiscoverDebugSignatureRef.current !== debugSignature) {
+      lastDiscoverDebugSignatureRef.current = debugSignature;
+      console.log('[DiscoverDebug] screen filter pipeline', debugPayload);
+    }
+  }, [
+    allTrucks,
+    centerPoint,
+    currentUser,
+    customerRadius,
+    foodTrucks,
+    isAdmin,
+    isTruckOpenNow,
+    listTrucks.length,
+    mapTrucks.length,
+    openTruckIds,
+    searchQuery,
+    showClosed,
+  ]);
 
   const hasFeedContent = listTrucks.length > 0 || sightings.length > 0;
 

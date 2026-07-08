@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { trackEvent } from '@/lib/analytics';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
+import { canViewIncompleteTruckProfile, getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
 
 const parseJsonArray = (val: any): any[] => {
   if (Array.isArray(val)) return val;
@@ -19,6 +19,9 @@ const parseJsonArray = (val: any): any[] => {
   }
   return [];
 };
+
+const hasDebugValidLocation = (truck: Pick<FoodTruck, 'location'>): boolean =>
+  Number.isFinite(truck.location?.latitude) && Number.isFinite(truck.location?.longitude);
 
 const FOREGROUND_REFRESH_DEBOUNCE_MS = 5000;
 const STALE_OPEN_WINDOW_MS = 12 * 60 * 60 * 1000;
@@ -330,6 +333,8 @@ export type AppState = {
   addGalleryImage: (truckId: string, imageUrl: string) => void;
   removeGalleryImage: (truckId: string, imageUrl: string) => void;
   logout: () => void;
+  // Legacy owner readiness helper for richer profile quality prompts.
+  // Customer visibility uses truckProfileCompleteness instead.
   isProfileComplete: (truckId: string) => boolean;
   getDaysAgoText: (isoDate: string | undefined) => string;
   allTrucksLoading: boolean;
@@ -2914,6 +2919,8 @@ if (error) {
     );
   }, []);
 
+  // Legacy owner readiness helper. This intentionally includes menu/hours/contact
+  // and must not be used as the customer discoverability rule.
   const isProfileComplete = useCallback((truckId: string) => {
     const truck = foodTrucks.find(t => t.id === truckId);
     if (!truck) return false;
@@ -3299,23 +3306,33 @@ if (error) {
 
 export function useFilteredTrucks(searchQuery: string, cuisineFilter: string, openOnly: boolean) {
   const { currentUser, foodTrucks, isTruckOpenNow, isTruckInactive } = useApp();
+  const lastDebugSignatureRef = useRef<string>('');
 
   return useMemo(() => {
-    let filtered = foodTrucks.filter(truck =>
-      truck.archived !== true &&
-      !truck.archivedAt &&
-      truck.is_test !== true &&
-      !isTruckInactive(truck.id) &&
+    const notArchived = foodTrucks.filter(truck =>
+      truck.archived !== true && !truck.archivedAt
+    );
+    const notTest = notArchived.filter(truck => truck.is_test !== true);
+    const notInactive = notTest.filter(truck => !isTruckInactive(truck.id));
+    const completeOrAllowed = notInactive.filter(truck =>
       canViewIncompleteTruckProfile(truck, currentUser)
     );
+    const incompleteFiltered = notInactive.filter(truck =>
+      !canViewIncompleteTruckProfile(truck, currentUser)
+    );
+    let filtered = completeOrAllowed;
 
     if (openOnly) {
       filtered = filtered.filter(truck => isTruckOpenNow(truck.id));
     }
 
+    const afterOpenOnly = filtered;
+
     if (cuisineFilter && cuisineFilter !== 'All') {
       filtered = filtered.filter(truck => truck.cuisine_type === cuisineFilter);
     }
+
+    const afterCuisine = filtered;
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -3329,6 +3346,47 @@ export function useFilteredTrucks(searchQuery: string, cuisineFilter: string, op
         
         return matchesName || matchesCuisine || matchesBio || matchesKeywords;
       });
+    }
+
+    if (__DEV__) {
+      const incompleteSamples = incompleteFiltered.slice(0, 12).map(truck => ({
+        id: truck.id,
+        name: truck.name,
+        missing: getTruckProfileCompleteness(truck).missing,
+        ownerAllowed:
+          (!!currentUser?.id && truck.owner_id === currentUser.id) ||
+          (currentUser?.role === 'truck' && currentUser.truck_id === truck.id),
+      }));
+      const debugPayload = {
+        source: 'useFilteredTrucks',
+        viewerRole: currentUser?.role ?? 'guest',
+        viewerTruckId: currentUser?.truck_id ?? null,
+        searchQuery,
+        cuisineFilter,
+        openOnly,
+        totalLoaded: foodTrucks.length,
+        validLocationCount: foodTrucks.filter(hasDebugValidLocation).length,
+        afterArchivedFilter: notArchived.length,
+        archivedFiltered: foodTrucks.length - notArchived.length,
+        afterTestFilter: notTest.length,
+        testFiltered: notArchived.length - notTest.length,
+        afterInactiveFilter: notInactive.length,
+        inactiveFiltered: notTest.length - notInactive.length,
+        afterIncompleteProfileFilter: completeOrAllowed.length,
+        incompleteProfileFiltered: incompleteFiltered.length,
+        afterOpenOnlyFilter: afterOpenOnly.length,
+        openOnlyFiltered: completeOrAllowed.length - afterOpenOnly.length,
+        afterCuisineFilter: afterCuisine.length,
+        cuisineFiltered: afterOpenOnly.length - afterCuisine.length,
+        afterSearchFilter: filtered.length,
+        searchFiltered: afterCuisine.length - filtered.length,
+        incompleteSamples,
+      };
+      const debugSignature = JSON.stringify(debugPayload);
+      if (lastDebugSignatureRef.current !== debugSignature) {
+        lastDebugSignatureRef.current = debugSignature;
+        console.log('[DiscoverDebug] shared customer truck filter', debugPayload);
+      }
     }
 
     return filtered;

@@ -187,6 +187,7 @@ export function getVisibilityReason(truck: TruckCommandCenterInput): string {
   if (completeness.missing.includes('name')) return 'Missing Name';
   if (completeness.missing.includes('logo')) return 'Missing Logo';
   if (completeness.missing.includes('hero')) return 'Missing Hero Image';
+  if (completeness.missing.includes('service_area')) return 'Missing Service Area';
 
   return 'Profile Complete';
 }

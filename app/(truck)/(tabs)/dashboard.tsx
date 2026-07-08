@@ -83,6 +83,8 @@ const requiredProfileLabels = {
   service_area: 'Primary Service Area',
 } as const;
 
+const publicProfileRequirements = ['name', 'logo', 'hero', 'service_area'] as const;
+
 const opportunityPriorityLabels: Record<TruckOpportunityPriority, string> = {
   high: 'High',
   medium: 'Medium',
@@ -696,7 +698,7 @@ export default function TruckDashboard() {
               <Text style={styles.dataValue}>{isArchived ? 'true' : 'false'}</Text>
             </View>
             <View style={styles.dataRow}>
-              <Text style={styles.dataLabel}>legacy profile complete</Text>
+              <Text style={styles.dataLabel}>legacy readiness complete</Text>
               <Text style={styles.dataValue}>{profileComplete ? 'true' : 'false'}</Text>
             </View>
             <View style={styles.dataRow}>
@@ -707,9 +709,9 @@ export default function TruckDashboard() {
 
           <View style={styles.inspectionCard}>
             <Text style={styles.inspectionTitle}>Public profile requirements</Text>
-            {(['name', 'logo', 'hero'] as const).map(requirement => (
+            {publicProfileRequirements.map(requirement => (
               <View style={styles.dataRow} key={requirement}>
-                <Text style={styles.dataLabel}>{requirement}</Text>
+                <Text style={styles.dataLabel}>{requiredProfileLabels[requirement]}</Text>
                 <Text style={styles.dataValue}>
                   {publicProfileCompleteness?.missing.includes(requirement) ? 'Missing' : 'Complete'}
                 </Text>
