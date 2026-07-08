@@ -861,28 +861,33 @@ console.log('[FORMAT DATE]', dateInput);
                   <ChevronRight size={16} color={colors.primary} />
                 </TouchableOpacity>
               </View>
-              {menuBoardImageUrl ? (
-                <TouchableOpacity
-                  style={styles.menuBoardCard}
-                  onPress={() => setSelectedImage(menuBoardImageUrl)}
-                  activeOpacity={0.8}
-                >
-                  <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardImage} contentFit="cover" />
-                  <View style={styles.menuBoardOverlay}>
-                    <Text style={styles.menuBoardOverlayText}>View Full Menu</Text>
-                  </View>
-                </TouchableOpacity>
-              ) : null}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.menuScrollContent}
                 onScrollBeginDrag={() => incrementMenuView(truck.id)}
               >
+                {menuBoardImageUrl ? (
+                  <TouchableOpacity
+                    style={styles.menuItemCard}
+                    onPress={() => setSelectedImage(menuBoardImageUrl)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.menuBoardTileImageWrap}>
+                      <Image source={{ uri: menuBoardImageUrl }} style={styles.menuItemImage} contentFit="contain" />
+                      <View style={styles.menuBoardBadge}>
+                        <Text style={styles.menuBoardBadgeText}>Menu Board</Text>
+                      </View>
+                    </View>
+                    <View style={styles.menuItemInfo}>
+                      <Text style={styles.menuItemName} numberOfLines={2}>Menu Board</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
                 {truckMenuItems.slice(0, 6).map((item, index) => (
                   <TouchableOpacity
                     key={item.id}
-                    style={[styles.menuItemCard, index === 0 && styles.firstMenuItem]}
+                    style={[styles.menuItemCard, !menuBoardImageUrl && index === 0 && styles.firstMenuItem]}
                     onPress={() => {
                       setSelectedMenuItem(item);
                       setShowMenuItemModal(true);
@@ -1987,32 +1992,23 @@ announcementTime: {
     fontWeight: '700' as const,
     color: colors.primary,
   },
-  menuBoardCard: {
-    width: 180,
-    height: 140,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginRight: 12,
-    backgroundColor: colors.cardBackground,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  menuBoardImage: {
+  menuBoardTileImageWrap: {
+    position: 'relative',
     width: '100%',
-    height: '100%',
+    height: 120,
+    backgroundColor: colors.secondaryBackground,
   },
-  menuBoardOverlay: {
+  menuBoardBadge: {
     position: 'absolute',
-    inset: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'flex-end',
-    padding: 12,
+    left: 8,
+    bottom: 8,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.68)',
   },
-  menuBoardOverlayText: {
-    fontSize: 16,
+  menuBoardBadgeText: {
+    fontSize: 11,
     fontWeight: '700' as const,
     color: '#fff',
   },

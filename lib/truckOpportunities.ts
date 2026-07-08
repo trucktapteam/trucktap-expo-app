@@ -27,6 +27,10 @@ export type TruckOpportunitiesInput = FoodTruck & {
   upcomingStops?: UpcomingStop[];
 };
 
+type SortableTruckOpportunity = TruckOpportunity & {
+  recommendationPriority: TruckOpportunityPriority;
+};
+
 const ANNOUNCEMENT_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
 // Opportunity cadence only; public active/inactive visibility uses separate app logic.
 const RECENT_LIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -105,12 +109,13 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
     return [];
   }
 
-  const opportunities: TruckOpportunity[] = [];
+  const opportunities: SortableTruckOpportunity[] = [];
 
   if (truck.upcomingStops && !hasUpcomingStop(truck)) {
     opportunities.push({
       id: 'add-next-stop',
       priority: 'high',
+      recommendationPriority: 'high',
       icon: 'calendar-plus',
       title: 'Add your next stop',
       description: "Followers love knowing where you'll be next.",
@@ -121,7 +126,8 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
   if (truck.announcements && !hasActiveAnnouncement(truck)) {
     opportunities.push({
       id: 'share-announcement',
-      priority: 'high',
+      priority: 'medium',
+      recommendationPriority: 'high',
       icon: 'megaphone',
       title: 'Share an announcement',
       description: 'Keep followers engaged between events.',
@@ -132,7 +138,8 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
   if (Array.isArray(truck.images) && truck.images.length < 5) {
     opportunities.push({
       id: 'add-gallery-photos',
-      priority: 'medium',
+      priority: 'high',
+      recommendationPriority: 'medium',
       icon: 'images',
       title: 'Add more photos',
       description: 'Customers enjoy seeing your food before they visit.',
@@ -144,6 +151,7 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
     opportunities.push({
       id: 'expand-menu',
       priority: 'medium',
+      recommendationPriority: 'medium',
       icon: 'utensils',
       title: 'Expand your menu',
       description: 'A larger menu helps customers know what you offer.',
@@ -155,6 +163,7 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
     opportunities.push({
       id: 'reply-to-reviews',
       priority: 'medium',
+      recommendationPriority: 'medium',
       icon: 'message-square-reply',
       title: 'Reply to reviews',
       description: 'Customers appreciate hearing back from owners.',
@@ -166,6 +175,7 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
     opportunities.push({
       id: 'go-live-more-often',
       priority: 'low',
+      recommendationPriority: 'low',
       icon: 'radio',
       title: 'Go LIVE more often',
       description: 'Frequent LIVE activity builds customer trust.',
@@ -173,5 +183,7 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
     });
   }
 
-  return opportunities.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+  return opportunities
+    .sort((a, b) => priorityOrder[a.recommendationPriority] - priorityOrder[b.recommendationPriority])
+    .map(({ recommendationPriority, ...opportunity }) => opportunity);
 }

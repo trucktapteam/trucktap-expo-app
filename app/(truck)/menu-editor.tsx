@@ -18,10 +18,9 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, Pencil, Trash, ChevronLeft, Camera, X, ArrowUpDown, GripVertical, MoreVertical, Check, Utensils } from 'lucide-react-native';
+import { Plus, Pencil, Trash, Camera, X, ArrowUpDown, GripVertical, MoreVertical, Check, Utensils } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { MenuItem } from '@/types';
@@ -63,7 +62,6 @@ const CATEGORY_COLORS: { [key: string]: string } = {
 type SortOption = 'name-asc' | 'name-desc' | 'price-asc' | 'price-desc';
 
 export default function MenuEditor() {
-  const router = useRouter();
   const {
     getUserTruck,
     menuItems,
@@ -79,7 +77,6 @@ export default function MenuEditor() {
 
   const [modalVisible, setModalVisible] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [sortOption, setSortOption] = useState<SortOption>('name-asc');
   const [showSortMenu, setShowSortMenu] = useState<boolean>(false);
 
@@ -112,10 +109,6 @@ export default function MenuEditor() {
   const filteredAndSortedMenu = useMemo(() => {
     let filtered = [...truckMenu];
 
-    if (selectedCategory !== 'All') {
-      filtered = filtered.filter(item => item.category === selectedCategory);
-    }
-
     filtered.sort((a, b) => {
       switch (sortOption) {
         case 'name-asc':
@@ -132,7 +125,7 @@ export default function MenuEditor() {
     });
 
     return filtered;
-  }, [truckMenu, selectedCategory, sortOption]);
+  }, [truckMenu, sortOption]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -416,8 +409,7 @@ export default function MenuEditor() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 5],
+        allowsEditing: false,
         quality: 0.85,
       });
 
@@ -655,15 +647,6 @@ export default function MenuEditor() {
   }, [fadeAnim, deletingItemId, savedItemId, getCategoryColor]);
 
   const renderEmpty = useCallback(() => {
-    if (selectedCategory !== 'All') {
-      return (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No {selectedCategory} items</Text>
-          <Text style={styles.emptySubtext}>Try a different category</Text>
-        </View>
-      );
-    }
-
     return (
       <View style={styles.emptyStateIllustrated}>
         <View style={styles.emptyIconCircle}>
@@ -679,7 +662,7 @@ export default function MenuEditor() {
         </TouchableOpacity>
       </View>
     );
-  }, [selectedCategory]);
+  }, []);
 
   const keyExtractor = useCallback((item: MenuItem) => item.id, []);
 
@@ -699,14 +682,10 @@ export default function MenuEditor() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <View style={styles.stickyHeader}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ChevronLeft size={24} color={Colors.dark} />
-          </TouchableOpacity>
           <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Menu Editor</Text>
             <Text style={styles.headerSubtitle}>Add and organize your food items</Text>
           </View>
           <View style={styles.headerActions}>
@@ -757,20 +736,21 @@ export default function MenuEditor() {
 
       <View style={styles.quickMenuCard}>
         <View style={styles.quickMenuHeader}>
+          {menuBoardImageUrl ? (
+            <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardPreview} contentFit="contain" />
+          ) : null}
           <View style={styles.quickMenuTextBlock}>
-            <Text style={styles.quickMenuTitle}>Quick Menu</Text>
+            <Text style={styles.quickMenuTitle}>Menu Board</Text>
             <Text style={styles.quickMenuSubtitle}>
-              Upload a photo of your full menu board so customers can zoom in and read it.
+              {menuBoardImageUrl ? 'Menu board uploaded.' : 'Upload a full menu photo customers can zoom.'}
             </Text>
+            <Text style={styles.quickMenuTip}>Tip: crop or straighten your menu photo in your phone&apos;s photo app first.</Text>
           </View>
           <TouchableOpacity style={styles.quickMenuButton} onPress={handleUploadMenuBoard} disabled={isUploadingMenuBoard}>
             {isUploadingMenuBoard ? <ActivityIndicator size="small" color="#fff" /> : <Camera size={18} color="#fff" />}
-            <Text style={styles.quickMenuButtonText}>Upload Menu Board</Text>
+            <Text style={styles.quickMenuButtonText}>Upload</Text>
           </TouchableOpacity>
         </View>
-        {menuBoardImageUrl ? (
-          <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardPreview} contentFit="cover" />
-        ) : null}
       </View>
 
       <View style={styles.sectionHeaderBlock}>
@@ -779,30 +759,6 @@ export default function MenuEditor() {
       </View>
 
       <View style={styles.filtersContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScrollContainer}>
-          <View style={styles.filtersScrollContent}>
-            {CATEGORIES.map(category => (
-              <TouchableOpacity
-                key={category}
-                style={[
-                  styles.categoryChip,
-                  selectedCategory === category && styles.categoryChipActive,
-                ]}
-                onPress={() => setSelectedCategory(category)}
-              >
-                <Text
-                  style={[
-                    styles.categoryChipText,
-                    selectedCategory === category && styles.categoryChipTextActive,
-                  ]}
-                >
-                  {category}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-
         <TouchableOpacity
           style={styles.sortButton}
           onPress={() => setShowSortMenu(!showSortMenu)}
@@ -1086,25 +1042,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-
-  backButton: {
-    padding: 4,
-    marginRight: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   headerText: {
     flex: 1,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: Colors.dark,
+    justifyContent: 'center',
   },
   headerSubtitle: {
-    fontSize: 13,
-    color: Colors.gray,
-    marginTop: 2,
+    fontSize: 14,
+    color: Colors.dark,
+    fontWeight: '600' as const,
   },
   headerActions: {
     flexDirection: 'row',
@@ -1153,9 +1101,9 @@ const styles = StyleSheet.create({
   quickMenuCard: {
     backgroundColor: '#fff',
     marginHorizontal: 20,
-    marginTop: 16,
-    borderRadius: 16,
-    padding: 16,
+    marginTop: 12,
+    borderRadius: 12,
+    padding: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -1164,12 +1112,13 @@ const styles = StyleSheet.create({
   },
   quickMenuHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   quickMenuTextBlock: {
     flex: 1,
+    minWidth: 0,
   },
   quickMenuTitle: {
     fontSize: 16,
@@ -1182,14 +1131,23 @@ const styles = StyleSheet.create({
     color: Colors.gray,
     lineHeight: 18,
   },
+  quickMenuTip: {
+    fontSize: 11,
+    color: Colors.gray,
+    lineHeight: 15,
+    marginTop: 3,
+  },
   quickMenuButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
     backgroundColor: Colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 999,
+    minWidth: 96,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 21,
   },
   quickMenuButtonText: {
     fontSize: 13,
@@ -1197,15 +1155,15 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   menuBoardPreview: {
-    width: '100%',
-    height: 180,
-    borderRadius: 12,
-    marginTop: 12,
+    width: 54,
+    height: 54,
+    borderRadius: 8,
+    backgroundColor: Colors.lightGray,
   },
   sectionHeaderBlock: {
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingTop: 10,
+    paddingBottom: 4,
     backgroundColor: '#fff',
   },
   sectionHeaderTitle: {
@@ -1219,51 +1177,28 @@ const styles = StyleSheet.create({
     color: Colors.gray,
   },
   filtersContainer: {
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-  },
-  filtersScrollContainer: {
-    backgroundColor: '#fff',
-    maxHeight: 50,
-  },
-  filtersScrollContent: {
-    flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingBottom: 8,
+    paddingTop: 2,
+    paddingBottom: 6,
+    backgroundColor: '#fff',
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 6,
     paddingBottom: 40,
-  },
-  categoryChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.lightGray,
-    marginRight: 8,
-  },
-  categoryChipActive: {
-    backgroundColor: Colors.primary,
-  },
-  categoryChipText: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.gray,
-  },
-  categoryChipTextActive: {
-    color: '#fff',
   },
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     gap: 6,
+    borderRadius: 16,
+    backgroundColor: Colors.lightGray,
   },
   sortButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600' as const,
     color: Colors.primary,
   },
@@ -1293,24 +1228,6 @@ const styles = StyleSheet.create({
   sortOptionTextActive: {
     fontWeight: '600' as const,
     color: Colors.primary,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 40,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600' as const,
-    color: Colors.dark,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: Colors.gray,
-    textAlign: 'center',
   },
   emptyStateIllustrated: {
     alignItems: 'center',
