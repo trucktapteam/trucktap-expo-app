@@ -32,6 +32,7 @@ export default function TruckSettings() {
     setCurrentUser,
     getUserTruck,
     updateTruckDetails,
+    goOffline,
     foodTrucks,
     selectedAdminTruckId,
   } = useApp();
@@ -232,11 +233,14 @@ setCurrentUser(customerUser);
           onPress: async () => {
             setIsUpdatingArchive(true);
             try {
-              await updateTruckDetails(truck.id, {
-                archived: true,
-                archivedAt: new Date().toISOString(),
-                archiveReason: 'owner_archived',
-                open_now: false,
+              await goOffline({
+                truckId: truck.id,
+                source: 'archive',
+                updates: {
+                  archived: true,
+                  archivedAt: new Date().toISOString(),
+                  archiveReason: 'owner_archived',
+                },
               });
               Alert.alert('Truck archived', 'Your truck is hidden from customers.');
             } catch (error: any) {

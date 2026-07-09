@@ -102,6 +102,7 @@ export default function TruckDashboard() {
     setSelectedAdminTruckId,
     getUserTruck,
     updateTruckDetails,
+    goOffline,
     getQrScanStats,
     hasHoursSet,
     isProfileComplete,
@@ -161,8 +162,9 @@ export default function TruckDashboard() {
     if (!truck) return;
 
     try {
-      await updateTruckDetails(truck.id, {
-        open_now: false,
+      await goOffline({
+        truckId: truck.id,
+        source: 'manual',
       });
       setStatusToast({
         visible: true,

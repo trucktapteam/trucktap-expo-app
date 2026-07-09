@@ -879,9 +879,6 @@ console.log('[FORMAT DATE]', dateInput);
                         <Text style={styles.menuBoardBadgeText}>Menu Board</Text>
                       </View>
                     </View>
-                    <View style={styles.menuItemInfo}>
-                      <Text style={styles.menuItemName} numberOfLines={2}>Menu Board</Text>
-                    </View>
                   </TouchableOpacity>
                 ) : null}
                 {truckMenuItems.slice(0, 6).map((item, index) => (
@@ -1279,11 +1276,19 @@ console.log('[FORMAT DATE]', dateInput);
                 {selectedMenuItem && (
                   <ScrollView showsVerticalScrollIndicator={false}>
                     {selectedMenuItem.image ? (
-                      <Image 
-                        source={{ uri: selectedMenuItem.image }} 
-                        style={styles.menuItemModalImage} 
-                        contentFit="contain"
-                      />
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          setShowMenuItemModal(false);
+                          setSelectedImage(selectedMenuItem.image ?? null);
+                        }}
+                      >
+                        <Image
+                          source={{ uri: selectedMenuItem.image }}
+                          style={styles.menuItemModalImage}
+                          contentFit="contain"
+                        />
+                      </TouchableOpacity>
                     ) : (
                       <View style={styles.menuItemModalImagePlaceholder}>
                         <Utensils size={64} color={colors.secondaryText} />

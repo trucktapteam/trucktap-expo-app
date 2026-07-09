@@ -242,6 +242,25 @@ export type TruckActivityStatus = {
   hasRecentMeaningfulActivity: boolean;
 };
 
+export type LiveStatusSource =
+  | 'manual'
+  | 'schedule'
+  | 'nudge_confirmation'
+  | 'expiration'
+  | 'archive';
+
+export type GoLiveInput = {
+  truckId: string;
+  source: LiveStatusSource;
+  location: FoodTruck['location'];
+};
+
+export type GoOfflineInput = {
+  truckId: string;
+  source: LiveStatusSource;
+  updates?: Partial<Omit<FoodTruck, 'open_now'>>;
+};
+
 export type AppState = {
   currentUser: User | null;
   isOnboarded: boolean;
@@ -276,6 +295,8 @@ export type AppState = {
   addTruckImage: (truckId: string, imageUrl: string) => void;
   removeTruckImage: (truckId: string, imageUrl: string) => void;
   updateTruckDetails: (truckId: string, updates: Partial<FoodTruck>) => Promise<void>;
+  goLive: (input: GoLiveInput) => Promise<void>;
+  goOffline: (input: GoOfflineInput) => Promise<void>;
   getUserTruck: () => FoodTruck | null;
   getOwnedTrucks: () => FoodTruck[];
   isOwner: boolean;
@@ -1316,64 +1337,6 @@ if (!favoritesError && favoriteRows) {
     };
   }, [refreshOnForeground]);
 
-  useEffect(() => {
-    if (!isAuthenticated || !authUser) return;
-
-    const staleOpenTrucks = foodTrucks.filter((truck) => {
-      const canAutoCloseTruck = userProfile?.role === 'admin' || truck.owner_id === authUser.id;
-      if (!canAutoCloseTruck) return false;
-      if (!isTruckStaleOpen(truck)) return false;
-
-      const timestamp = getTruckLiveTimestamp(truck) ?? 'unknown';
-      const attemptKey = `${truck.id}:${timestamp}`;
-      if (staleOpenAutoCloseAttemptedRef.current.has(attemptKey)) return false;
-
-      staleOpenAutoCloseAttemptedRef.current.add(attemptKey);
-      if (__DEV__) {
-        console.log('[AppContext] Stale open truck detected:', {
-          truckId: truck.id,
-          timestampUsed: timestamp,
-        });
-      }
-      return true;
-    });
-
-    if (staleOpenTrucks.length === 0) return;
-
-    setFoodTrucks(prev => prev.map(truck => (
-      staleOpenTrucks.some(staleTruck => staleTruck.id === truck.id)
-        ? { ...truck, open_now: false }
-        : truck
-    )));
-    setSupabaseOwnedTrucks(prev => prev.map(truck => (
-      staleOpenTrucks.some(staleTruck => staleTruck.id === truck.id)
-        ? { ...truck, open_now: false }
-        : truck
-    )));
-
-    if (!isSupabaseConfigured) return;
-
-    staleOpenTrucks.forEach((truck) => {
-      void supabase
-        .from('trucks')
-        .update({ is_open: false, updated_at: new Date().toISOString() })
-        .eq('id', truck.id)
-        .eq('is_open', true)
-        .then(({ error }) => {
-          if (__DEV__) {
-            console.log('[AppContext] Stale open auto-close update result:', {
-              truckId: truck.id,
-              currentUserId: authUser.id,
-              error: error?.message ?? null,
-            });
-          }
-          if (error) {
-            console.log('[AppContext] Stale open auto-close error:', error.message);
-          }
-        });
-    });
-  }, [authUser, foodTrucks, isAuthenticated, userProfile?.role]);
-
   const toggleFavorite = useCallback(async (truckId: string) => {
   if (authLoading) {
     if (DEBUG) console.log('[AppContext] toggleFavorite blocked - auth loading');
@@ -1936,6 +1899,90 @@ if (error) {
 
     }
   }, [isAuthenticated, authUser, userProfile?.role, userOwnsTruck, foodTrucks, supabaseOwnedTrucks, mapSupabaseTruckToLocal, mergeTruckLocations]);
+
+  const goLive = useCallback(async ({ truckId, source, location }: GoLiveInput): Promise<void> => {
+    if (__DEV__) {
+      console.log('[AppContext] goLive requested:', {
+        truckId,
+        source,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        hasAddress: Boolean(location.address?.trim()),
+      });
+    }
+
+    await updateTruckDetails(truckId, {
+      open_now: true,
+      location,
+    });
+  }, [updateTruckDetails]);
+
+  const goOffline = useCallback(async ({ truckId, source, updates }: GoOfflineInput): Promise<void> => {
+    if (__DEV__) {
+      console.log('[AppContext] goOffline requested:', {
+        truckId,
+        source,
+        extraKeys: updates ? Object.keys(updates) : [],
+      });
+    }
+
+    await updateTruckDetails(truckId, {
+      ...updates,
+      open_now: false,
+    });
+  }, [updateTruckDetails]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authUser) return;
+
+    const staleOpenTrucks = foodTrucks.filter((truck) => {
+      const canAutoCloseTruck = userProfile?.role === 'admin' || truck.owner_id === authUser.id;
+      if (!canAutoCloseTruck) return false;
+      if (!isTruckStaleOpen(truck)) return false;
+
+      const timestamp = getTruckLiveTimestamp(truck) ?? 'unknown';
+      const attemptKey = `${truck.id}:${timestamp}`;
+      if (staleOpenAutoCloseAttemptedRef.current.has(attemptKey)) return false;
+
+      staleOpenAutoCloseAttemptedRef.current.add(attemptKey);
+      if (__DEV__) {
+        console.log('[AppContext] Stale open truck detected:', {
+          truckId: truck.id,
+          timestampUsed: timestamp,
+        });
+      }
+      return true;
+    });
+
+    if (staleOpenTrucks.length === 0) return;
+
+    staleOpenTrucks.forEach((truck) => {
+      void goOffline({
+        truckId: truck.id,
+        source: 'expiration',
+      })
+        .then(() => {
+          if (__DEV__) {
+            console.log('[AppContext] Stale open auto-close update result:', {
+              truckId: truck.id,
+              currentUserId: authUser.id,
+              error: null,
+            });
+          }
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          if (__DEV__) {
+            console.log('[AppContext] Stale open auto-close update result:', {
+              truckId: truck.id,
+              currentUserId: authUser.id,
+              error: message,
+            });
+          }
+          console.log('[AppContext] Stale open auto-close error:', message);
+        });
+    });
+  }, [authUser, foodTrucks, goOffline, isAuthenticated, userProfile?.role]);
 
   const addMenuImage = useCallback(async (truckId: string, imageUrl: string) => {
     if (!isAuthenticated || !authUser) {
@@ -3221,6 +3268,8 @@ if (error) {
     removeGalleryImage,
     removeTruckImage,
     updateTruckDetails,
+    goLive,
+    goOffline,
     getUserTruck,
     getOwnedTrucks,
     isOwner,
@@ -3287,7 +3336,7 @@ if (error) {
     refreshCustomerProfile,
     toggleFavorite, addMenuImage,
     removeMenuImage, addTruckImage, addGalleryImage, removeGalleryImage,
-    removeTruckImage, updateTruckDetails, getUserTruck, getOwnedTrucks,
+    removeTruckImage, updateTruckDetails, goLive, goOffline, getUserTruck, getOwnedTrucks,
     isOwner, isOwnerLoading, refreshOwnedTrucks, fetchReviewsFromSupabase, supabaseOwnedTrucks, addReview,
     addReviewReply, updateReviewReply, deleteReviewReply,
     getReviews, getAverageRating, addMenuItem, updateMenuItem, deleteMenuItem,

@@ -33,7 +33,7 @@ const getCurrentPositionWithTimeout = (
 export default function UpdateLocationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ stopLocation?: string; stopId?: string }>();
-  const { currentUser, getUserTruck, updateTruckDetails } = useApp();
+  const { currentUser, getUserTruck, goLive } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('UpdateLocationScreen');
   const scheduledStopPrefill = typeof params.stopLocation === 'string' ? params.stopLocation.trim() : '';
@@ -68,8 +68,9 @@ export default function UpdateLocationScreen() {
       });
     }
 
-    await updateTruckDetails(truck.id, {
-      open_now: true,
+    await goLive({
+      truckId: truck.id,
+      source: 'manual',
       location,
     });
 

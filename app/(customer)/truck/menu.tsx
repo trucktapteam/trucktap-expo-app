@@ -130,7 +130,7 @@ export default function FullMenuScreen() {
           ListHeaderComponent={
             menuBoardImageUrl ? (
               <TouchableOpacity style={styles.menuBoardCard} onPress={() => setSelectedImage(menuBoardImageUrl)} activeOpacity={0.8}>
-                <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardImage} contentFit="cover" />
+                <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardImage} contentFit="contain" />
                 <View style={styles.menuBoardOverlay}>
                   <Text style={styles.menuBoardOverlayText}>View Full Menu</Text>
                 </View>
@@ -173,11 +173,19 @@ export default function FullMenuScreen() {
             {selectedMenuItem && (
               <>
                 {selectedMenuItem.image ? (
-                  <Image 
-                    source={{ uri: selectedMenuItem.image }} 
-                    style={styles.menuItemModalImage}
-                    contentFit="contain"
-                  />
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setShowMenuItemModal(false);
+                      setSelectedImage(selectedMenuItem.image ?? null);
+                    }}
+                  >
+                    <Image
+                      source={{ uri: selectedMenuItem.image }}
+                      style={styles.menuItemModalImage}
+                      contentFit="contain"
+                    />
+                  </TouchableOpacity>
                 ) : (
                   <View style={styles.menuItemModalImagePlaceholder}>
                     <Utensils size={64} color={colors.secondaryText} />
@@ -233,6 +241,7 @@ function createStyles(colors: any) {
     menuBoardImage: {
       width: '100%',
       height: 220,
+      backgroundColor: colors.secondaryBackground,
     },
     menuBoardOverlay: {
       position: 'absolute',
