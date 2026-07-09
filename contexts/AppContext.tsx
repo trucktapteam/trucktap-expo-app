@@ -261,6 +261,14 @@ export type GoOfflineInput = {
   updates?: Partial<Omit<FoodTruck, 'open_now'>>;
 };
 
+type LiveEventAuditInput = {
+  truckId: string;
+  action: 'go_live' | 'go_offline';
+  source: LiveStatusSource;
+  location?: FoodTruck['location'];
+  metadata?: Record<string, unknown>;
+};
+
 export type AppState = {
   currentUser: User | null;
   isOnboarded: boolean;
@@ -1900,6 +1908,43 @@ if (error) {
     }
   }, [isAuthenticated, authUser, userProfile?.role, userOwnsTruck, foodTrucks, supabaseOwnedTrucks, mapSupabaseTruckToLocal, mergeTruckLocations]);
 
+  const insertLiveEventAudit = useCallback(async ({
+    truckId,
+    action,
+    source,
+    location,
+    metadata,
+  }: LiveEventAuditInput): Promise<void> => {
+    if (!isSupabaseConfigured || !authUser) return;
+
+    const payload = {
+      truck_id: truckId,
+      action,
+      source,
+      actor_user_id: authUser.id,
+      location_label: location?.address?.trim() || null,
+      latitude: Number.isFinite(location?.latitude) ? location?.latitude : null,
+      longitude: Number.isFinite(location?.longitude) ? location?.longitude : null,
+      metadata: {
+        actorRole: userProfile?.role ?? null,
+        ...metadata,
+      },
+    };
+
+    const { error } = await supabase
+      .from('truck_live_events')
+      .insert(payload);
+
+    if (error) {
+      console.log('[AppContext] Live event audit insert failed:', {
+        truckId,
+        action,
+        source,
+        error: error.message,
+      });
+    }
+  }, [authUser, userProfile?.role]);
+
   const goLive = useCallback(async ({ truckId, source, location }: GoLiveInput): Promise<void> => {
     if (__DEV__) {
       console.log('[AppContext] goLive requested:', {
@@ -1915,7 +1960,25 @@ if (error) {
       open_now: true,
       location,
     });
-  }, [updateTruckDetails]);
+
+    try {
+      await insertLiveEventAudit({
+        truckId,
+        action: 'go_live',
+        source: 'manual',
+        location,
+        metadata: {
+          requestedSource: source,
+        },
+      });
+    } catch (error) {
+      console.log('[AppContext] Live event audit insert crashed:', {
+        truckId,
+        action: 'go_live',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [insertLiveEventAudit, updateTruckDetails]);
 
   const goOffline = useCallback(async ({ truckId, source, updates }: GoOfflineInput): Promise<void> => {
     if (__DEV__) {
@@ -1930,7 +1993,25 @@ if (error) {
       ...updates,
       open_now: false,
     });
-  }, [updateTruckDetails]);
+
+    try {
+      await insertLiveEventAudit({
+        truckId,
+        action: 'go_offline',
+        source,
+        metadata: {
+          updateKeys: updates ? Object.keys(updates) : [],
+        },
+      });
+    } catch (error) {
+      console.log('[AppContext] Live event audit insert crashed:', {
+        truckId,
+        action: 'go_offline',
+        source,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [insertLiveEventAudit, updateTruckDetails]);
 
   useEffect(() => {
     if (!isAuthenticated || !authUser) return;

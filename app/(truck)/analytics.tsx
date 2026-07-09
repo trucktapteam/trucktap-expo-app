@@ -174,6 +174,9 @@ const styles = StyleSheet.create({
     color: Colors.gray,
     fontWeight: '500' as const,
   },
+  screenIntro: {
+    marginBottom: 16,
+  },
   content: {
     flex: 1,
   },
