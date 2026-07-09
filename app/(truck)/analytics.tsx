@@ -1,10 +1,11 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Animated } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Eye, Heart, Star, Phone, Navigation, Image as ImageIcon, Menu, TrendingUp, CheckCircle } from 'lucide-react-native';
+import { Eye, Heart, Star, Navigation, Menu, TrendingUp, CheckCircle, Share2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckRating } from '@/contexts/AppContext';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 type StatCardProps = {
   icon: React.ComponentType<any>;
@@ -63,11 +64,38 @@ function StatCard({ icon: Icon, label, value, color, index, showTrend }: StatCar
   );
 }
 
+type OwnerAnalyticsCounts = {
+  profileViews: number;
+  favorites: number;
+  menuViews: number;
+  navigateTaps: number;
+  shares: number;
+  checkInsThisMonth: number;
+  customerCheckIns: number;
+};
+
+const EMPTY_ANALYTICS: OwnerAnalyticsCounts = {
+  profileViews: 0,
+  favorites: 0,
+  menuViews: 0,
+  navigateTaps: 0,
+  shares: 0,
+  checkInsThisMonth: 0,
+  customerCheckIns: 0,
+};
+
+const getMonthStartDate = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}-01`;
+};
+
 export default function AnalyticsDashboard() {
-  const { getUserTruck, getTruckAnalytics } = useApp();
+  const { getUserTruck } = useApp();
   const truck = getUserTruck();
-  const analytics = getTruckAnalytics(truck?.id || '');
   const rating = useTruckRating(truck?.id || '');
+  const [analytics, setAnalytics] = useState<OwnerAnalyticsCounts>(EMPTY_ANALYTICS);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
 
   const headerAnim = useRef(new Animated.Value(0)).current;
 
@@ -81,6 +109,109 @@ export default function AnalyticsDashboard() {
     }).start();
   }, [headerAnim]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchCount = async (
+      table: 'analytics_events' | 'favorites' | 'truck_checkins',
+      filters: (query: any) => any
+    ) => {
+      const query = filters(supabase.from(table).select('*', { count: 'exact', head: true }));
+      const { count, error } = await query;
+
+      if (error) {
+        throw error;
+      }
+
+      return count ?? 0;
+    };
+
+    const fetchOwnerAnalytics = async () => {
+      if (!truck?.id) {
+        setAnalytics(EMPTY_ANALYTICS);
+        setAnalyticsError(null);
+        setAnalyticsLoading(false);
+        return;
+      }
+
+      if (!isSupabaseConfigured) {
+        setAnalytics(EMPTY_ANALYTICS);
+        setAnalyticsError('Analytics are unavailable because Supabase is not configured.');
+        setAnalyticsLoading(false);
+        return;
+      }
+
+      setAnalyticsLoading(true);
+      setAnalyticsError(null);
+
+      try {
+        const monthStart = getMonthStartDate();
+        const [
+          profileViews,
+          navigateTaps,
+          shares,
+          menuViews,
+          favorites,
+          checkInsThisMonth,
+          customerCheckIns,
+        ] = await Promise.all([
+          fetchCount('analytics_events', query =>
+            query.eq('truck_id', truck.id).eq('event_type', 'truck_profile_view')
+          ),
+          fetchCount('analytics_events', query =>
+            query.eq('truck_id', truck.id).eq('event_type', 'navigate_click')
+          ),
+          fetchCount('analytics_events', query =>
+            query.eq('truck_id', truck.id).eq('event_type', 'share_click')
+          ),
+          fetchCount('analytics_events', query =>
+            query.eq('truck_id', truck.id).eq('event_type', 'menu_view')
+          ),
+          fetchCount('favorites', query =>
+            query.eq('truck_id', truck.id)
+          ),
+          fetchCount('truck_checkins', query =>
+            query.eq('truck_id', truck.id).gte('checkin_date', monthStart)
+          ),
+          fetchCount('truck_checkins', query =>
+            query.eq('truck_id', truck.id)
+          ),
+        ]);
+
+        if (cancelled) return;
+
+        setAnalytics({
+          profileViews,
+          favorites,
+          menuViews,
+          navigateTaps,
+          shares,
+          checkInsThisMonth,
+          customerCheckIns,
+        });
+      } catch (error: any) {
+        if (cancelled) return;
+
+        const message = error?.message || 'Unable to load analytics. Your account may not have permission to read these analytics tables yet.';
+        setAnalytics(EMPTY_ANALYTICS);
+        setAnalyticsError(message);
+        if (__DEV__) {
+          console.log('[AnalyticsDashboard] Failed to load owner analytics:', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setAnalyticsLoading(false);
+        }
+      }
+    };
+
+    void fetchOwnerAnalytics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [truck?.id]);
+
   if (!truck) {
     return (
       <SafeAreaView style={styles.container}>
@@ -92,16 +223,16 @@ export default function AnalyticsDashboard() {
   }
 
   const stats = [
-    { icon: Eye, label: 'Profile Views', value: analytics.views, color: Colors.primary, showTrend: true },
+    { icon: Eye, label: 'Profile Views', value: analytics.profileViews, color: Colors.primary, showTrend: true },
     { icon: Heart, label: 'Favorites', value: analytics.favorites, color: '#FF006E', showTrend: true },
     { icon: Star, label: 'Avg Rating', value: rating.average || 0, color: Colors.starYellow, showTrend: false },
+    { icon: Navigation, label: 'Navigate Taps', value: analytics.navigateTaps, color: '#06D6A0', showTrend: true },
+    { icon: Share2, label: 'Shares', value: analytics.shares, color: '#3A86FF', showTrend: true },
     { icon: Menu, label: 'Menu Views', value: analytics.menuViews, color: '#8338EC', showTrend: true },
-    { icon: Phone, label: 'Call Taps', value: analytics.calls, color: '#3A86FF', showTrend: true },
-    { icon: Navigation, label: 'Navigate Taps', value: analytics.navigations, color: '#06D6A0', showTrend: true },
-    { icon: CheckCircle, label: 'Check-Ins This Month', value: analytics.customerCheckInsThisMonth, color: '#F97316', showTrend: true },
+    { icon: CheckCircle, label: 'Check-Ins This Month', value: analytics.checkInsThisMonth, color: '#F97316', showTrend: true },
     { icon: CheckCircle, label: 'Customer Check-Ins', value: analytics.customerCheckIns, color: Colors.success, showTrend: true },
-    { icon: ImageIcon, label: 'Photo Views', value: analytics.photoViews, color: '#FB5607', showTrend: true },
   ];
+  const hasAnyRealActivity = stats.some(stat => stat.value > 0);
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -113,6 +244,27 @@ export default function AnalyticsDashboard() {
         <Animated.View style={[styles.screenIntro, { opacity: headerAnim }]}>
           <Text style={styles.headerSubtitle}>Business analytics for {truck.name}</Text>
         </Animated.View>
+
+        {analyticsLoading ? (
+          <View style={styles.statusCard}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <Text style={styles.statusText}>Loading analytics...</Text>
+          </View>
+        ) : null}
+
+        {analyticsError ? (
+          <View style={styles.statusCard}>
+            <Text style={styles.statusTitle}>Analytics unavailable</Text>
+            <Text style={styles.statusText}>{analyticsError}</Text>
+          </View>
+        ) : null}
+
+        {!analyticsLoading && !analyticsError && !hasAnyRealActivity ? (
+          <View style={styles.statusCard}>
+            <Text style={styles.statusTitle}>No analytics yet</Text>
+            <Text style={styles.statusText}>Customer activity will appear here after people view, save, share, navigate to, or check in with your truck.</Text>
+          </View>
+        ) : null}
 
         <View style={styles.grid}>
           {stats.map((stat, index) => (
@@ -193,6 +345,25 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 16,
     color: Colors.gray,
+  },
+  statusCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
+    gap: 8,
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  statusText: {
+    fontSize: 14,
+    color: Colors.gray,
+    lineHeight: 20,
   },
   grid: {
     flexDirection: 'row',
