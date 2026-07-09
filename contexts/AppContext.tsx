@@ -84,8 +84,14 @@ const normalizeArchivedAtForDb = (archivedAt: FoodTruck['archivedAt']): string |
 const getTruckLiveTimestamp = (truck: Pick<FoodTruck, 'lastLiveUpdatedAt' | 'lastUpdated'>): string | undefined =>
   truck.lastLiveUpdatedAt ?? truck.lastUpdated;
 
-const isTruckStaleOpen = (truck: Pick<FoodTruck, 'id' | 'open_now' | 'lastLiveUpdatedAt' | 'lastUpdated'>): boolean => {
+const isTruckStaleOpen = (truck: Pick<FoodTruck, 'id' | 'open_now' | 'lastLiveUpdatedAt' | 'lastUpdated' | 'liveExpiresAt'>): boolean => {
   if (!truck.open_now) return false;
+
+  if (truck.liveExpiresAt) {
+    const expiresAt = new Date(truck.liveExpiresAt).getTime();
+    if (Number.isNaN(expiresAt)) return false;
+    return Date.now() > expiresAt;
+  }
 
   const timestampValue = getTruckLiveTimestamp(truck);
   if (!timestampValue) return false;
@@ -147,6 +153,18 @@ const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
   if (updates.operatingHours !== undefined) dbUpdates.operating_hours = updates.operatingHours;
   if (updates.images !== undefined) dbUpdates.gallery_images = updates.images;
   if (updates.menu_images !== undefined) dbUpdates.menu_images = updates.menu_images;
+  if (Object.prototype.hasOwnProperty.call(updates, 'lastLiveUpdatedAt')) {
+    dbUpdates.last_live_updated_at = updates.lastLiveUpdatedAt ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'liveStartedAt')) {
+    dbUpdates.live_started_at = updates.liveStartedAt ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'liveExpiresAt')) {
+    dbUpdates.live_expires_at = updates.liveExpiresAt ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'liveSource')) {
+    dbUpdates.live_source = updates.liveSource ?? null;
+  }
 
   return dbUpdates;
 };
@@ -488,7 +506,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
       operatingHours: row.operating_hours ?? undefined,
       verified: false,
       lastUpdated: row.updated_at ?? row.created_at ?? undefined,
-      lastLiveUpdatedAt: row.location_updated_at ?? undefined,
+      lastLiveUpdatedAt: row.last_live_updated_at ?? row.location_updated_at ?? undefined,
+      liveStartedAt: row.live_started_at ?? undefined,
+      liveExpiresAt: row.live_expires_at ?? undefined,
+      liveSource: row.live_source ?? undefined,
       search_keywords: [],
       analytics: undefined,
       archived: row.archived === true,
@@ -521,9 +542,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
       if (!locationRow) {
         return truck;
       }
-      const locationFreshnessTimestamp = locationRow.updated_at
-        ?? (truck.open_now ? truck.lastUpdated : locationRow.created_at)
-        ?? truck.lastLiveUpdatedAt;
+      const locationFreshnessTimestamp = truck.lastLiveUpdatedAt
+        ?? (truck.open_now ? undefined : locationRow.updated_at ?? locationRow.created_at)
+        ?? truck.lastUpdated;
 
       return {
         ...truck,
@@ -1560,7 +1581,18 @@ if (error) {
               ...truck,
               ...sanitizedUpdates,
               lastUpdated: savedAt,
-              lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt,
+              lastLiveUpdatedAt: Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'lastLiveUpdatedAt')
+                ? sanitizedUpdates.lastLiveUpdatedAt
+                : truck.lastLiveUpdatedAt,
+              liveStartedAt: Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'liveStartedAt')
+                ? sanitizedUpdates.liveStartedAt
+                : truck.liveStartedAt,
+              liveExpiresAt: Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'liveExpiresAt')
+                ? sanitizedUpdates.liveExpiresAt
+                : truck.liveExpiresAt,
+              liveSource: Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'liveSource')
+                ? sanitizedUpdates.liveSource
+                : truck.liveSource,
             }
           : truck
       )
@@ -1572,7 +1604,18 @@ if (error) {
               ...truck,
               ...sanitizedUpdates,
               lastUpdated: savedAt,
-              lastLiveUpdatedAt: sanitizedUpdates.location ? savedAt : truck.lastLiveUpdatedAt,
+              lastLiveUpdatedAt: Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'lastLiveUpdatedAt')
+                ? sanitizedUpdates.lastLiveUpdatedAt
+                : truck.lastLiveUpdatedAt,
+              liveStartedAt: Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'liveStartedAt')
+                ? sanitizedUpdates.liveStartedAt
+                : truck.liveStartedAt,
+              liveExpiresAt: Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'liveExpiresAt')
+                ? sanitizedUpdates.liveExpiresAt
+                : truck.liveExpiresAt,
+              liveSource: Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'liveSource')
+                ? sanitizedUpdates.liveSource
+                : truck.liveSource,
             }
           : truck
       )
@@ -1839,7 +1882,10 @@ if (error) {
         hydrated = {
           ...hydrated,
           lastUpdated: hydrated.lastUpdated ?? savedAt,
-          lastLiveUpdatedAt: savedAt,
+          lastLiveUpdatedAt: hydrated.lastLiveUpdatedAt ?? sanitizedUpdates.lastLiveUpdatedAt ?? savedAt,
+          liveStartedAt: hydrated.liveStartedAt ?? sanitizedUpdates.liveStartedAt,
+          liveExpiresAt: hydrated.liveExpiresAt ?? sanitizedUpdates.liveExpiresAt,
+          liveSource: hydrated.liveSource ?? sanitizedUpdates.liveSource,
         };
 
         const hasVerifiedLocation =
@@ -1946,6 +1992,10 @@ if (error) {
   }, [authUser, userProfile?.role]);
 
   const goLive = useCallback(async ({ truckId, source, location }: GoLiveInput): Promise<void> => {
+    const liveAt = new Date();
+    const liveAtIso = liveAt.toISOString();
+    const liveExpiresAt = new Date(liveAt.getTime() + STALE_OPEN_WINDOW_MS).toISOString();
+
     if (__DEV__) {
       console.log('[AppContext] goLive requested:', {
         truckId,
@@ -1959,6 +2009,10 @@ if (error) {
     await updateTruckDetails(truckId, {
       open_now: true,
       location,
+      lastLiveUpdatedAt: liveAtIso,
+      liveStartedAt: liveAtIso,
+      liveExpiresAt,
+      liveSource: source,
     });
 
     try {
@@ -1992,6 +2046,8 @@ if (error) {
     await updateTruckDetails(truckId, {
       ...updates,
       open_now: false,
+      liveExpiresAt: null,
+      liveSource: source,
     });
 
     try {

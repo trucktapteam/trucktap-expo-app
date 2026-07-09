@@ -40,6 +40,9 @@ export type FoodTruck = {
   verified: boolean;
   lastUpdated?: string;
   lastLiveUpdatedAt?: string;
+  liveStartedAt?: string | null;
+  liveExpiresAt?: string | null;
+  liveSource?: string | null;
   search_keywords?: string[];
   analytics?: {
     views: number;

@@ -17,7 +17,6 @@ const REMINDER_IDS_KEY = 'upcomingStopReminderIds';
 const DEFAULT_REMINDER_MINUTES = 30;
 const GO_LIVE_WINDOW_MINUTES = 30;
 const GO_LIVE_WINDOW_MS = GO_LIVE_WINDOW_MINUTES * 60 * 1000;
-const DEV_TEST_REMINDER_SECONDS = 60;
 const REMINDER_NOTIFICATION_CHANNEL_ID = 'upcoming-stop-reminders';
 const REMINDER_CANCEL_STATUSES: UpcomingStopStatus[] = ['cancelled', 'completed', 'sold_out'];
 
@@ -472,19 +471,6 @@ export default function UpcomingStopsScreen() {
     await persistReminderIds(nextIds);
   };
 
-  const handleScheduleDevTestReminder = async () => {
-    if (!__DEV__) return;
-
-    const testStop = stops.find((stop) => !REMINDER_CANCEL_STATUSES.includes(stop.status));
-    if (!testStop) {
-      setErrorMessage('No eligible stop available for a test reminder.');
-      return;
-    }
-
-    const fireAt = new Date(Date.now() + DEV_TEST_REMINDER_SECONDS * 1000);
-    await scheduleReminderForStop(testStop, reminderIdsRef.current, { ...reminderSettingsRef.current, enabled: true }, fireAt);
-  };
-
   if (!truck) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -707,16 +693,6 @@ export default function UpcomingStopsScreen() {
         style={styles.flex}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton} disabled={upcomingStopsLoading}>
-            {upcomingStopsLoading ? (
-              <ActivityIndicator size="small" color={Colors.primary} />
-            ) : (
-              <RefreshCw size={20} color={Colors.primary} />
-            )}
-          </TouchableOpacity>
-        </View>
-
         <ScrollView
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
@@ -739,21 +715,21 @@ export default function UpcomingStopsScreen() {
                 thumbColor={reminderSettings.enabled ? Colors.primary : Colors.gray}
               />
             </View>
-            {__DEV__ && (
-              <TouchableOpacity
-                style={styles.devReminderButton}
-                onPress={handleScheduleDevTestReminder}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.devReminderButtonText}>DEV: Test reminder in 60s</Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           <View style={styles.formCard}>
             <View style={styles.formHeader}>
-              <CalendarDays size={24} color={Colors.primary} />
-              <Text style={styles.formTitle}>Add planned stop</Text>
+              <View style={styles.formTitleRow}>
+                <CalendarDays size={24} color={Colors.primary} />
+                <Text style={styles.formTitle}>Add planned stop</Text>
+              </View>
+              <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton} disabled={upcomingStopsLoading}>
+                {upcomingStopsLoading ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <RefreshCw size={20} color={Colors.primary} />
+                )}
+              </TouchableOpacity>
             </View>
 
             <Text style={styles.label}>Date</Text>
@@ -768,6 +744,9 @@ export default function UpcomingStopsScreen() {
                 <View>
                   <Text style={styles.selectedDatesTitle}>Selected Dates</Text>
                   <Text style={styles.selectedDatesSubtitle}>Tap a date above to add it.</Text>
+                  <Text style={styles.selectedDatesHelper}>
+                    Select multiple dates to create stops with the same location and hours.
+                  </Text>
                 </View>
               </View>
               {selectedDates.length > 0 ? (
@@ -1065,33 +1044,6 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: Colors.light,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 8,
-  },
-  titleContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700' as const,
-    color: Colors.dark,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.gray,
-    marginTop: 2,
-  },
   refreshButton: {
     width: 40,
     height: 40,
@@ -1132,19 +1084,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: Colors.gray,
   },
-  devReminderButton: {
-    alignSelf: 'flex-start',
-    marginTop: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: `${Colors.primary}12`,
-  },
-  devReminderButtonText: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: Colors.primary,
-  },
   formCard: {
     backgroundColor: Colors.light,
     borderRadius: 16,
@@ -1159,10 +1098,19 @@ const styles = StyleSheet.create({
   formHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 12,
     marginBottom: 18,
   },
+  formTitleRow: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   formTitle: {
+    flex: 1,
     fontSize: 18,
     fontWeight: '700' as const,
     color: Colors.dark,
@@ -1187,10 +1135,14 @@ const styles = StyleSheet.create({
   },
   timeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
   timeInputGroup: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 180,
+    minWidth: 0,
   },
   pickerButton: {
     minHeight: 48,
@@ -1231,6 +1183,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.gray,
     marginTop: 3,
+  },
+  selectedDatesHelper: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: Colors.gray,
+    marginTop: 5,
   },
   selectedDateList: {
     flexDirection: 'row',
@@ -1294,9 +1252,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
   },
   periodSegmentText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700' as const,
     color: Colors.gray,
+    includeFontPadding: false,
   },
   periodSegmentTextSelected: {
     color: Colors.light,
