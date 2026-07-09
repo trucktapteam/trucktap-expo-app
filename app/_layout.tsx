@@ -166,6 +166,7 @@ function RootLayoutNav() {
       <Stack.Screen name="truck-setup" options={{ title: 'Create Truck' }} />
       <Stack.Screen name="truck-login" options={{ title: 'Truck Owner Login' }} />
       <Stack.Screen name="admin-truck-picker" options={{ title: 'Choose a Truck' }} />
+      <Stack.Screen name="admin-live-activity" options={{ title: 'LIVE Activity' }} />
       <Stack.Screen name="customer-login" options={{ headerShown: false, presentation: 'transparentModal' }} />
       <Stack.Screen name="auth/check-email" options={{ headerShown: false }} />
       <Stack.Screen name="auth/verified" options={{ headerShown: false }} />

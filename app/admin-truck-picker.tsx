@@ -2,7 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, Alert, View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
-import { ChevronRight, Eye, EyeOff, Mail, RotateCcw } from 'lucide-react-native';
+import { Activity, ChevronRight, Eye, EyeOff, Mail, RotateCcw } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -90,6 +90,10 @@ export default function AdminTruckPickerScreen() {
     }
   };
 
+  const openLiveActivity = () => {
+    router.push('/admin-live-activity' as any);
+  };
+
   const formatLastLiveDate = (iso?: string) => {
     if (!iso) return 'Never';
     const date = new Date(iso);
@@ -168,6 +172,23 @@ export default function AdminTruckPickerScreen() {
             <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Incomplete Trucks</Text>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={[styles.adminToolCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+          onPress={openLiveActivity}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.adminToolIcon, { backgroundColor: `${colors.primary}15` }]}>
+            <Activity size={22} color={colors.primary} />
+          </View>
+          <View style={styles.adminToolText}>
+            <Text style={[styles.adminToolTitle, { color: colors.text }]}>LIVE Activity</Text>
+            <Text style={[styles.adminToolSubtitle, { color: colors.secondaryText }]}>
+              Recent open and close events
+            </Text>
+          </View>
+          <ChevronRight size={20} color={colors.secondaryText} />
+        </TouchableOpacity>
 
         {trucks.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
@@ -377,6 +398,33 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 13,
     fontWeight: '600' as const,
+  },
+  adminToolCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 24,
+  },
+  adminToolIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminToolText: {
+    flex: 1,
+  },
+  adminToolTitle: {
+    fontSize: 16,
+    fontWeight: '800' as const,
+    marginBottom: 3,
+  },
+  adminToolSubtitle: {
+    fontSize: 13,
   },
   truckList: {
     gap: 12,
