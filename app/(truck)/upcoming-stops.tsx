@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, CalendarDays, ChevronDown, Clock, MapPin, RefreshCw, Trash2 } from 'lucide-react-native';
+import { CalendarDays, ChevronDown, Clock, MapPin, RefreshCw, Trash2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { UpcomingStop, UpcomingStopStatus } from '@/types';
@@ -701,20 +701,13 @@ export default function UpcomingStopsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ArrowLeft size={24} color={Colors.dark} />
-          </TouchableOpacity>
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>Upcoming Stops</Text>
-            <Text style={styles.subtitle}>Plan future stops without going live</Text>
-          </View>
           <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton} disabled={upcomingStopsLoading}>
             {upcomingStopsLoading ? (
               <ActivityIndicator size="small" color={Colors.primary} />
@@ -1075,6 +1068,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: Colors.light,

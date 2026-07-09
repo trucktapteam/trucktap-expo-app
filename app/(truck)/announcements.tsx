@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Animated, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
-import { ArrowLeft, Megaphone, Trash2, Send } from 'lucide-react-native';
+import { Megaphone, Trash2, Send } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -10,7 +9,6 @@ import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 const MAX_MESSAGE_LENGTH = 200;
 
 export default function AnnouncementsScreen() {
-  const router = useRouter();
   const { getUserTruck, getAnnouncements, addAnnouncement, deleteAnnouncement } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('AnnouncementsScreen');
@@ -81,22 +79,12 @@ export default function AnnouncementsScreen() {
   const isValid = message.trim().length > 0 && message.length <= MAX_MESSAGE_LENGTH;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={Colors.dark} />
-        </TouchableOpacity>
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>Announcements</Text>
-          <Text style={styles.subtitle}>Share updates with customers</Text>
-        </View>
-      </View>
-
       <ScrollView 
         ref={scrollViewRef}
         style={styles.content} 

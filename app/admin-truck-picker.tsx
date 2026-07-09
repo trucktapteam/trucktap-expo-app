@@ -2,7 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, Alert, View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
-import { ChevronRight, Eye, EyeOff, Mail, RotateCcw, Truck } from 'lucide-react-native';
+import { ChevronRight, Eye, EyeOff, Mail, RotateCcw } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -154,16 +154,6 @@ export default function AdminTruckPickerScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <View style={[styles.iconContainer, { backgroundColor: `${colors.primary}15` }]}>
-            <Truck size={36} color={colors.primary} />
-          </View>
-          <Text style={[styles.title, { color: colors.text }]}>Choose a Truck</Text>
-          <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
-            Select a real truck to manage as an admin.
-          </Text>
-        </View>
-
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
             <Text style={[styles.statValue, { color: colors.text }]}>{activeTruckCount}</Text>

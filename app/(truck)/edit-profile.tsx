@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePathname, useRouter, useSegments } from 'expo-router';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { ChevronLeft, Camera, MapPin, Phone, Globe, Users, ShieldCheck } from 'lucide-react-native';
+import { Camera, MapPin, Phone, Globe, Users, ShieldCheck } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -488,7 +488,7 @@ export default function EditProfile() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <Toast
         message={toast.message}
         type={toast.type}
@@ -496,16 +496,6 @@ export default function EditProfile() {
         onHide={() => setToast({ ...toast, visible: false })}
       />
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ChevronLeft size={24} color={Colors.dark} />
-          </TouchableOpacity>
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>Edit Truck Profile</Text>
-          </View>
-          <View style={styles.headerSpacer} />
-        </View>
-
         <KeyboardAvoidingView
           style={styles.scrollView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

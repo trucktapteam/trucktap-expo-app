@@ -9,11 +9,10 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import QRCode from 'qrcode';
-import { Download, Share2, ArrowLeft, Play, Pause } from 'lucide-react-native';
+import { Download, Share2, Play, Pause } from 'lucide-react-native';
 import Slider from '@react-native-community/slider';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -47,7 +46,6 @@ const VIDEO_TEMPLATES: { value: VideoTemplate; label: string; description: strin
 export default function PosterVideoScreen() {
   const { getUserTruck } = useApp();
   const truck = getUserTruck();
-  const router = useRouter();
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -201,17 +199,6 @@ export default function PosterVideoScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ArrowLeft size={24} color={Colors.dark} />
-        </TouchableOpacity>
-        <View>
-          <Text style={styles.title}>Promo Video</Text>
-          <Text style={styles.subtitle}>TikTok & Instagram Reels Ready</Text>
-        </View>
-        <View style={styles.placeholder} />
-      </View>
-
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}

@@ -168,13 +168,6 @@ export default function PosterScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>Marketing Poster</Text>
-          <Text style={styles.subtitle}>
-            Choose a style and create a shareable flyer
-          </Text>
-        </View>
-
         <View style={styles.styleSelector}>
           <Text style={styles.styleSelectorLabel}>Choose Style:</Text>
           <ScrollView

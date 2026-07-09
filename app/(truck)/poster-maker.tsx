@@ -205,13 +205,6 @@ export default function PosterMaker() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-        <View style={styles.header}>
-          <Text style={styles.title}>Create Marketing Poster</Text>
-          <Text style={styles.subtitle}>
-            Design a shareable poster for social media, printing, or your truck window
-          </Text>
-        </View>
-
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Choose Template</Text>
           <ScrollView

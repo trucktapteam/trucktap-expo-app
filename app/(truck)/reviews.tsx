@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Animated, Modal, TextInput, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import { ArrowLeft, Star } from 'lucide-react-native';
+import { Star } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,7 +10,6 @@ import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { Review } from '@/types';
 
 export default function TruckReviewsScreen() {
-  const router = useRouter();
   const { getUserTruck, refreshReviews, addReviewReply, updateReviewReply, deleteReviewReply } = useApp();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [fadeAnim] = useState(new Animated.Value(0));
@@ -169,16 +167,6 @@ export default function TruckReviewsScreen() {
 
   return (
     <View style={styles.container}>
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft size={24} color={Colors.dark} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Reviews</Text>
-          <View style={styles.backButton} />
-        </View>
-      </SafeAreaView>
-
       <ScrollView 
         showsVerticalScrollIndicator={false}
         refreshControl={

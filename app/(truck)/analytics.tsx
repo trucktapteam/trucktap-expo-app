@@ -1,8 +1,7 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Animated, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Eye, Heart, Star, Phone, Navigation, Image as ImageIcon, ChevronLeft, Menu, TrendingUp, CheckCircle } from 'lucide-react-native';
+import { Eye, Heart, Star, Phone, Navigation, Image as ImageIcon, Menu, TrendingUp, CheckCircle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckRating } from '@/contexts/AppContext';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
@@ -65,7 +64,6 @@ function StatCard({ icon: Icon, label, value, color, index, showTrend }: StatCar
 }
 
 export default function AnalyticsDashboard() {
-  const router = useRouter();
   const { getUserTruck, getTruckAnalytics } = useApp();
   const truck = getUserTruck();
   const analytics = getTruckAnalytics(truck?.id || '');
@@ -107,21 +105,15 @@ export default function AnalyticsDashboard() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.7}>
-          <ChevronLeft size={28} color={Colors.dark} />
-        </TouchableOpacity>
-        <Animated.View style={{ opacity: headerAnim }}>
-          <Text style={styles.headerTitle}>Your Insights</Text>
-          <Text style={styles.headerSubtitle}>Business analytics for {truck.name}</Text>
-        </Animated.View>
-      </View>
-
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
       >
+        <Animated.View style={[styles.screenIntro, { opacity: headerAnim }]}>
+          <Text style={styles.headerSubtitle}>Business analytics for {truck.name}</Text>
+        </Animated.View>
+
         <View style={styles.grid}>
           {stats.map((stat, index) => (
             <View key={stat.label} style={styles.gridItem}>

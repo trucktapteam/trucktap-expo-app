@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import { ArrowLeft, Bell, AlertCircle, Info, ShieldAlert, Wrench, Send, Plus, X } from 'lucide-react-native';
+import { Bell, AlertCircle, Info, ShieldAlert, Wrench, Send, Plus, X } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp } from '@/contexts/AppContext';
 import { OwnerMessage, OwnerMessageType } from '@/types';
@@ -18,7 +17,6 @@ const TYPE_META: Record<OwnerMessageType, { label: string; icon: React.Component
 };
 
 export default function OwnerUpdatesScreen() {
-  const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const {
@@ -41,7 +39,6 @@ export default function OwnerUpdatesScreen() {
   }, [refreshOwnerMessages]);
 
   const messages = getTeamUpdates();
-  const unreadCount = messages.filter(message => !message.read_at).length;
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -70,20 +67,7 @@ export default function OwnerUpdatesScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.titleContainer}>
-          <View style={styles.titleRow}>
-            <Text style={styles.title}>Message Center</Text>
-            {unreadCount > 0 && <View style={styles.unreadDot} />}
-          </View>
-          <Text style={styles.subtitle}>Important notes from TruckTap for truck owners</Text>
-        </View>
-      </View>
-
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}

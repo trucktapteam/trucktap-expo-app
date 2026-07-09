@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, Platform, Animated, LayoutAnimation, UIManager, ScrollView, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Clock, ChevronLeft, Zap, Trash2, Share2 } from 'lucide-react-native';
+import { Clock, Zap, Trash2, Share2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { OperatingHours } from '@/types';
@@ -244,16 +244,7 @@ export default function OperatingHoursScreen() {
   const isOpen = getCurrentStatus();
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ChevronLeft size={24} color={Colors.dark} />
-        </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Operating Hours</Text>
-        </View>
-        <View style={styles.headerRight} />
-      </View>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
 
       <KeyboardAvoidingView
         style={styles.content}
@@ -267,7 +258,6 @@ export default function OperatingHoursScreen() {
         >
         <Animated.View style={[styles.mainContent, { opacity: fadeAnim }]}>
           <View style={styles.titleSection}>
-            <Text style={styles.mainTitle}>Operating Hours</Text>
             <Text style={styles.subtitle}>Set when your truck is open for customers.</Text>
           </View>
 

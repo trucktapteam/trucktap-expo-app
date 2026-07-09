@@ -2,8 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Dimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import { ArrowLeft, Trash2, Plus, ImageIcon } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { Trash2, Plus, ImageIcon } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import FullImageModal from '@/components/FullImageModal';
@@ -16,7 +15,6 @@ const COLUMNS = 3;
 const IMAGE_SIZE = (width - (SPACING * (COLUMNS + 1))) / COLUMNS;
 
 export default function TruckGalleryScreen() {
-  const router = useRouter();
   const {
     getUserTruck,
     addGalleryImage,
@@ -142,14 +140,6 @@ export default function TruckGalleryScreen() {
 
   return (
     <View style={styles.container}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={Colors.dark} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Photo Gallery</Text>
-      </View>
-
       {/* ADD PHOTO BUTTON - STICKY */}
       <View style={styles.stickyButtonContainer}>
         <TouchableOpacity 

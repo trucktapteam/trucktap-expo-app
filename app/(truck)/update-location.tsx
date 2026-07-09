@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Tex
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { MapPin, ArrowLeft } from 'lucide-react-native';
+import { MapPin } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
@@ -387,18 +387,7 @@ export default function UpdateLocationScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <ArrowLeft size={24} color={Colors.dark} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Go Live</Text>
-        <View style={styles.placeholder} />
-      </View>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
