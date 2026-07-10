@@ -5,6 +5,7 @@ import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { DEBUG } from '@/constants/debug';
 import { APP_AUTH_REDIRECT_URL, APP_PASSWORD_RECOVERY_REDIRECT_URL } from '@/lib/authRedirect';
+import { clearPushTokenForUser } from '@/lib/pushToken';
 
 type AuthUser = {
   id: string;
@@ -267,6 +268,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         sessionExists: isAuthenticated,
       });
     }
+
+    // Clear the push token before ending the session: once signed out, this
+    // client can no longer pass the profiles RLS check to null it out itself.
+    await clearPushTokenForUser(user?.id);
 
     const { error } = await supabase.auth.signOut();
 

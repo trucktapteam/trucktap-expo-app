@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { trackEvent } from '@/lib/analytics';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { clearPushTokenForUser } from '@/lib/pushToken';
 import { canViewIncompleteTruckProfile, getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
 
 const parseJsonArray = (val: any): any[] => {
@@ -3193,10 +3194,13 @@ if (error) {
     }
     setUserProfile(null);
     try {
+      // Clear the push token before ending the session: once signed out, this
+      // client can no longer pass the profiles RLS check to null it out itself.
+      await clearPushTokenForUser(authUser?.id);
       await AsyncStorage.multiRemove(['userProfile', 'authUser']);
       if (isSupabaseConfigured) {
         await supabase.auth.signOut();
-  
+
       }
       if (DEBUG) console.log('[AppContext] Logged out, cleared storage');
     } catch (error) {
