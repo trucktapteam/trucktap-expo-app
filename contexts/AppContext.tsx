@@ -279,14 +279,6 @@ export type GoOfflineInput = {
   updates?: Partial<Omit<FoodTruck, 'open_now'>>;
 };
 
-type LiveEventAuditInput = {
-  truckId: string;
-  action: 'go_live' | 'go_offline';
-  source: LiveStatusSource;
-  location?: FoodTruck['location'];
-  metadata?: Record<string, unknown>;
-};
-
 export type AppState = {
   currentUser: User | null;
   isOnboarded: boolean;
@@ -1519,6 +1511,118 @@ if (error) {
     );
   }, []);
 
+  const upsertTruckLiveLocation = useCallback(async (
+    truckId: string,
+    location: FoodTruck['location'],
+    updatedAtIso: string
+  ) => {
+    const locationPayload = {
+      truck_id: truckId,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      label: location.address,
+      updated_at: updatedAtIso,
+    };
+
+    if (__DEV__) {
+      console.log('[AppContext] Upserting live location:', {
+        truckId,
+        latitude: locationPayload.latitude,
+        longitude: locationPayload.longitude,
+        hasLabel: Boolean(locationPayload.label?.trim()),
+        updatedAt: locationPayload.updated_at,
+      });
+    }
+
+    let locationWrite = await supabase
+      .from('locations')
+      .upsert(
+        locationPayload,
+        { onConflict: 'truck_id' }
+      )
+      .select('truck_id, latitude, longitude, label, updated_at');
+
+    if (isMissingUpdatedAtError(locationWrite.error?.message)) {
+      const legacyLocationPayload = {
+        truck_id: locationPayload.truck_id,
+        latitude: locationPayload.latitude,
+        longitude: locationPayload.longitude,
+        label: locationPayload.label,
+      };
+      locationWrite = await supabase
+        .from('locations')
+        .upsert(
+          legacyLocationPayload,
+          { onConflict: 'truck_id' }
+        )
+        .select('truck_id, latitude, longitude, label, created_at');
+    }
+
+    const locationWriteErrorMessage = locationWrite.error?.message;
+    if (locationWriteErrorMessage && isMissingLocationConflictTargetError(locationWriteErrorMessage)) {
+      if (__DEV__) {
+        console.log('[AppContext] Location upsert conflict target unavailable; falling back to update/insert:', {
+          truckId,
+          error: locationWriteErrorMessage,
+        });
+      }
+
+      let locationUpdate = await supabase
+        .from('locations')
+        .update(locationPayload)
+        .eq('truck_id', truckId)
+        .select('truck_id, latitude, longitude, label, updated_at');
+
+      if (isMissingUpdatedAtError(locationUpdate.error?.message)) {
+        const legacyLocationPayload = {
+          truck_id: locationPayload.truck_id,
+          latitude: locationPayload.latitude,
+          longitude: locationPayload.longitude,
+          label: locationPayload.label,
+        };
+        locationUpdate = await supabase
+          .from('locations')
+          .update(legacyLocationPayload)
+          .eq('truck_id', truckId)
+          .select('truck_id, latitude, longitude, label, created_at');
+      }
+
+      if (!locationUpdate.error && (locationUpdate.data?.length ?? 0) > 0) {
+        locationWrite = locationUpdate;
+      } else if (!locationUpdate.error) {
+        locationWrite = await supabase
+          .from('locations')
+          .insert(locationPayload)
+          .select('truck_id, latitude, longitude, label, updated_at');
+
+        if (isMissingUpdatedAtError(locationWrite.error?.message)) {
+          const legacyLocationPayload = {
+            truck_id: locationPayload.truck_id,
+            latitude: locationPayload.latitude,
+            longitude: locationPayload.longitude,
+            label: locationPayload.label,
+          };
+          locationWrite = await supabase
+            .from('locations')
+            .insert(legacyLocationPayload)
+            .select('truck_id, latitude, longitude, label, created_at');
+        }
+      } else {
+        locationWrite = locationUpdate;
+      }
+    }
+
+    if (__DEV__) {
+      console.log('[AppContext] Supabase location write result:', {
+        truckId,
+        rows: locationWrite.data?.length ?? 0,
+        error: locationWrite.error?.message ?? null,
+      });
+    }
+
+    return locationWrite;
+  }, []);
+
    const updateTruckDetails = useCallback(async (truckId: string, updates: Partial<FoodTruck>) => {
   const isArchiveUpdate = Object.prototype.hasOwnProperty.call(updates, 'archived');
   const isArchiving = updates.archived === true;
@@ -1715,109 +1819,7 @@ if (error) {
     }
 
     if (sanitizedUpdates.location) {
-      const locationPayload = {
-        truck_id: truckId,
-        latitude: sanitizedUpdates.location.latitude,
-        longitude: sanitizedUpdates.location.longitude,
-        label: sanitizedUpdates.location.address,
-        updated_at: savedAt,
-      };
-
-      if (__DEV__) {
-        console.log('[AppContext] Upserting live location:', {
-          truckId,
-          latitude: locationPayload.latitude,
-          longitude: locationPayload.longitude,
-          hasLabel: Boolean(locationPayload.label?.trim()),
-          updatedAt: locationPayload.updated_at,
-        });
-      }
-
-      let locationWrite = await supabase
-        .from('locations')
-        .upsert(
-          locationPayload,
-          { onConflict: 'truck_id' }
-        )
-        .select('truck_id, latitude, longitude, label, updated_at');
-
-      if (isMissingUpdatedAtError(locationWrite.error?.message)) {
-        const legacyLocationPayload = {
-          truck_id: locationPayload.truck_id,
-          latitude: locationPayload.latitude,
-          longitude: locationPayload.longitude,
-          label: locationPayload.label,
-        };
-        locationWrite = await supabase
-          .from('locations')
-          .upsert(
-            legacyLocationPayload,
-            { onConflict: 'truck_id' }
-          )
-          .select('truck_id, latitude, longitude, label, created_at');
-      }
-
-      const locationWriteErrorMessage = locationWrite.error?.message;
-      if (locationWriteErrorMessage && isMissingLocationConflictTargetError(locationWriteErrorMessage)) {
-        if (__DEV__) {
-          console.log('[AppContext] Location upsert conflict target unavailable; falling back to update/insert:', {
-            truckId,
-            error: locationWriteErrorMessage,
-          });
-        }
-
-        let locationUpdate = await supabase
-          .from('locations')
-          .update(locationPayload)
-          .eq('truck_id', truckId)
-          .select('truck_id, latitude, longitude, label, updated_at');
-
-        if (isMissingUpdatedAtError(locationUpdate.error?.message)) {
-          const legacyLocationPayload = {
-            truck_id: locationPayload.truck_id,
-            latitude: locationPayload.latitude,
-            longitude: locationPayload.longitude,
-            label: locationPayload.label,
-          };
-          locationUpdate = await supabase
-            .from('locations')
-            .update(legacyLocationPayload)
-            .eq('truck_id', truckId)
-            .select('truck_id, latitude, longitude, label, created_at');
-        }
-
-        if (!locationUpdate.error && (locationUpdate.data?.length ?? 0) > 0) {
-          locationWrite = locationUpdate;
-        } else if (!locationUpdate.error) {
-          locationWrite = await supabase
-            .from('locations')
-            .insert(locationPayload)
-            .select('truck_id, latitude, longitude, label, updated_at');
-
-          if (isMissingUpdatedAtError(locationWrite.error?.message)) {
-            const legacyLocationPayload = {
-              truck_id: locationPayload.truck_id,
-              latitude: locationPayload.latitude,
-              longitude: locationPayload.longitude,
-              label: locationPayload.label,
-            };
-            locationWrite = await supabase
-              .from('locations')
-              .insert(legacyLocationPayload)
-              .select('truck_id, latitude, longitude, label, created_at');
-          }
-        } else {
-          locationWrite = locationUpdate;
-        }
-      }
-
-      if (__DEV__) {
-        console.log('[AppContext] Supabase location write result:', {
-          truckId,
-          rows: locationWrite.data?.length ?? 0,
-          error: locationWrite.error?.message ?? null,
-        });
-      }
+      const locationWrite = await upsertTruckLiveLocation(truckId, sanitizedUpdates.location, savedAt);
 
       if (locationWrite.error) {
         console.log('[AppContext] Location upsert error:', locationWrite.error.message);
@@ -1952,89 +1954,121 @@ if (error) {
       }
 
     }
-  }, [isAuthenticated, authUser, userProfile?.role, userOwnsTruck, foodTrucks, supabaseOwnedTrucks, mapSupabaseTruckToLocal, mergeTruckLocations]);
+  }, [isAuthenticated, authUser, userProfile?.role, userOwnsTruck, foodTrucks, supabaseOwnedTrucks, mapSupabaseTruckToLocal, mergeTruckLocations, upsertTruckLiveLocation]);
 
-  const insertLiveEventAudit = useCallback(async ({
-    truckId,
-    action,
-    source,
-    location,
-    metadata,
-  }: LiveEventAuditInput): Promise<void> => {
-    if (!isSupabaseConfigured || !authUser) return;
-
-    const payload = {
-      truck_id: truckId,
-      action,
-      source,
-      actor_user_id: authUser.id,
-      location_label: location?.address?.trim() || null,
-      latitude: Number.isFinite(location?.latitude) ? location?.latitude : null,
-      longitude: Number.isFinite(location?.longitude) ? location?.longitude : null,
-      metadata: {
-        actorRole: userProfile?.role ?? null,
-        ...metadata,
-      },
-    };
-
-    const { error } = await supabase
-      .from('truck_live_events')
-      .insert(payload);
-
-    if (error) {
-      console.log('[AppContext] Live event audit insert failed:', {
-        truckId,
-        action,
-        source,
-        error: error.message,
-      });
-    }
-  }, [authUser, userProfile?.role]);
-
+  // Canonical LIVE-state entry points. The trucks update and the
+  // truck_live_events audit insert happen together, inside the
+  // go_live_truck / go_offline_truck Postgres RPCs (see
+  // supabase/migrations/20260709006000_go_live_offline_rpc.sql), so a
+  // partial failure (state changes but no audit row, or vice versa) is
+  // no longer possible. See docs/trust-engine.md for the full picture.
   const goLive = useCallback(async ({ truckId, source, location }: GoLiveInput): Promise<void> => {
+    if (!isAuthenticated || !authUser) {
+      if (DEBUG) console.log('[AppContext] goLive blocked - not authenticated');
+      throw new Error('Not authenticated');
+    }
+    if (!userOwnsTruck(truckId)) {
+      if (DEBUG) console.log('[AppContext] goLive blocked - user does not own truck:', truckId);
+      throw new Error(`User does not own truck ${truckId}`);
+    }
+    if (!isSupabaseConfigured) {
+      if (DEBUG) console.log('[AppContext] Supabase not configured, skipping DB write');
+      return;
+    }
+
     const liveAt = new Date();
     const liveAtIso = liveAt.toISOString();
-    const liveExpiresAt = new Date(liveAt.getTime() + STALE_OPEN_WINDOW_MS).toISOString();
+    const locationLabel = location?.address?.trim() || null;
+    const latitude = Number.isFinite(location?.latitude) ? location.latitude : null;
+    const longitude = Number.isFinite(location?.longitude) ? location.longitude : null;
 
     if (__DEV__) {
       console.log('[AppContext] goLive requested:', {
         truckId,
         source,
-        latitude: location.latitude,
-        longitude: location.longitude,
-        hasAddress: Boolean(location.address?.trim()),
+        latitude,
+        longitude,
+        hasAddress: Boolean(locationLabel),
       });
     }
 
-    await updateTruckDetails(truckId, {
-      open_now: true,
-      location,
-      lastLiveUpdatedAt: liveAtIso,
-      liveStartedAt: liveAtIso,
-      liveExpiresAt,
-      liveSource: source,
+    const { data: rpcRow, error: rpcError } = await supabase.rpc('go_live_truck', {
+      p_truck_id: truckId,
+      p_source: source,
+      p_latitude: latitude,
+      p_longitude: longitude,
+      p_location_label: locationLabel,
     });
 
-    try {
-      await insertLiveEventAudit({
+    if (rpcError) {
+      console.log('[AppContext] go_live_truck RPC failed:', {
         truckId,
-        action: 'go_live',
-        source: 'manual',
-        location,
-        metadata: {
-          requestedSource: source,
-        },
+        source,
+        error: rpcError.message,
       });
-    } catch (error) {
-      console.log('[AppContext] Live event audit insert crashed:', {
+      throw new Error(`Failed to go live: ${rpcError.message}`);
+    }
+    if (!rpcRow) {
+      throw new Error('Failed to go live: truck not found or not authorized.');
+    }
+
+    const locationWrite = await upsertTruckLiveLocation(truckId, location, liveAtIso);
+    if (locationWrite.error) {
+      console.log('[AppContext] Location upsert error:', locationWrite.error.message);
+      throw new Error(`Failed to update location: ${locationWrite.error.message}`);
+    }
+
+    let hydrated = mapSupabaseTruckToLocal(rpcRow);
+    const locationRow = locationWrite.data?.[0] ?? null;
+    if (locationRow) {
+      hydrated = mergeTruckLocations([hydrated], [locationRow])[0];
+    }
+
+    const hasVerifiedLocation =
+      Number.isFinite(hydrated.location?.latitude) &&
+      Number.isFinite(hydrated.location?.longitude);
+
+    if (__DEV__) {
+      console.log('[AppContext] Go Live post-save verification:', {
+        currentUserId: authUser.id,
         truckId,
-        action: 'go_live',
-        error: error instanceof Error ? error.message : String(error),
+        refetchedIsOpen: hydrated.open_now,
+        hasVerifiedLocation,
+        latitude: hydrated.location?.latitude ?? null,
+        longitude: hydrated.location?.longitude ?? null,
+        lastLiveUpdatedAt: hydrated.lastLiveUpdatedAt ?? null,
       });
     }
-  }, [insertLiveEventAudit, updateTruckDetails]);
+
+    if (hydrated.open_now !== true) {
+      throw new Error('Truck did not remain open after save. Please try again.');
+    }
+    if (!hasVerifiedLocation) {
+      throw new Error('Live location was not saved with valid coordinates.');
+    }
+
+    setFoodTrucks(prev =>
+      prev.map(truck => (truck.id === truckId ? { ...truck, ...hydrated } : truck))
+    );
+    setSupabaseOwnedTrucks(prev =>
+      prev.map(truck => (truck.id === truckId ? { ...truck, ...hydrated } : truck))
+    );
+  }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured, upsertTruckLiveLocation, mapSupabaseTruckToLocal, mergeTruckLocations]);
 
   const goOffline = useCallback(async ({ truckId, source, updates }: GoOfflineInput): Promise<void> => {
+    if (!isAuthenticated || !authUser) {
+      if (DEBUG) console.log('[AppContext] goOffline blocked - not authenticated');
+      throw new Error('Not authenticated');
+    }
+    if (!userOwnsTruck(truckId)) {
+      if (DEBUG) console.log('[AppContext] goOffline blocked - user does not own truck:', truckId);
+      throw new Error(`User does not own truck ${truckId}`);
+    }
+    if (!isSupabaseConfigured) {
+      if (DEBUG) console.log('[AppContext] Supabase not configured, skipping DB write');
+      return;
+    }
+
     if (__DEV__) {
       console.log('[AppContext] goOffline requested:', {
         truckId,
@@ -2043,31 +2077,46 @@ if (error) {
       });
     }
 
-    await updateTruckDetails(truckId, {
-      ...updates,
-      open_now: false,
-      liveExpiresAt: null,
-      liveSource: source,
+    const { data: rpcRow, error: rpcError } = await supabase.rpc('go_offline_truck', {
+      p_truck_id: truckId,
+      p_source: source,
+      p_metadata: updates ? { updateKeys: Object.keys(updates) } : {},
     });
 
-    try {
-      await insertLiveEventAudit({
+    if (rpcError) {
+      console.log('[AppContext] go_offline_truck RPC failed:', {
         truckId,
-        action: 'go_offline',
         source,
-        metadata: {
-          updateKeys: updates ? Object.keys(updates) : [],
-        },
+        error: rpcError.message,
       });
-    } catch (error) {
-      console.log('[AppContext] Live event audit insert crashed:', {
-        truckId,
-        action: 'go_offline',
-        source,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      throw new Error(`Failed to go offline: ${rpcError.message}`);
     }
-  }, [insertLiveEventAudit, updateTruckDetails]);
+    if (!rpcRow) {
+      throw new Error('Failed to go offline: truck not found or not authorized.');
+    }
+
+    let hydrated = mapSupabaseTruckToLocal(rpcRow);
+    const locationRows = await fetchTruckLocationRows([truckId], 'goOffline');
+    if (locationRows) {
+      hydrated = mergeTruckLocations([hydrated], locationRows)[0];
+    }
+
+    setFoodTrucks(prev =>
+      prev.map(truck => (truck.id === truckId ? { ...truck, ...hydrated } : truck))
+    );
+    setSupabaseOwnedTrucks(prev =>
+      prev.map(truck => (truck.id === truckId ? { ...truck, ...hydrated } : truck))
+    );
+
+    // Non-LIVE fields (e.g. archive/archivedAt/archiveReason) aren't part of
+    // the single-purpose go_offline_truck RPC; persist them the same way
+    // updateTruckDetails always has. This keeps archiving a truck a
+    // two-step-but-each-atomic sequence rather than folding an unrelated
+    // concern into the LIVE-status RPC.
+    if (updates && Object.keys(updates).length > 0) {
+      await updateTruckDetails(truckId, updates);
+    }
+  }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured, mapSupabaseTruckToLocal, mergeTruckLocations, fetchTruckLocationRows, updateTruckDetails]);
 
   useEffect(() => {
     if (!isAuthenticated || !authUser) return;
