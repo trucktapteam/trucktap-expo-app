@@ -30,7 +30,7 @@ export default function Index() {
       if (DEBUG) console.log('[Index] Waiting for pending notification route:', pendingNotificationRoute);
       return;
     }
-    if (authLoading || isOwnerLoading) {
+    if (authLoading || isOwnerLoading || (isAuthenticated && !currentUser)) {
       if (DEBUG) console.log('[Index] Waiting for auth/owner to load...');
       return;
     }
@@ -83,7 +83,7 @@ export default function Index() {
       clearTimeout(timer);
       clearTimeout(failsafeTimer);
     };
-  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, didNavigate, getUserTruck, currentUser?.role, pendingNotificationRoute, isInitialNotificationResponseChecked]);
+  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, didNavigate, getUserTruck, currentUser, pendingNotificationRoute, isInitialNotificationResponseChecked]);
 
   if (didNavigate) {
     return null;

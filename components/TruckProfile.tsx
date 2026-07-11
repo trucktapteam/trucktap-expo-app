@@ -974,7 +974,7 @@ console.log('[FORMAT DATE]', dateInput);
                 {truckAnnouncements.length > 3 && (
                   <TouchableOpacity
                     style={styles.seeAllButton}
-                    onPress={() => router.push('/(truck)/announcements' as any)}
+                    onPress={() => router.push(`/truck/announcements?id=${truck.id}` as any)}
                     activeOpacity={0.7}
                   >
                     <Text style={styles.seeAllText}>See All</Text>

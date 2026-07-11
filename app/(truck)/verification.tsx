@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { CheckCircle, Circle, Award } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -8,8 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 export default function VerificationScreen() {
-  const router = useRouter();
-  const { getUserTruck, setTruckVerified } = useApp();
+  const { getUserTruck } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('VerificationScreen');
 
@@ -50,50 +48,9 @@ export default function VerificationScreen() {
     ];
   }, [truck]);
 
-  const allRequirementsMet = useMemo(() => {
-    return requirements.every(req => req.completed);
-  }, [requirements]);
-
   const completedCount = useMemo(() => {
     return requirements.filter(req => req.completed).length;
   }, [requirements]);
-
-  const handleSubmit = () => {
-    if (!truck) return;
-
-    if (!allRequirementsMet) {
-      Alert.alert(
-        'Requirements Not Met',
-        'Please complete all requirements before submitting for verification.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    Alert.alert(
-      'Submit for Verification?',
-      'Your truck will be marked as verified. This helps customers trust your business.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Submit',
-          onPress: () => {
-            setTruckVerified(truck.id, true);
-            Alert.alert(
-              'Success!',
-              'Your truck has been verified. Customers will now see a verified badge on your profile.',
-              [
-                {
-                  text: 'OK',
-                  onPress: () => router.back(),
-                },
-              ]
-            );
-          },
-        },
-      ]
-    );
-  };
 
   if (!truck) {
     return (
@@ -186,16 +143,12 @@ export default function VerificationScreen() {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[
-            styles.submitButton,
-            (!allRequirementsMet || truck.verified) && styles.submitButtonDisabled,
-          ]}
-          onPress={handleSubmit}
-          disabled={!allRequirementsMet || truck.verified}
+          style={[styles.submitButton, styles.submitButtonDisabled]}
+          disabled={true}
           activeOpacity={0.8}
         >
           <Text style={styles.submitButtonText}>
-            {truck.verified ? 'Already Verified' : 'Submit for Verification'}
+            {truck.verified ? 'Already Verified' : 'Verification Coming Soon'}
           </Text>
         </TouchableOpacity>
       </View>

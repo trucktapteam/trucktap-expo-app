@@ -26,7 +26,7 @@ import AnimatedMinimalPoster from '@/components/posters/animated/AnimatedMinimal
 import AnimatedNeonPoster from '@/components/posters/animated/AnimatedNeonPoster';
 import AnimatedGraffitiPoster from '@/components/posters/animated/AnimatedGraffitiPoster';
 import { captureRef } from 'react-native-view-shot';
-import { getTruckDeepLink, getTruckShareUrl } from '@/lib/truckShare';
+import { getTruckShareUrl } from '@/lib/truckShare';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 export default function PosterScreen() {
@@ -47,8 +47,8 @@ export default function PosterScreen() {
 
     try {
       setIsGenerating(true);
-      const deepLink = getTruckDeepLink(truck.id);
-      const dataUrl = await QRCode.toDataURL(deepLink, {
+      const shareUrl = getTruckShareUrl(truck.id);
+      const dataUrl = await QRCode.toDataURL(shareUrl, {
         width: 600,
         margin: 1,
         color: {

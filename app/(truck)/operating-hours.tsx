@@ -32,6 +32,7 @@ export default function OperatingHoursScreen() {
     type: 'open' | 'close';
   } | null>(null);
   const [hasChanges, setHasChanges] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const [fadeAnim] = useState(new Animated.Value(0));
   const [openStatusAnim] = useState(new Animated.Value(0));
 
@@ -126,15 +127,26 @@ export default function OperatingHoursScreen() {
     return true;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!truck) return;
     if (!validateHours()) return;
 
-    updateOperatingHours(truck.id, hours);
-    setHasChanges(false);
-    Alert.alert('Success', 'Hours updated!', [
-      { text: 'OK', onPress: () => router.back() },
-    ]);
+    setIsSaving(true);
+    try {
+      await updateOperatingHours(truck.id, hours);
+      setHasChanges(false);
+      Alert.alert('Success', 'Hours updated!', [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    } catch (error) {
+      Alert.alert(
+        'Save Failed',
+        'We couldn\'t save your hours. Please check your connection and try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSetAllWeek = () => {
@@ -258,7 +270,7 @@ export default function OperatingHoursScreen() {
         >
         <Animated.View style={[styles.mainContent, { opacity: fadeAnim }]}>
           <View style={styles.titleSection}>
-            <Text style={styles.subtitle}>Set when your truck is open for customers.</Text>
+            <Text style={styles.subtitle}>Set the typical hours customers can expect you to operate.</Text>
           </View>
 
           {truck && (
@@ -357,13 +369,13 @@ export default function OperatingHoursScreen() {
       </KeyboardAvoidingView>
 
       <View style={styles.stickyBottomContainer}>
-        <TouchableOpacity 
-          style={[styles.saveButton, !hasChanges && styles.saveButtonDisabled]} 
+        <TouchableOpacity
+          style={[styles.saveButton, (!hasChanges || isSaving) && styles.saveButtonDisabled]}
           onPress={handleSave}
-          disabled={!hasChanges}
+          disabled={!hasChanges || isSaving}
           activeOpacity={0.7}
         >
-          <Text style={styles.saveButtonText}>Save Hours</Text>
+          <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save Hours'}</Text>
         </TouchableOpacity>
       </View>
 

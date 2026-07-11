@@ -2513,7 +2513,11 @@ if (error) {
     }
   }, [isAuthenticated, authUser, userOwnsTruck, userProfile?.role]);
 
-  const persistAnnouncementsToSupabase = useCallback(async (truckId: string, items: Announcement[]) => {
+  const persistAnnouncementsToSupabase = useCallback(async (
+    truckId: string,
+    items: Announcement[],
+    newAnnouncement?: Announcement,
+  ) => {
   if (!isAuthenticated || !authUser) {
     if (DEBUG) console.log('[AppContext] blocked - not authenticated');
     return;
@@ -2541,15 +2545,14 @@ if (error) {
     return;
   }
 
-  // Only notify when there is at least one announcement present
-  if (items.length > 0) {
-    const latestAnnouncement = items[0];
-
+  // Only notify when this persist call is for a genuinely new announcement.
+  // Deleting/editing the list must never rebroadcast an existing announcement.
+  if (newAnnouncement) {
     try {
       const { error: fnError } = await supabase.functions.invoke('notify-truck-announcement', {
         body: {
           truckId,
-          message: latestAnnouncement.message,
+          message: newAnnouncement.message,
         },
       });
 
@@ -2787,7 +2790,7 @@ if (error) {
     setAnnouncements(prev => {
       const updated = [newAnnouncement, ...prev];
       const truckAnnouncements = updated.filter(a => a.truck_id === truckId);
-      persistAnnouncementsToSupabase(truckId, truckAnnouncements);
+      persistAnnouncementsToSupabase(truckId, truckAnnouncements, newAnnouncement);
       return updated;
     });
   }, [isAuthenticated, authUser, userOwnsTruck, persistAnnouncementsToSupabase]);
