@@ -14,7 +14,7 @@ export default function TruckMapMarker({
   isOpen,
   scale = 1,
 }: TruckMapMarkerProps) {
-  const ringColor = isOpen ? '#f97316' : '#9ca3af';
+  const ringColor = isOpen ? '#10B981' : '#9ca3af';
   const hasImage = !!imageUrl;
 
   if (Platform.OS === 'android') {

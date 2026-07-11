@@ -7,7 +7,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Image } from 'expo-image';
-import FullImageModal from '@/components/FullImageModal';
+import FullscreenImageViewer from '@/components/FullscreenImageViewer';
 import TruckHero from '@/components/TruckHero';
 import TruckSectionCard from '@/components/TruckSectionCard';
 import ReviewerAvatar from '@/components/ReviewerAvatar';
@@ -657,6 +657,8 @@ console.log('[FORMAT DATE]', dateInput);
           onToggleFavorite={mode === 'customer' ? handleToggleFavorite : undefined}
           onShare={mode === 'customer' ? handleShare : undefined}
           onEdit={isOwnerOfTruck ? () => handleOwnerAction('edit') : undefined}
+          onHeroPress={() => setSelectedImage(truck.hero_image)}
+          onLogoPress={() => setSelectedImage(truck.logo)}
         />
 
         <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
@@ -1061,7 +1063,7 @@ console.log('[FORMAT DATE]', dateInput);
         </Animated.View>
       </Animated.ScrollView>
 
-      <FullImageModal
+      <FullscreenImageViewer
         visible={selectedImage !== null}
         image={selectedImage}
         onClose={() => setSelectedImage(null)}

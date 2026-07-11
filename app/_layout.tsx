@@ -5,9 +5,9 @@ import * as Notifications from 'expo-notifications';
 import React, { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { AppProvider } from "@/contexts/AppContext";
+import { AppProvider, useApp } from "@/contexts/AppContext";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { SupabaseAuthProvider } from "@/contexts/SupabaseAuthContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -26,6 +26,7 @@ const queryClient = new QueryClient();
 const VERIFICATION_LINK_TYPES = new Set(['signup', 'invite', 'magiclink', 'email', 'email_change']);
 const RECOVERY_LINK_TYPE = 'recovery';
 const OWNER_DASHBOARD_ROUTE = '/(truck)/(tabs)/dashboard';
+const OWNER_MESSAGE_CENTER_ROUTE = '/(truck)/owner-updates';
 
 type NotificationData = Record<string, unknown>;
 
@@ -136,10 +137,146 @@ const getRouteFromNotificationData = (
     return OWNER_DASHBOARD_ROUTE;
   }
 
+  if (notificationType === 'owner_message') {
+    return OWNER_MESSAGE_CENTER_ROUTE;
+  }
+
   const route = getStringDataValue(notificationData, ['route']);
 
   return route || null;
 };
+
+function NotificationResponseCoordinator() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { user: authUser, isLoading: authLoading } = useAuth();
+  const {
+    currentUser,
+    getUserTruck,
+    isOwner,
+    isOwnerLoading,
+    setIsInitialNotificationResponseChecked,
+    pendingNotificationRoute,
+    setPendingNotificationRoute,
+  } = useApp();
+  const handledResponseIds = useRef(new Set<string>());
+  const queuedResponseId = useRef<string | null>(null);
+  const navigationRequested = useRef(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      devLog('[NotificationCoordinator] Skipping notification response setup on web');
+      setIsInitialNotificationResponseChecked(true);
+      return;
+    }
+
+    const handleNotificationResponse = (
+      response: Notifications.NotificationResponse,
+      source: 'initial' | 'listener'
+    ) => {
+      const responseId = response.notification.request.identifier;
+      const notificationData = response.notification.request.content.data;
+
+      if (handledResponseIds.current.has(responseId)) {
+        devLog('[NotificationCoordinator] Notification response already handled; ignoring duplicate');
+        return;
+      }
+
+      const route = getRouteFromNotificationData(notificationData) ?? getTruckRouteFromNotificationData(notificationData);
+      if (!route) {
+        devLog('[NotificationCoordinator] Notification response has no route:', {
+          source,
+          data: notificationData,
+        });
+        return;
+      }
+
+      handledResponseIds.current.add(responseId);
+      const truckId = getTruckIdFromNotificationData(notificationData);
+      if (truckId) {
+        void trackEvent({
+          event_type: 'notification_tap',
+          truck_id: truckId,
+          metadata: { source },
+        });
+      }
+
+      if (route === OWNER_MESSAGE_CENTER_ROUTE) {
+        queuedResponseId.current = responseId;
+        navigationRequested.current = false;
+        devLog('[NotificationCoordinator] Queuing owner message route:', { source, route });
+        setPendingNotificationRoute(route);
+        return;
+      }
+
+      devLog('[NotificationCoordinator] Routing from notification:', { source, route });
+      router.replace(route as any);
+      void Notifications.clearLastNotificationResponseAsync().catch((error) => {
+        devLog('[NotificationCoordinator] Error clearing handled notification response:', error);
+      });
+    };
+
+    void Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) handleNotificationResponse(response, 'initial');
+        setIsInitialNotificationResponseChecked(true);
+      })
+      .catch((error) => {
+        devLog('[NotificationCoordinator] Error handling initial notification response:', error);
+        setIsInitialNotificationResponseChecked(true);
+      });
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleNotificationResponse(response, 'listener');
+    });
+
+    return () => subscription.remove();
+  }, [router, setIsInitialNotificationResponseChecked, setPendingNotificationRoute]);
+
+  useEffect(() => {
+    if (pendingNotificationRoute !== OWNER_MESSAGE_CENTER_ROUTE || navigationRequested.current) return;
+    if (authLoading) return;
+
+    if (!authUser) {
+      router.replace('/truck-login' as any);
+      return;
+    }
+
+    const isAdmin = currentUser?.role === 'admin';
+    const hasOwnerTruckContext = isAdmin || Boolean(getUserTruck());
+    if (isOwnerLoading || !currentUser || !isOwner || !hasOwnerTruckContext) return;
+
+    navigationRequested.current = true;
+    devLog('[NotificationCoordinator] Owner context ready; navigating to queued route:', {
+      route: pendingNotificationRoute,
+      responseId: queuedResponseId.current,
+      isAdmin,
+    });
+    router.replace(pendingNotificationRoute as any);
+  }, [
+    authLoading,
+    authUser,
+    currentUser,
+    getUserTruck,
+    isOwner,
+    isOwnerLoading,
+    pendingNotificationRoute,
+    router,
+  ]);
+
+  useEffect(() => {
+    if (!navigationRequested.current || !pathname.endsWith('/owner-updates')) return;
+
+    navigationRequested.current = false;
+    queuedResponseId.current = null;
+    setPendingNotificationRoute(null);
+    void Notifications.clearLastNotificationResponseAsync().catch((error) => {
+      devLog('[NotificationCoordinator] Error clearing consumed notification response:', error);
+    });
+  }, [pathname, pendingNotificationRoute, setPendingNotificationRoute]);
+
+  return null;
+}
 
 function RootLayoutNav() {
   const { colors } = useTheme();
@@ -183,7 +320,6 @@ function RootLayoutNav() {
 export default function RootLayout() {
   const router = useRouter();
   const handledAuthUrls = useRef(new Set<string>());
-  const handledNotificationResponseIds = useRef(new Set<string>());
 
   useEffect(() => {
     void SplashScreen.hideAsync().catch((e) => {
@@ -342,72 +478,6 @@ export default function RootLayout() {
     };
   }, [router]);
 
-  useEffect(() => {
-    if (Platform.OS === 'web') {
-      devLog('[RootLayout] Skipping notification response setup on web');
-      return;
-    }
-
-    const handleNotificationResponse = (
-      response: Notifications.NotificationResponse,
-      source: 'initial' | 'listener'
-    ) => {
-      const responseId = response.notification.request.identifier;
-      const notificationData = response.notification.request.content.data;
-
-      if (handledNotificationResponseIds.current.has(responseId)) {
-        devLog('[RootLayout] Notification response already handled; ignoring duplicate');
-        return;
-      }
-
-      const route = getRouteFromNotificationData(notificationData) ?? getTruckRouteFromNotificationData(notificationData);
-
-      if (!route) {
-        devLog('[RootLayout] Notification response has no truck route:', {
-          source,
-          data: notificationData,
-        });
-        return;
-      }
-
-      handledNotificationResponseIds.current.add(responseId);
-      const truckId = getTruckIdFromNotificationData(notificationData);
-      if (truckId) {
-        void trackEvent({
-          event_type: 'notification_tap',
-          truck_id: truckId,
-          metadata: { source },
-        });
-      }
-      devLog('[RootLayout] Routing to truck screen from notification:', {
-        source,
-        route,
-      });
-      router.replace(route as any);
-      void Notifications.clearLastNotificationResponseAsync().catch((error) => {
-        devLog('[RootLayout] Error clearing handled notification response:', error);
-      });
-    };
-
-    void Notifications.getLastNotificationResponseAsync()
-      .then((response) => {
-        if (response) {
-          handleNotificationResponse(response, 'initial');
-        }
-      })
-      .catch((error) => {
-        devLog('[RootLayout] Error handling initial notification response:', error);
-      });
-
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      handleNotificationResponse(response, 'listener');
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [router]);
-
   return (
     <ErrorBoundary>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -418,6 +488,7 @@ export default function RootLayout() {
                 <AuthProvider>
                   <AppProvider>
                     <NotificationProvider>
+                      <NotificationResponseCoordinator />
                       <RootLayoutNav />
                     </NotificationProvider>
                   </AppProvider>

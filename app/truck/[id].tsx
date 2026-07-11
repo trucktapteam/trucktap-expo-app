@@ -17,12 +17,13 @@ const DEFAULT_WEB_HERO_IMAGE = 'https://images.unsplash.com/photo-1565123409695-
 export default function TruckDetailScreen() {
   const { id, preview } = useLocalSearchParams();
   const router = useRouter();
-  const { currentUser, incrementQrScan, foodTrucks, allTrucksLoading } = useApp();
+  const { currentUser, incrementQrScan, foodTrucks, allTrucksLoading, isTruckOpenNow } = useApp();
   const { colors } = useTheme();
   const isPreview = preview === 'true';
   const hasTrackedScan = React.useRef(false);
   const truckId = typeof id === 'string' ? id : '';
   const truck = foodTrucks.find((item) => item.id === truckId);
+  const truckOpenNow = !!truck && isTruckOpenNow(truck.id);
 
   React.useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -107,8 +108,8 @@ export default function TruckDetailScreen() {
               {truck.bio ? <Text style={styles.webBio}>{truck.bio}</Text> : null}
               <View style={styles.webMetaRow}>
                 <Text style={styles.webMetaLabel}>Status</Text>
-                <Text style={[styles.webMetaValue, truck.open_now ? styles.webOpen : styles.webClosed]}>
-                  {truck.open_now ? 'Open now' : 'Check the app for current hours'}
+                <Text style={[styles.webMetaValue, truckOpenNow ? styles.webOpen : styles.webClosed]}>
+                  {truckOpenNow ? 'Open now' : 'Check the app for current hours'}
                 </Text>
               </View>
               {truck.phone ? (

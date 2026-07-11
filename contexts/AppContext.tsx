@@ -295,6 +295,8 @@ export type AppState = {
   exploreMode: boolean;
   exploreCenter: { latitude: number; longitude: number; label?: string } | null;
   pendingRedirect: string | null;
+  pendingNotificationRoute: string | null;
+  isInitialNotificationResponseChecked: boolean;
   lastViewedOwnerUpdates: string | null;
   selectedAdminTruckId: string | null;
   ownerMessages: OwnerMessage[];
@@ -380,6 +382,8 @@ export type AppState = {
   allTrucksLoading: boolean;
   refreshAllTrucks: () => Promise<void>;
   setPendingRedirect: (route: string | null) => void;
+  setPendingNotificationRoute: (route: string | null) => void;
+  setIsInitialNotificationResponseChecked: (checked: boolean) => void;
   consumePendingRedirect: () => string | null;
   getTeamUpdates: () => OwnerMessage[];
   markOwnerUpdatesViewed: () => Promise<void>;
@@ -407,6 +411,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [exploreMode, setExploreModeState] = useState<boolean>(false);
   const [exploreCenter, setExploreCenterState] = useState<{ latitude: number; longitude: number; label?: string } | null>(null);
   const [pendingRedirect, setPendingRedirectState] = useState<string | null>(null);
+  const [pendingNotificationRoute, setPendingNotificationRoute] = useState<string | null>(null);
+  const [isInitialNotificationResponseChecked, setIsInitialNotificationResponseChecked] = useState(false);
   const [lastViewedOwnerUpdates, setLastViewedOwnerUpdates] = useState<string | null>(null);
   const [selectedAdminTruckId, setSelectedAdminTruckId] = useState<string | null>(null);
   const [ownerMessages, setOwnerMessages] = useState<OwnerMessage[]>([]);
@@ -3437,6 +3443,8 @@ if (error) {
     exploreMode,
     exploreCenter,
     pendingRedirect,
+    pendingNotificationRoute,
+    isInitialNotificationResponseChecked,
     lastViewedOwnerUpdates,
     selectedAdminTruckId,
     ownerMessages,
@@ -3510,6 +3518,8 @@ if (error) {
     isProfileComplete,
     getDaysAgoText,
     setPendingRedirect,
+    setPendingNotificationRoute,
+    setIsInitialNotificationResponseChecked,
     consumePendingRedirect,
     getTeamUpdates,
     markOwnerUpdatesViewed,
@@ -3520,7 +3530,7 @@ if (error) {
   }), [
     currentUser, isOnboarded, foodTrucks, reviews, menuItems, announcements, upcomingStops, upcomingStopsLoading,
     checklistDismissed, showClosed, customerRadius, exploreMode, exploreCenter,
-    pendingRedirect, lastViewedOwnerUpdates, selectedAdminTruckId, ownerMessages, setSelectedAdminTruckId,
+    pendingRedirect, pendingNotificationRoute, isInitialNotificationResponseChecked, lastViewedOwnerUpdates, selectedAdminTruckId, ownerMessages, setSelectedAdminTruckId,
     beginImagePickerSession, endImagePickerSession,
     setShowClosed, setCustomerRadius, setExploreMode, setExploreCenter, setCurrentUser, completeOnboarding,
     refreshCustomerProfile,
@@ -3538,7 +3548,7 @@ if (error) {
     updateUpcomingStop, deleteUpcomingStop, fetchUpcomingStopsFromSupabase,
     setTruckVerified, logout,
     incrementQrScan, getQrScanStats, allTrucksLoading, fetchAllTrucksFromSupabase, isProfileComplete,
-    getDaysAgoText, setPendingRedirect, consumePendingRedirect, getTeamUpdates,
+    getDaysAgoText, setPendingRedirect, setPendingNotificationRoute, setIsInitialNotificationResponseChecked, consumePendingRedirect, getTeamUpdates,
     markOwnerUpdatesViewed, hasUnreadOwnerUpdates, refreshOwnerMessages, createOwnerMessage, formatOperatingHours,
   ]);
 });

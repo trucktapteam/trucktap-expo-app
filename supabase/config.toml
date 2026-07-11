@@ -29,5 +29,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/notify-new-review/deno.json"
 entrypoint = "./functions/notify-new-review/index.ts"
+[functions.notify-owner-message]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/notify-owner-message/index.ts"
 [functions.account-delete]
 verify_jwt = false

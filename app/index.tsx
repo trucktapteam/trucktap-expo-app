@@ -8,13 +8,28 @@ import { DEBUG } from '@/constants/debug';
 
 export default function Index() {
   const router = useRouter();
-  const { currentUser, getUserTruck, isOwner, isOwnerLoading } = useApp();
+  const {
+    currentUser,
+    getUserTruck,
+    isOwner,
+    isOwnerLoading,
+    pendingNotificationRoute,
+    isInitialNotificationResponseChecked,
+  } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { colors } = useTheme();
   const [didNavigate, setDidNavigate] = useState(false);
 
   useEffect(() => {
     if (didNavigate) return;
+    if (!isInitialNotificationResponseChecked) {
+      if (DEBUG) console.log('[Index] Waiting for initial notification response check...');
+      return;
+    }
+    if (pendingNotificationRoute) {
+      if (DEBUG) console.log('[Index] Waiting for pending notification route:', pendingNotificationRoute);
+      return;
+    }
     if (authLoading || isOwnerLoading) {
       if (DEBUG) console.log('[Index] Waiting for auth/owner to load...');
       return;
@@ -68,7 +83,7 @@ export default function Index() {
       clearTimeout(timer);
       clearTimeout(failsafeTimer);
     };
-  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, didNavigate, getUserTruck, currentUser?.role]);
+  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, didNavigate, getUserTruck, currentUser?.role, pendingNotificationRoute, isInitialNotificationResponseChecked]);
 
   if (didNavigate) {
     return null;

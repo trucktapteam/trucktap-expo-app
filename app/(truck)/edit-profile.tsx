@@ -24,19 +24,28 @@ import { supabase } from '@/lib/supabase';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const CUISINES = [
-  'Mexican',
   'American',
-  'Coffee',
-  'Italian',
   'Asian',
   'BBQ',
+  'Coffee',
   'Desserts',
-  'Snow Cones',
-  'Seafood',
-  'Vegetarian',
+  'Dirty Soda',
+  'Drinks',
+  'Hawaiian',
+  'Hot Dogs',
+  'Ice Cream',
+  'Italian',
   'Mediterranean',
+  'Mexican',
   'Other',
+  'Seafood',
+  'Snow Cones',
+  'Soul Food',
+  'Southern',
+  'Vegetarian',
 ];
+
+const CUSTOM_CUISINE_OPTION = 'Other / Custom';
 
 const TRUST_BADGES = [
   { id: 'veteran_owned', label: 'Veteran Owned' },
@@ -72,6 +81,8 @@ export default function EditProfile() {
 
   const [name, setName] = useState<string>('');
   const [cuisineType, setCuisineType] = useState<string>('');
+  const [isCustomCuisine, setIsCustomCuisine] = useState<boolean>(false);
+  const [customCuisine, setCustomCuisine] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [bio, setBio] = useState<string>('');
   const [website, setWebsite] = useState<string>('');
@@ -111,7 +122,11 @@ export default function EditProfile() {
 
     hydratedTruckIdRef.current = truck.id;
     setName(truck.name || '');
-    setCuisineType(truck.cuisine_type || '');
+    const savedCuisine = truck.cuisine_type || '';
+    const isPredefinedCuisine = CUISINES.includes(savedCuisine);
+    setCuisineType(savedCuisine);
+    setIsCustomCuisine(!isPredefinedCuisine);
+    setCustomCuisine(isPredefinedCuisine ? '' : savedCuisine);
     setPhone(truck.phone || '');
     setBio(truck.bio || '');
     setWebsite(truck.website || '');
@@ -199,7 +214,9 @@ export default function EditProfile() {
     }
 
     if (!cuisineType.trim()) {
-      newErrors.cuisineType = 'Cuisine type is required';
+      newErrors.cuisineType = isCustomCuisine
+        ? 'What do you serve'
+        : 'Cuisine type is required';
     }
 
     const phoneDigits = phone.replace(/\D/g, '');
@@ -230,7 +247,7 @@ export default function EditProfile() {
     }
     
     return Object.keys(newErrors).length === 0;
-  }, [name, cuisineType, phone, website, facebookUrl, instagramUrl, tiktokUrl]);
+  }, [name, cuisineType, isCustomCuisine, phone, website, facebookUrl, instagramUrl, tiktokUrl]);
 
   const toggleTrustBadge = useCallback((badgeId: string) => {
     setTrustBadges(prev =>
@@ -598,31 +615,59 @@ export default function EditProfile() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.cuisineSelector}
                   >
-                    {CUISINES.map((cuisine) => (
-                      <TouchableOpacity
-                        key={cuisine}
-                        style={[
-                          styles.cuisineChip,
-                          cuisineType === cuisine && styles.cuisineChipActive,
-                        ]}
-                        onPress={() => {
-                          setCuisineType(cuisine);
-                          if (errors.cuisineType) {
-                            setErrors((prev) => ({ ...prev, cuisineType: '' }));
-                          }
-                        }}
-                      >
-                        <Text
+                    {[...CUISINES, CUSTOM_CUISINE_OPTION].map((cuisine) => {
+                      const selected = cuisine === CUSTOM_CUISINE_OPTION
+                        ? isCustomCuisine
+                        : !isCustomCuisine && cuisineType === cuisine;
+
+                      return (
+                        <TouchableOpacity
+                          key={cuisine}
                           style={[
-                            styles.cuisineChipText,
-                            cuisineType === cuisine && styles.cuisineChipTextActive,
+                            styles.cuisineChip,
+                            selected && styles.cuisineChipActive,
                           ]}
+                          onPress={() => {
+                            if (cuisine === CUSTOM_CUISINE_OPTION) {
+                              setIsCustomCuisine(true);
+                              setCuisineType(customCuisine);
+                            } else {
+                              setIsCustomCuisine(false);
+                              setCuisineType(cuisine);
+                            }
+                            if (errors.cuisineType) {
+                              setErrors((prev) => ({ ...prev, cuisineType: '' }));
+                            }
+                          }}
                         >
-                          {cuisine}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                          <Text
+                            style={[
+                              styles.cuisineChipText,
+                              selected && styles.cuisineChipTextActive,
+                            ]}
+                          >
+                            {cuisine}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </ScrollView>
+                  {isCustomCuisine ? (
+                    <TextInput
+                      style={[styles.input, errors.cuisineType && styles.inputError]}
+                      value={customCuisine}
+                      onChangeText={(text) => {
+                        setCustomCuisine(text);
+                        setCuisineType(text);
+                        if (errors.cuisineType && text.trim()) {
+                          setErrors((prev) => ({ ...prev, cuisineType: '' }));
+                        }
+                      }}
+                      placeholder="What do you serve"
+                      placeholderTextColor={Colors.gray}
+                      autoCapitalize="words"
+                    />
+                  ) : null}
                   {errors.cuisineType ? (
                     <Text style={styles.errorText}>{errors.cuisineType}</Text>
                   ) : null}

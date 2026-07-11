@@ -13,6 +13,8 @@ type TruckHeroProps = {
   onToggleFavorite?: () => void;
   onShare?: () => void;
   onEdit?: () => void;
+  onHeroPress?: () => void;
+  onLogoPress?: () => void;
 };
 
 export default function TruckHero({ 
@@ -22,11 +24,22 @@ export default function TruckHero({
   onBack, 
   onToggleFavorite,
   onShare,
-  onEdit 
+  onEdit,
+  onHeroPress,
+  onLogoPress,
 }: TruckHeroProps) {
   return (
     <View style={styles.heroContainer}>
-      <Image source={{ uri: heroImage }} style={styles.heroImage} contentFit="cover" />
+      <TouchableOpacity
+        style={styles.heroImage}
+        onPress={onHeroPress}
+        activeOpacity={onHeroPress ? 0.9 : 1}
+        disabled={!onHeroPress}
+        accessibilityRole={onHeroPress ? 'button' : undefined}
+        accessibilityLabel={onHeroPress ? 'View truck hero image fullscreen' : undefined}
+      >
+        <Image source={{ uri: heroImage }} style={styles.heroImage} contentFit="cover" />
+      </TouchableOpacity>
       
       <View style={styles.gradientOverlay} />
       
@@ -74,9 +87,16 @@ export default function TruckHero({
       </SafeAreaView>
       
       <View style={styles.logoContainer}>
-        <View style={styles.logoWrapper}>
+        <TouchableOpacity
+          style={styles.logoWrapper}
+          onPress={onLogoPress}
+          activeOpacity={onLogoPress ? 0.85 : 1}
+          disabled={!onLogoPress}
+          accessibilityRole={onLogoPress ? 'button' : undefined}
+          accessibilityLabel={onLogoPress ? 'View truck logo fullscreen' : undefined}
+        >
           <Image source={{ uri: logo }} style={styles.logo} contentFit="cover" />
-        </View>
+        </TouchableOpacity>
       </View>
     </View>
   );
