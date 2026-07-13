@@ -300,6 +300,7 @@ function RootLayoutNav() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="role-select" options={{ headerShown: false }} />
+      <Stack.Screen name="onboarding-location" options={{ headerShown: false }} />
       <Stack.Screen name="truck-setup" options={{ title: 'Create Truck' }} />
       <Stack.Screen name="truck-login" options={{ title: 'Truck Owner Login' }} />
       <Stack.Screen name="admin-truck-picker" options={{ title: 'Choose a Truck' }} />

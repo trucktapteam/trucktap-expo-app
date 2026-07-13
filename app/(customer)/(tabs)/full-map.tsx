@@ -3,7 +3,6 @@ import { AppState as RNAppState, View, Text, StyleSheet, TextInput, TouchableOpa
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { Target, ChevronRight, Heart, Star, Navigation, Eye, EyeOff } from 'lucide-react-native';
-import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useFilteredTrucks, useApp, useTruckRating } from '@/contexts/AppContext';
@@ -16,6 +15,8 @@ import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpott
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { trackEvent } from '@/lib/analytics';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
+import { useLocationPermissionPrompt } from '@/hooks/useLocationPermissionPrompt';
+import LocationPermissionCard from '@/components/map/LocationPermissionCard';
 
 const OPEN_TRUCK_MARKER_COLOR = '#f97316';
 const CLOSED_TRUCK_MARKER_COLOR = '#800080';
@@ -34,6 +35,14 @@ export default function FullMapScreen() {
   const { currentUser, toggleFavorite, isTruckOpenNow, showClosed, setShowClosed } = useApp();
   const { colors } = useTheme();
   const { isAuthenticated } = useAuth();
+  const {
+    showPrompt: showLocationPrompt,
+    promptAnim: locationPromptAnim,
+    handleAllow: handleAllowLocation,
+    handleDismiss: dismissLocationPromptCard,
+    refreshLocationIfGranted,
+    requestLocationNow,
+  } = useLocationPermissionPrompt();
   const mapRef = useRef<MapView>(null);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [selectedTruck, setSelectedTruck] = useState<FoodTruck | null>(null);
@@ -81,21 +90,6 @@ export default function FullMapScreen() {
       setSightings(sightingsWithSpotters);
     } catch (error) {
       console.error('[FullMapScreen] Failed to load sightings:', error);
-    }
-  }, []);
-
-  const refreshCurrentLocationIfAllowed = useCallback(async () => {
-    if (Platform.OS === 'web') return;
-
-    try {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-
-      await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-    } catch (error) {
-      console.error('[FullMapScreen] Error refreshing location:', error);
     }
   }, []);
 
@@ -372,26 +366,6 @@ export default function FullMapScreen() {
   };
 
   useEffect(() => {
-    const getUserLocation = async () => {
-      if (Platform.OS === 'web') return;
-
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-
-        await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-
-      } catch (error) {
-        console.error('Error getting location:', error);
-      }
-    };
-
-    void getUserLocation();
-  }, []);
-
-  useEffect(() => {
     void fetchSightings();
   }, [fetchSightings]);
 
@@ -427,7 +401,7 @@ export default function FullMapScreen() {
 
       void Promise.allSettled([
         fetchSightings(),
-        refreshCurrentLocationIfAllowed(),
+        refreshLocationIfGranted(),
       ])
         .then((results) => {
           const rejected = results.filter((result) => result.status === 'rejected');
@@ -451,7 +425,7 @@ export default function FullMapScreen() {
     return () => {
       subscription.remove();
     };
-  }, [fetchSightings, refreshCurrentLocationIfAllowed]);
+  }, [fetchSightings, refreshLocationIfGranted]);
 
   const handleFindMe = async () => {
     if (Platform.OS === 'web') {
@@ -462,28 +436,24 @@ export default function FullMapScreen() {
     setIsLocating(true);
 
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      
-      if (status !== 'granted') {
+      const { status, coords } = await requestLocationNow();
+
+      if (status === 'unavailable') {
+        Alert.alert('Error', 'Unable to get your location');
+        return;
+      }
+
+      if (status !== 'granted' || !coords) {
         Alert.alert('Permission Denied', 'Please enable location permissions to use this feature');
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      const { latitude, longitude } = location.coords;
-
       mapRef.current?.animateToRegion({
-        latitude,
-        longitude,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
         latitudeDelta: 0.05,
         longitudeDelta: 0.05,
       }, 1000);
-    } catch (error) {
-      console.error('Error getting location:', error);
-      Alert.alert('Error', 'Unable to get your location');
     } finally {
       setIsLocating(false);
     }
@@ -571,6 +541,13 @@ export default function FullMapScreen() {
           >
             <Target size={24} color={colors.background} />
           </TouchableOpacity>
+
+          <LocationPermissionCard
+            visible={showLocationPrompt}
+            anim={locationPromptAnim}
+            onAllow={handleAllowLocation}
+            onDismiss={dismissLocationPromptCard}
+          />
 
           {!showClosed && openTrucks.length === 0 && sightings.length === 0 && (
             <View style={styles.emptyState}>

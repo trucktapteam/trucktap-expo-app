@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { User, Truck } from 'lucide-react-native';
+import { Compass, ChefHat } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
@@ -14,7 +14,7 @@ export default function RoleSelectScreen() {
 
   const handleRoleSelect = (role: 'customer' | 'truck') => {
     if (role === 'customer') {
-      router.replace('/(customer)/(tabs)/discover' as any);
+      router.replace('/onboarding-location' as any);
     } else {
       if (isAuthenticated && isOwner) {
         router.replace('/(truck)/(tabs)/dashboard' as any);
@@ -35,11 +35,11 @@ export default function RoleSelectScreen() {
             onPress={() => handleRoleSelect('customer')}
           >
             <View style={[styles.iconCircle, { backgroundColor: `${colors.primary}15` }]}>
-              <User size={48} color={colors.primary} strokeWidth={2} />
+              <Compass size={48} color={colors.primary} strokeWidth={2} />
             </View>
             <Text style={[styles.optionTitle, { color: colors.text }]}>Customer</Text>
             <Text style={[styles.optionDescription, { color: colors.secondaryText }]}>
-              Find and follow amazing food trucks
+              Discover food trucks near you
             </Text>
           </TouchableOpacity>
 
@@ -48,11 +48,11 @@ export default function RoleSelectScreen() {
             onPress={() => handleRoleSelect('truck')}
           >
             <View style={[styles.iconCircle, { backgroundColor: `${colors.primary}15` }]}>
-              <Truck size={48} color={colors.primary} strokeWidth={2} />
+              <ChefHat size={48} color={colors.primary} strokeWidth={2} />
             </View>
             <Text style={[styles.optionTitle, { color: colors.text }]}>Food Truck Owner</Text>
             <Text style={[styles.optionDescription, { color: colors.secondaryText }]}>
-              Manage your truck and connect with customers
+              Go LIVE. Reach more customers.
             </Text>
           </TouchableOpacity>
         </View>
@@ -73,6 +73,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 36,
     fontWeight: '700' as const,
+    letterSpacing: -0.5,
     marginBottom: 48,
     textAlign: 'center',
   },
@@ -100,11 +101,12 @@ const styles = StyleSheet.create({
   },
   optionTitle: {
     fontSize: 24,
-    fontWeight: '600' as const,
-    marginBottom: 8,
+    fontWeight: '700' as const,
+    marginBottom: 10,
   },
   optionDescription: {
     fontSize: 16,
+    lineHeight: 22,
     textAlign: 'center',
   },
 });

@@ -37,23 +37,19 @@ export default function Index() {
 
     if (DEBUG) console.log('[Index] isAuthenticated:', isAuthenticated, 'isOwner:', isOwner);
 
-    const timer = setTimeout(() => {
+    const resolveTargetRoute = () => {
       if (!isAuthenticated) {
-        if (DEBUG) console.log('[Index] Not authenticated, going to discover');
-        setDidNavigate(true);
-        router.replace('/(customer)/(tabs)/discover' as any);
-        return;
+        return '/(customer)/(tabs)/discover';
       }
 
       const truck = getUserTruck();
-      const targetRoute = isOwner
-        ? '/(truck)/(tabs)/dashboard'
-        : '/(customer)/(tabs)/discover';
+      if (DEBUG) console.log('[Index] Resolving route for truck:', truck?.id ?? null, 'role:', currentUser?.role ?? null);
+      return isOwner ? '/(truck)/(tabs)/dashboard' : '/(customer)/(tabs)/discover';
+    };
 
-      if (DEBUG) console.log('[Index] Navigating to:', targetRoute, {
-        truckId: truck?.id ?? null,
-        role: currentUser?.role ?? null,
-      });
+    const timer = setTimeout(() => {
+      const targetRoute = resolveTargetRoute();
+      if (DEBUG) console.log('[Index] Navigating to:', targetRoute);
       setDidNavigate(true);
 
       requestAnimationFrame(() => {
@@ -63,19 +59,10 @@ export default function Index() {
 
     const failsafeTimer = setTimeout(() => {
       if (!didNavigate) {
-        if (DEBUG) console.log('[Index] Failsafe triggered');
-        if (!isAuthenticated) {
-          setDidNavigate(true);
-          router.replace('/(customer)/(tabs)/discover' as any);
-        } else {
-          const truck = getUserTruck();
-          const targetRoute = isOwner
-            ? '/(truck)/(tabs)/dashboard'
-            : '/(customer)/(tabs)/discover';
-          if (DEBUG) console.log('[Index] Failsafe navigating to:', targetRoute);
-          setDidNavigate(true);
-          router.replace(targetRoute as any);
-        }
+        const targetRoute = resolveTargetRoute();
+        if (DEBUG) console.log('[Index] Failsafe navigating to:', targetRoute);
+        setDidNavigate(true);
+        router.replace(targetRoute as any);
       }
     }, 2000);
 

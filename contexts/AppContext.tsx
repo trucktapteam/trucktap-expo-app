@@ -284,6 +284,9 @@ export type GoOfflineInput = {
 export type AppState = {
   currentUser: User | null;
   isOnboarded: boolean;
+  isOnboardedHydrated: boolean;
+  hasSeenLocationPrompt: boolean;
+  markLocationPromptSeen: () => void;
   foodTrucks: FoodTruck[];
   reviews: Review[];
   menuItems: MenuItem[];
@@ -399,6 +402,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const { isAuthenticated, user: authUser, isLoading: authLoading } = useAuth();
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [isOnboarded, setIsOnboarded] = useState<boolean>(false);
+  const [isOnboardedHydrated, setIsOnboardedHydrated] = useState<boolean>(false);
+  const [hasSeenLocationPrompt, setHasSeenLocationPrompt] = useState<boolean>(false);
   const [foodTrucks, setFoodTrucks] = useState<FoodTruck[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -1113,12 +1118,14 @@ if (!favoritesError && favoriteRows) {
   useEffect(() => {
     const hydrateSettings = async () => {
       try {
-        const [storedShowClosed, storedCustomerRadius, storedExploreMode, storedExploreCenter, storedLastViewedOwnerUpdates] = await Promise.all([
+        const [storedShowClosed, storedCustomerRadius, storedExploreMode, storedExploreCenter, storedLastViewedOwnerUpdates, storedIsOnboarded, storedHasSeenLocationPrompt] = await Promise.all([
           AsyncStorage.getItem('showClosed'),
           AsyncStorage.getItem('customerRadius'),
           AsyncStorage.getItem('exploreMode'),
           AsyncStorage.getItem('exploreCenter'),
           AsyncStorage.getItem('lastViewedOwnerUpdates'),
+          AsyncStorage.getItem('isOnboarded'),
+          AsyncStorage.getItem('hasSeenLocationPrompt'),
         ]);
 
         if (storedShowClosed) setShowClosedState(JSON.parse(storedShowClosed));
@@ -1126,6 +1133,8 @@ if (!favoritesError && favoriteRows) {
         if (storedExploreMode) setExploreModeState(JSON.parse(storedExploreMode));
         if (storedExploreCenter) setExploreCenterState(JSON.parse(storedExploreCenter));
         if (storedLastViewedOwnerUpdates) setLastViewedOwnerUpdates(JSON.parse(storedLastViewedOwnerUpdates));
+        if (storedIsOnboarded === 'true') setIsOnboarded(true);
+        if (storedHasSeenLocationPrompt === 'true') setHasSeenLocationPrompt(true);
 
         const storedQrShared = await AsyncStorage.getItem('qrShared');
         if (storedQrShared === 'true') setQrShared(true);
@@ -1133,6 +1142,8 @@ if (!favoritesError && favoriteRows) {
         if (DEBUG) console.log('[AppContext] Settings hydrated from storage');
       } catch (error) {
         console.log('Error hydrating settings from storage:', error);
+      } finally {
+        setIsOnboardedHydrated(true);
       }
     };
 
@@ -1167,6 +1178,11 @@ if (!favoritesError && favoriteRows) {
   const completeOnboarding = useCallback(() => {
     setIsOnboarded(true);
     void AsyncStorage.setItem('isOnboarded', 'true');
+  }, []);
+
+  const markLocationPromptSeen = useCallback(() => {
+    setHasSeenLocationPrompt(true);
+    void AsyncStorage.setItem('hasSeenLocationPrompt', 'true');
   }, []);
 
   const refreshCustomerProfile = useCallback(async (): Promise<void> => {
@@ -3436,6 +3452,9 @@ if (error) {
   return useMemo(() => ({
     currentUser,
     isOnboarded,
+    isOnboardedHydrated,
+    hasSeenLocationPrompt,
+    markLocationPromptSeen,
     foodTrucks,
     reviews,
     menuItems,
@@ -3533,7 +3552,7 @@ if (error) {
     createOwnerMessage,
     formatOperatingHours,
   }), [
-    currentUser, isOnboarded, foodTrucks, reviews, menuItems, announcements, upcomingStops, upcomingStopsLoading,
+    currentUser, isOnboarded, isOnboardedHydrated, hasSeenLocationPrompt, markLocationPromptSeen, foodTrucks, reviews, menuItems, announcements, upcomingStops, upcomingStopsLoading,
     checklistDismissed, showClosed, customerRadius, exploreMode, exploreCenter,
     pendingRedirect, pendingNotificationRoute, isInitialNotificationResponseChecked, lastViewedOwnerUpdates, selectedAdminTruckId, ownerMessages, setSelectedAdminTruckId,
     beginImagePickerSession, endImagePickerSession,

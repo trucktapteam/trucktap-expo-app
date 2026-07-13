@@ -1,9 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { Truck } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { LinearGradient } from 'expo-linear-gradient';
+
+const LOGO = require('@/assets/images/icon.png');
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -14,13 +16,13 @@ export default function OnboardingScreen() {
       style={styles.container}
     >
       <View style={styles.content}>
-        <View style={styles.iconContainer}>
-          <Truck size={80} color={Colors.light} strokeWidth={1.5} />
+        <View style={styles.logoShadow}>
+          <Image source={LOGO} style={styles.logo} contentFit="contain" />
         </View>
-        
+
         <Text style={styles.title}>TruckTap</Text>
         <Text style={styles.subtitle}>
-          Find amazing food trucks near you
+          Know who&apos;s open.{'\n'}Before you go.
         </Text>
 
         <View style={styles.buttonContainer}>
@@ -46,27 +48,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
-  iconContainer: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 32,
+  logoShadow: {
+    marginBottom: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  logo: {
+    width: 176,
+    height: 176,
+    borderRadius: 40,
   },
   title: {
     fontSize: 48,
     fontWeight: '700' as const,
     color: Colors.light,
-    marginBottom: 12,
+    marginBottom: 14,
     letterSpacing: -1,
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: 23,
+    fontWeight: '600' as const,
+    lineHeight: 30,
     color: Colors.light,
     textAlign: 'center',
-    opacity: 0.9,
+    opacity: 0.95,
     marginBottom: 64,
   },
   buttonContainer: {

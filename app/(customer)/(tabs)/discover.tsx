@@ -3,7 +3,6 @@ import { AppState as RNAppState, View, Text, StyleSheet, TextInput, ScrollView, 
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { Search, MapPin, Clock, Navigation, CheckCircle, Maximize2, Minimize2, AlertCircle, XCircle, Radar, Compass, ArrowLeft, Star } from 'lucide-react-native';
-import * as Location from 'expo-location';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useFilteredTrucks, useApp } from '@/contexts/AppContext';
 import { Image } from 'expo-image';
@@ -14,6 +13,8 @@ import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { getTruckDisplayLocation } from '@/lib/truckLocation';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { getPublicReadyStatus, isTruckPublicReady } from '@/lib/truckPublicReady';
+import { useLocationPermissionPrompt } from '@/hooks/useLocationPermissionPrompt';
+import LocationPermissionCard from '@/components/map/LocationPermissionCard';
 
 const OPEN_TRUCK_MARKER_COLOR = '#f97316';
 const CLOSED_TRUCK_MARKER_COLOR = '#800080';
@@ -119,13 +120,21 @@ export default function CustomerHomeScreen() {
   const router = useRouter();
   const { currentUser, foodTrucks, isTruckOpenNow, getNextUpcomingStopForTruck, getTruckActivityStatus, customerRadius, setCustomerRadius, exploreMode, setExploreMode, exploreCenter, setExploreCenter, refreshAllTrucks, reviews, showClosed, setShowClosed } = useApp();
   const { colors } = useTheme();
+  const {
+    userLocation,
+    showPrompt: showLocationPrompt,
+    promptAnim: locationPromptAnim,
+    handleAllow: handleAllowLocation,
+    handleDismiss: dismissLocationPromptCard,
+    refreshLocationIfGranted,
+    requestLocationNow,
+  } = useLocationPermissionPrompt();
   const mapRef = useRef<MapView>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [isMapExpanded, setIsMapExpanded] = useState<boolean>(false);
   const [isRadiusModalVisible, setIsRadiusModalVisible] = useState<boolean>(false);
   const [isExploreModalVisible, setIsExploreModalVisible] = useState<boolean>(false);
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [tempExploreLocation, setTempExploreLocation] = useState<{ latitude: number; longitude: number; label: string }>({ latitude: 37.7749, longitude: -122.4194, label: 'San Francisco, CA' });
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [sightings, setSightings] = useState<Sighting[]>([]);
@@ -627,33 +636,6 @@ export default function CustomerHomeScreen() {
     }
   }, []);
 
-  const refreshUserLocation = useCallback(async (options?: { requestPermission?: boolean }) => {
-    if (Platform.OS === 'web') return;
-
-    try {
-      const permission = options?.requestPermission
-        ? await Location.requestForegroundPermissionsAsync()
-        : await Location.getForegroundPermissionsAsync();
-
-      if (permission.status !== 'granted') return;
-
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      setUserLocation({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-    } catch (error) {
-      console.error('[Discover] Error refreshing location:', error);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshUserLocation({ requestPermission: true });
-  }, [refreshUserLocation]);
-
   useEffect(() => {
     void fetchSightings();
   }, [fetchSightings]);
@@ -690,7 +672,7 @@ export default function CustomerHomeScreen() {
 
       void Promise.allSettled([
         fetchSightings(),
-        refreshUserLocation(),
+        refreshLocationIfGranted(),
       ])
         .then((results) => {
           const rejected = results.filter((result) => result.status === 'rejected');
@@ -714,7 +696,7 @@ export default function CustomerHomeScreen() {
     return () => {
       subscription.remove();
     };
-  }, [fetchSightings, refreshUserLocation]);
+  }, [fetchSightings, refreshLocationIfGranted]);
 
   useEffect(() => {
     if (centerPoint && mapRef.current) {
@@ -809,30 +791,24 @@ export default function CustomerHomeScreen() {
     setIsLocating(true);
 
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      
-      if (status !== 'granted') {
+      const { status, coords } = await requestLocationNow();
+
+      if (status === 'unavailable') {
+        Alert.alert('Error', 'Unable to get your location');
+        return;
+      }
+
+      if (status !== 'granted' || !coords) {
         Alert.alert('Permission Denied', 'Please enable location permissions to use this feature');
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      const { latitude, longitude } = location.coords;
-
-      setUserLocation({ latitude, longitude });
-
       mapRef.current?.animateToRegion({
-        latitude,
-        longitude,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
         latitudeDelta: 0.03,
         longitudeDelta: 0.03,
       }, 1000);
-    } catch (error) {
-      console.error('Error getting location:', error);
-      Alert.alert('Error', 'Unable to get your location');
     } finally {
       setIsLocating(false);
     }
@@ -1442,6 +1418,13 @@ export default function CustomerHomeScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      <LocationPermissionCard
+        visible={showLocationPrompt}
+        anim={locationPromptAnim}
+        onAllow={handleAllowLocation}
+        onDismiss={dismissLocationPromptCard}
+      />
     </View>
   );
 }
