@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, Animated } from 'react-native';
+import { View, Text, Image, StyleSheet, Animated, TouchableOpacity } from 'react-native';
+import { Target } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
 type HeaderCardProps = {
@@ -10,6 +11,7 @@ type HeaderCardProps = {
   greeting?: string;
   missionLabel?: string;
   missionMessage?: string;
+  onMissionPress?: () => void;
   onCustomerViewPress?: () => void;
 };
 
@@ -21,6 +23,7 @@ export default function HeaderCard({
   greeting = 'Welcome back,',
   missionLabel,
   missionMessage,
+  onMissionPress,
   onCustomerViewPress,
 }: HeaderCardProps) {
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -61,14 +64,22 @@ export default function HeaderCard({
         </View>
       </View>
       {showMission ? (
-        <View style={styles.briefing}>
+        <TouchableOpacity
+          style={styles.briefing}
+          onPress={onMissionPress}
+          activeOpacity={0.75}
+          disabled={!onMissionPress}
+          accessibilityRole={onMissionPress ? 'button' : undefined}
+          accessibilityLabel={onMissionPress ? `Open next action: ${missionMessage}` : undefined}
+        >
+          <Target size={14} color="rgba(255, 255, 255, 0.9)" strokeWidth={2.4} />
           <Text style={styles.missionLine} numberOfLines={1}>
             {missionLabel ? (
               <Text style={styles.missionLineLabel}>{missionLabel} </Text>
             ) : null}
             {missionMessage}
           </Text>
-        </View>
+        </TouchableOpacity>
       ) : null}
     </Animated.View>
   );
@@ -177,14 +188,19 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   briefing: {
-    marginTop: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
     paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.24)',
+    borderTopColor: 'rgba(255, 255, 255, 0.3)',
   },
   missionLine: {
-    fontSize: 12,
+    flex: 1,
+    fontSize: 13,
     lineHeight: 16,
+    fontWeight: '600' as const,
     color: '#fff',
   },
   missionLineLabel: {

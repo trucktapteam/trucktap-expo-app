@@ -1,8 +1,8 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { X } from 'lucide-react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 export type FullscreenImageViewerProps = {
@@ -111,7 +111,7 @@ export default function FullscreenImageViewer({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close} statusBarTranslucent>
-      <View style={styles.background}>
+      <GestureHandlerRootView style={styles.background}>
         <Pressable style={StyleSheet.absoluteFill} onPress={close} accessibilityLabel="Close image viewer background" />
         <GestureDetector gesture={Gesture.Simultaneous(doubleTap, pinch, pan)}>
           <Animated.View style={[styles.imageContainer, { width, height: height * 0.85 }, animatedImageStyle]}>
@@ -121,7 +121,7 @@ export default function FullscreenImageViewer({
         <Pressable style={styles.closeButton} onPress={close} accessibilityRole="button" accessibilityLabel="Close image viewer" hitSlop={8}>
           <X size={30} color="white" />
         </Pressable>
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

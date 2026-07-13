@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight } from 'lucide-react-native';
+import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckMenu, useTruckRating } from '@/contexts/AppContext';
 import * as Clipboard from 'expo-clipboard';
@@ -15,10 +15,10 @@ import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { getTruckCommandCenter } from '@/lib/truckCommandCenter';
 import { isTruckVisibilitySetupComplete } from '@/lib/truckVisibilitySetup';
 import { getPublicReadyRequirementKeys, PublicReadyRequirement } from '@/lib/truckPublicReady';
-import { getTruckCoachMessage } from '@/lib/truckCoach';
 import { getTruckCoachProgressCelebration } from '@/lib/truckCoachProgress';
 import { getTruckOpportunities } from '@/lib/truckOpportunities';
 import type { TruckOpportunityAction, TruckOpportunityPriority } from '@/lib/truckOpportunities';
+import { coordinateTruckDashboardRecommendations } from '@/lib/truckDashboardRecommendations';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -125,6 +125,7 @@ export default function TruckDashboard() {
   const [statusToast, setStatusToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' }>({ visible: false, message: '', type: 'success' });
   const [liveNowMs, setLiveNowMs] = useState(Date.now());
   const [coachProgressCelebration, setCoachProgressCelebration] = useState('');
+  const [isRoadTipExpanded, setIsRoadTipExpanded] = useState(false);
   const [showWelcomeSetupPrompt, setShowWelcomeSetupPrompt] = useState(!hasShownOwnerSetupPromptThisSession);
   
   const bannerOpacity = useRef(new Animated.Value(0)).current;
@@ -206,13 +207,34 @@ export default function TruckDashboard() {
       : null,
     [announcements, hoursSet, menuItems, ownerMessages, reviews, truck, upcomingStops]
   );
-  const truckCoach = commandCenter ? getTruckCoachMessage(commandCenter) : null;
-  const displayTruckCoach = truckCoach
+  const rawOpportunities = useMemo(
+    () => truck
+      ? getTruckOpportunities({
+        ...truck,
+        upcomingStops,
+        announcements,
+        menuItems,
+        reviews,
+      })
+      : [],
+    [announcements, menuItems, reviews, truck, upcomingStops]
+  );
+  const dashboardRecommendations = useMemo(
+    () => commandCenter
+      ? coordinateTruckDashboardRecommendations(commandCenter, rawOpportunities)
+      : null,
+    [commandCenter, rawOpportunities]
+  );
+  useEffect(() => {
+    setIsRoadTipExpanded(false);
+  }, [dashboardRecommendations?.roadTip.id, truck?.id]);
+  const displayTruckCoach = dashboardRecommendations
     ? {
-      ...truckCoach,
-      celebration: coachProgressCelebration || truckCoach.celebration,
+      ...dashboardRecommendations.coach,
+      celebration: coachProgressCelebration || dashboardRecommendations.coach.celebration,
     }
     : null;
+  const opportunities = dashboardRecommendations?.opportunities.slice(0, 3) ?? [];
   const dailyBriefingGreeting = useMemo(() => getDailyBriefingGreeting(), []);
   const scheduledStopWarning = commandCenter?.eventReadiness === 'starts_soon'
     ? {
@@ -287,19 +309,6 @@ export default function TruckDashboard() {
     setShowWelcomeSetupPrompt(false);
     router.push('/(truck)/visibility-wizard' as any);
   };
-  const opportunities = useMemo(
-    () => truck
-      ? getTruckOpportunities({
-        ...truck,
-        upcomingStops,
-        announcements,
-        menuItems,
-        reviews,
-      }).slice(0, 3)
-      : [],
-    [announcements, menuItems, reviews, truck, upcomingStops]
-  );
-
   const handleCommandCenterAction = () => {
     if (!commandCenter) return;
 
@@ -827,7 +836,8 @@ export default function TruckDashboard() {
         isOpen={truckOpenNow}
         greeting={dailyBriefingGreeting}
         missionLabel="Next Action:"
-        missionMessage={displayTruckCoach?.message ?? commandCenter?.nextAction}
+        missionMessage={dashboardRecommendations?.nextActionMessage ?? commandCenter?.nextAction}
+        onMissionPress={showCommandAction ? handleCommandCenterAction : undefined}
         onCustomerViewPress={handleBrowseAsCustomer}
       />
 
@@ -1047,7 +1057,7 @@ export default function TruckDashboard() {
               </View>
               <View style={styles.commandCenterTitleWrap}>
                 <Text style={styles.commandCenterEyebrow}>TruckTap Coach</Text>
-                <Text style={styles.commandCenterTitle}>Next Action</Text>
+                <Text style={styles.commandCenterTitle}>Road Tip</Text>
               </View>
             </View>
 
@@ -1055,25 +1065,31 @@ export default function TruckDashboard() {
               {displayTruckCoach?.celebration ? (
                 <Text style={styles.commandCenterCelebration}>{displayTruckCoach.celebration}</Text>
               ) : null}
-              <Text style={styles.commandCenterNextAction}>{displayTruckCoach?.message ?? commandCenter.nextAction}</Text>
-              {displayTruckCoach?.encouragement ? (
-                <Text style={styles.commandCenterCoachText}>{displayTruckCoach.encouragement}</Text>
-              ) : null}
-              {displayTruckCoach?.estimatedTime ? (
-                <Text style={styles.commandCenterEstimatedTime}>Estimated time: {displayTruckCoach.estimatedTime}</Text>
+              <Text style={styles.commandCenterNextAction}>
+                {dashboardRecommendations?.roadTip.summary ?? displayTruckCoach?.message}
+              </Text>
+              <TouchableOpacity
+                style={styles.roadTipToggle}
+                onPress={() => setIsRoadTipExpanded(expanded => !expanded)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={isRoadTipExpanded ? 'Collapse Road Tip' : 'Learn why this Road Tip matters'}
+                accessibilityState={{ expanded: isRoadTipExpanded }}
+                hitSlop={6}
+              >
+                <Text style={styles.roadTipToggleText}>{isRoadTipExpanded ? 'Show Less' : 'Learn Why'}</Text>
+                {isRoadTipExpanded ? (
+                  <ChevronUp size={16} color={Colors.primary} />
+                ) : (
+                  <ChevronDown size={16} color={Colors.primary} />
+                )}
+              </TouchableOpacity>
+              {isRoadTipExpanded && dashboardRecommendations?.roadTip.detail ? (
+                <View style={styles.roadTipDetailWrap}>
+                  <Text style={styles.roadTipDetail}>{dashboardRecommendations.roadTip.detail}</Text>
+                </View>
               ) : null}
             </View>
-
-            {showCommandAction ? (
-              <TouchableOpacity
-                style={styles.commandCenterButton}
-                onPress={handleCommandCenterAction}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.commandCenterButtonText}>{commandCenter.nextAction}</Text>
-                <ChevronRight size={18} color="#fff" />
-              </TouchableOpacity>
-            ) : null}
           </View>
         )}
 
@@ -1612,46 +1628,44 @@ const styles = StyleSheet.create({
     backgroundColor: `${Colors.primary}0D`,
     borderRadius: 10,
     padding: 10,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: `${Colors.primary}18`,
   },
   commandCenterNextAction: {
-    fontSize: 16,
-    fontWeight: '800' as const,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '700' as const,
     color: Colors.dark,
   },
-  commandCenterCoachText: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: Colors.gray,
-    marginTop: 6,
+  roadTipToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 3,
+    marginTop: 9,
+    paddingVertical: 2,
   },
-  commandCenterEstimatedTime: {
-    fontSize: 12,
+  roadTipToggleText: {
+    fontSize: 13,
     fontWeight: '700' as const,
     color: Colors.primary,
+  },
+  roadTipDetailWrap: {
+    borderTopWidth: 1,
+    borderTopColor: `${Colors.primary}18`,
     marginTop: 8,
+    paddingTop: 9,
+  },
+  roadTipDetail: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: Colors.gray,
   },
   commandCenterCelebration: {
     fontSize: 12,
     lineHeight: 18,
     color: Colors.success,
-    marginTop: 8,
-  },
-  commandCenterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: Colors.primary,
-    borderRadius: 10,
-    paddingVertical: 12,
-  },
-  commandCenterButtonText: {
-    fontSize: 15,
-    fontWeight: '700' as const,
-    color: '#fff',
+    marginBottom: 7,
   },
   scheduledStopWarning: {
     backgroundColor: '#fff',
