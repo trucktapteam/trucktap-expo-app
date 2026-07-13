@@ -59,6 +59,7 @@ export type FoodTruck = {
   archiveReason?: string;
   is_test?: boolean;
   lastOwnerActivityAt?: number;
+  created_at?: string;
 };
 
 export type Sighting = {

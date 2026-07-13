@@ -113,7 +113,7 @@ export const getCompletedTruckCoachMilestones = ({
   }
 
   if (
-    commandCenter.profileCompleteness.complete &&
+    commandCenter.publicReady.complete &&
     truck.archived !== true &&
     !truck.archivedAt &&
     truck.is_test !== true

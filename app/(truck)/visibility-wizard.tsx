@@ -23,12 +23,13 @@ import {
   getTruckVisibilitySetupStatus,
   TruckVisibilitySetupRequirement,
 } from '@/lib/truckVisibilitySetup';
+import { getPublicReadyRequirementKeys, isLegacyTruck } from '@/lib/truckPublicReady';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
-const steps: TruckVisibilitySetupRequirement[] = ['name', 'logo', 'hero', 'service_area'];
-
-const getStepIndex = (requirement: TruckVisibilitySetupRequirement): number =>
-  Math.max(0, steps.indexOf(requirement));
+const getStepIndex = (
+  steps: TruckVisibilitySetupRequirement[],
+  requirement: TruckVisibilitySetupRequirement
+): number => Math.max(0, steps.indexOf(requirement));
 
 export default function VisibilityWizardScreen() {
   const router = useRouter();
@@ -40,12 +41,16 @@ export default function VisibilityWizardScreen() {
     endImagePickerSession,
   } = useApp();
   const truck = getUserTruck();
+  // Required steps only — matches the Public Ready gate exactly. Bio is required
+  // here only for trucks created on/after PUBLIC_READY_BIO_REQUIRED_AT; service
+  // area is never a required step (recommended-only, surfaced after completion).
+  const steps = useMemo(() => truck ? getPublicReadyRequirementKeys(truck) : [], [truck]);
   const status = useMemo(() => truck ? getTruckVisibilitySetupStatus(truck) : null, [truck]);
   const [stepIndex, setStepIndex] = useState(0);
   const [name, setName] = useState('');
   const [logo, setLogo] = useState('');
   const [heroImage, setHeroImage] = useState('');
-  const [serviceArea, setServiceArea] = useState('');
+  const [bio, setBio] = useState('');
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const appliedStartParamRef = useRef(false);
@@ -58,7 +63,7 @@ export default function VisibilityWizardScreen() {
     setName(truck.name || '');
     setLogo(truck.logo || '');
     setHeroImage(truck.hero_image || '');
-    setServiceArea(truck.service_area || '');
+    setBio(truck.bio || '');
 
     if (status?.complete && !showSuccess && !saving) {
       router.replace('/(truck)/(tabs)/dashboard' as any);
@@ -72,12 +77,12 @@ export default function VisibilityWizardScreen() {
     }
 
     if (status?.missing.length) {
-      setStepIndex(getStepIndex(status.missing[0]));
+      setStepIndex(getStepIndex(steps, status.missing[0]));
     }
-  }, [params.start, router, saving, showSuccess, status, truck]);
+  }, [params.start, router, saving, showSuccess, status, steps, truck]);
 
   const activeStep = steps[stepIndex];
-  const progressLabel = `${stepIndex + 1} of ${steps.length}`;
+  const progressLabel = `${Math.min(stepIndex + 1, steps.length)} of ${steps.length}`;
 
   const goToNextStep = (nextMissing: TruckVisibilitySetupRequirement[]) => {
     if (nextMissing.length === 0) {
@@ -85,7 +90,7 @@ export default function VisibilityWizardScreen() {
       return;
     }
 
-    setStepIndex(getStepIndex(nextMissing[0]));
+    setStepIndex(getStepIndex(steps, nextMissing[0]));
   };
 
   const handleSaveName = async () => {
@@ -109,20 +114,20 @@ export default function VisibilityWizardScreen() {
     }
   };
 
-  const handleSaveServiceArea = async () => {
+  const handleSaveBio = async () => {
     if (!truck) return;
 
-    const trimmed = serviceArea.trim();
+    const trimmed = bio.trim();
     if (!trimmed) {
-      Alert.alert('Service area required', 'Enter the main area where customers can usually find you.');
+      Alert.alert('Bio required', 'Add a short bio so customers know what makes your truck special.');
       return;
     }
 
     setSaving(true);
     try {
-      await updateTruckDetails(truck.id, { service_area: trimmed });
-      const nextStatus = getTruckVisibilitySetupStatus({ ...truck, service_area: trimmed });
-      goToNextStep(nextStatus.missing.filter(requirement => requirement !== 'service_area'));
+      await updateTruckDetails(truck.id, { bio: trimmed });
+      const nextStatus = getTruckVisibilitySetupStatus({ ...truck, bio: trimmed });
+      goToNextStep(nextStatus.missing.filter(requirement => requirement !== 'bio'));
     } catch (error: any) {
       Alert.alert('Could not save', error?.message ?? 'Please try again.');
     } finally {
@@ -246,7 +251,9 @@ export default function VisibilityWizardScreen() {
           </View>
           <Text style={styles.successTitle}>Your truck is now visible to customers.</Text>
           <Text style={styles.successText}>
-            You can add menu items, photos, announcements, and stops from the dashboard.
+            {isLegacyTruck(truck)
+              ? 'Add a bio and service area from your dashboard to help more customers find you.'
+              : 'Add a service area from your dashboard to help more customers find you.'}
           </Text>
           <TouchableOpacity style={styles.primaryButton} onPress={handleEnterDashboard} activeOpacity={0.75}>
             <Text style={styles.primaryButtonText}>Enter Dashboard</Text>
@@ -366,21 +373,23 @@ export default function VisibilityWizardScreen() {
             </View>
           ) : null}
 
-          {activeStep === 'service_area' ? (
+          {activeStep === 'bio' ? (
             <View style={styles.stepCard}>
-              <Text style={styles.stepTitle}>Where do you usually serve?</Text>
-              <Text style={styles.stepSubtitle}>Add a simple area like Elizabethtown, KY or Hardin County / Central KY.</Text>
+              <Text style={styles.stepTitle}>Tell customers about your truck</Text>
+              <Text style={styles.stepSubtitle}>Add a short bio so customers know what makes your truck special.</Text>
               <TextInput
-                style={styles.input}
-                value={serviceArea}
-                onChangeText={setServiceArea}
-                placeholder="e.g., Elizabethtown, KY"
+                style={[styles.input, styles.bioInput]}
+                value={bio}
+                onChangeText={setBio}
+                placeholder="e.g., Wood-fired pizza made fresh daily with local ingredients."
                 placeholderTextColor={Colors.gray}
+                multiline
+                textAlignVertical="top"
               />
               <TouchableOpacity
-                style={[styles.primaryButton, (!serviceArea.trim() || saving) && styles.buttonDisabled]}
-                onPress={handleSaveServiceArea}
-                disabled={!serviceArea.trim() || saving}
+                style={[styles.primaryButton, (!bio.trim() || saving) && styles.buttonDisabled]}
+                onPress={handleSaveBio}
+                disabled={!bio.trim() || saving}
                 activeOpacity={0.75}
               >
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Continue</Text>}
@@ -470,6 +479,9 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     fontSize: 17,
     color: Colors.dark,
+  },
+  bioInput: {
+    minHeight: 120,
   },
   primaryButton: {
     minHeight: 52,

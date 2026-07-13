@@ -1,4 +1,5 @@
 import { getTruckProfileCompleteness, TruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
+import { getPublicReadyStatus, PublicReadyStatus } from '@/lib/truckPublicReady';
 import { getMenuBoardImageFromMenuImages } from '@/lib/truckMenu';
 import { Announcement, FoodTruck, MenuItem, OwnerMessage, Review, UpcomingStop } from '@/types';
 
@@ -8,6 +9,7 @@ export type TruckNextBestAction =
   | 'Add Truck Name'
   | 'Upload Logo'
   | 'Upload Hero Image'
+  | 'Add Bio'
   | 'Add Service Area'
   | 'Add Menu'
   | 'Add Gallery Photos'
@@ -27,6 +29,7 @@ export type TruckChecklistItem = {
     | 'name'
     | 'logo'
     | 'hero'
+    | 'bio'
     | 'service_area'
     | 'menu'
     | 'gallery'
@@ -54,7 +57,10 @@ export type TruckCommandCenter = {
   visibility: string;
   nextAction: TruckNextBestAction;
   checklist: TruckChecklistItem[];
+  /** Broader owner/admin coaching completeness (includes service area). Not the visibility gate — see `publicReady`. */
   profileCompleteness: TruckProfileCompleteness;
+  /** The canonical customer-visibility gate. `health === 'Hidden'` is driven by this, not `profileCompleteness`. */
+  publicReady: PublicReadyStatus;
   eventReadiness: TruckEventReadiness;
 };
 
@@ -145,6 +151,9 @@ const hasUpcomingStop = (truck: TruckCommandCenterInput): boolean => {
 const hasServiceArea = (truck: TruckCommandCenterInput): boolean =>
   typeof truck.service_area === 'string' && truck.service_area.trim().length > 0;
 
+const hasBio = (truck: TruckCommandCenterInput): boolean =>
+  typeof truck.bio === 'string' && truck.bio.trim().length > 0;
+
 const hasMenuContent = (truck: TruckCommandCenterInput): boolean => {
   const truckMenuItems = truck.menuItems?.filter(item =>
     item.truck_id?.toString() === truck.id?.toString()
@@ -182,12 +191,14 @@ export function getVisibilityReason(truck: TruckCommandCenterInput): string {
   if (truck.archived === true || !!truck.archivedAt) return 'Archived';
   if (truck.is_test === true) return 'Test Truck';
 
-  const completeness = getTruckProfileCompleteness(truck);
+  // Public Ready is the actual customer-visibility gate. Service area (and, for
+  // legacy trucks, bio) must never be reported as a reason a truck is hidden.
+  const publicReady = getPublicReadyStatus(truck);
 
-  if (completeness.missing.includes('name')) return 'Missing Name';
-  if (completeness.missing.includes('logo')) return 'Missing Logo';
-  if (completeness.missing.includes('hero')) return 'Missing Hero Image';
-  if (completeness.missing.includes('service_area')) return 'Missing Service Area';
+  if (publicReady.missing.includes('name')) return 'Missing Name';
+  if (publicReady.missing.includes('logo')) return 'Missing Logo';
+  if (publicReady.missing.includes('hero')) return 'Missing Hero Image';
+  if (publicReady.missing.includes('bio')) return 'Missing Bio';
 
   return 'Profile Complete';
 }
@@ -197,11 +208,12 @@ export function getNextBestAction(truck: TruckCommandCenterInput): TruckNextBest
     return 'No action available';
   }
 
-  const completeness = getTruckProfileCompleteness(truck);
+  const publicReady = getPublicReadyStatus(truck);
 
-  if (completeness.missing.includes('name')) return 'Add Truck Name';
-  if (completeness.missing.includes('logo')) return 'Upload Logo';
-  if (completeness.missing.includes('hero')) return 'Upload Hero Image';
+  if (publicReady.missing.includes('name')) return 'Add Truck Name';
+  if (publicReady.missing.includes('logo')) return 'Upload Logo';
+  if (publicReady.missing.includes('hero')) return 'Upload Hero Image';
+  if (publicReady.missing.includes('bio')) return 'Add Bio';
   if (!hasServiceArea(truck)) return 'Add Service Area';
   if (!hasMenuContent(truck)) return 'Add Menu';
   if (!hasGalleryPhotos(truck)) return 'Add Gallery Photos';
@@ -217,22 +229,27 @@ export function getNextBestAction(truck: TruckCommandCenterInput): TruckNextBest
 }
 
 export function getTodayChecklist(truck: TruckCommandCenterInput): TruckChecklistItem[] {
-  const completeness = getTruckProfileCompleteness(truck);
+  const publicReady = getPublicReadyStatus(truck);
   const checklist: TruckChecklistItem[] = [
     {
       id: 'name',
       label: 'Add Truck Name',
-      completed: !completeness.missing.includes('name'),
+      completed: !publicReady.missing.includes('name'),
     },
     {
       id: 'logo',
       label: 'Upload Logo',
-      completed: !completeness.missing.includes('logo'),
+      completed: !publicReady.missing.includes('logo'),
     },
     {
       id: 'hero',
       label: 'Upload Hero Image',
-      completed: !completeness.missing.includes('hero'),
+      completed: !publicReady.missing.includes('hero'),
+    },
+    {
+      id: 'bio',
+      label: 'Add Bio',
+      completed: hasBio(truck),
     },
     {
       id: 'service_area',
@@ -297,9 +314,9 @@ export function getTodayChecklist(truck: TruckCommandCenterInput): TruckChecklis
 }
 
 export function getTruckHealth(truck: TruckCommandCenterInput): TruckHealth {
-  const completeness = getTruckProfileCompleteness(truck);
+  const publicReady = getPublicReadyStatus(truck);
 
-  if (truck.archived === true || !!truck.archivedAt || truck.is_test === true || !completeness.complete) {
+  if (truck.archived === true || !!truck.archivedAt || truck.is_test === true || !publicReady.complete) {
     return 'Hidden';
   }
 
@@ -313,6 +330,7 @@ export function getTruckHealth(truck: TruckCommandCenterInput): TruckHealth {
 
 export function getTruckCommandCenter(truck: TruckCommandCenterInput): TruckCommandCenter {
   const profileCompleteness = getTruckProfileCompleteness(truck);
+  const publicReady = getPublicReadyStatus(truck);
   const eventReadiness = getEventReadiness(truck);
 
   return {
@@ -321,6 +339,7 @@ export function getTruckCommandCenter(truck: TruckCommandCenterInput): TruckComm
     nextAction: getNextBestAction(truck),
     checklist: getTodayChecklist(truck),
     profileCompleteness,
+    publicReady,
     eventReadiness,
   };
 }

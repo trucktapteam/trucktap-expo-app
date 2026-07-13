@@ -5,7 +5,8 @@ import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import TruckProfile from '@/components/TruckProfile';
 import Colors from '@/constants/colors';
-import { canViewIncompleteTruckProfile, isTruckProfileComplete } from '@/lib/truckProfileCompleteness';
+import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
+import { isTruckPublicReady } from '@/lib/truckPublicReady';
 
 const IOS_APP_STORE_URL =
   process.env.EXPO_PUBLIC_IOS_APP_STORE_URL?.trim() || 'https://apps.apple.com/us/search?term=TruckTap';
@@ -65,7 +66,7 @@ export default function TruckDetailScreen() {
     const incompleteHiddenFromCustomer =
       !!truck &&
       !isPreview &&
-      !isTruckProfileComplete(truck) &&
+      !isTruckPublicReady(truck) &&
       !canViewIncompleteTruckProfile(truck, currentUser);
     const showTruckDetails =
       !!truck &&

@@ -17,7 +17,7 @@ import UpcomingStopsRow from '@/components/UpcomingStopsRow';
 import { trackEvent } from '@/lib/analytics';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
-import { isTruckProfileComplete } from '@/lib/truckProfileCompleteness';
+import { isTruckPublicReady } from '@/lib/truckPublicReady';
 import { getTruckTrustStatus } from '@/lib/truckTrustStatus';
 import {
   fetchCurrentUserTruckCheckInCount,
@@ -154,7 +154,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const canViewTestTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
   const canViewArchivedTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
   const canViewIncompleteTruck = currentUser?.role === 'admin' || isOwnerOfTruck;
-  const isIncompleteTruckProfile = !!truck && !isTruckProfileComplete(truck);
+  const isIncompleteTruckProfile = !!truck && !isTruckPublicReady(truck);
   const isIncompleteTruckHiddenFromCustomer =
     mode === 'customer' && isIncompleteTruckProfile && !canViewIncompleteTruck;
   const customerCanViewTruck =

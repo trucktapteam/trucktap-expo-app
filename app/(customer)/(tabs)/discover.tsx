@@ -12,7 +12,8 @@ import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpott
 import { FoodTruck, Sighting } from '@/types';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { getTruckDisplayLocation } from '@/lib/truckLocation';
-import { canViewIncompleteTruckProfile, getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
+import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
+import { getPublicReadyStatus, isTruckPublicReady } from '@/lib/truckPublicReady';
 
 const TRUCK_MARKER_COLOR = '#f97316';
 const FOREGROUND_SCREEN_REFRESH_DEBOUNCE_MS = 5000;
@@ -309,7 +310,7 @@ export default function CustomerHomeScreen() {
         truck.location.longitude
       );
     };
-    const completeTrucks = foodTrucks.filter(truck => getTruckProfileCompleteness(truck).complete);
+    const completeTrucks = foodTrucks.filter(truck => isTruckPublicReady(truck));
     const completeClosedTrucks = completeTrucks.filter(truck => !isTruckOpenNow(truck.id));
     const incompleteFiltered = foodTrucks.filter(truck =>
       truck.archived !== true &&
@@ -320,7 +321,7 @@ export default function CustomerHomeScreen() {
     const incompleteSamples = incompleteFiltered.slice(0, 12).map(truck => ({
       id: truck.id,
       name: truck.name,
-      missing: getTruckProfileCompleteness(truck).missing,
+      missing: getPublicReadyStatus(truck).missing,
       hasValidLocation: hasCoordinates(truck),
       openNow: isTruckOpenNow(truck.id),
       serviceArea: truck.service_area || null,

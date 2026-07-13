@@ -11,7 +11,8 @@ import { trackEvent } from '@/lib/analytics';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { clearPushTokenForUser } from '@/lib/pushToken';
-import { canViewIncompleteTruckProfile, getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
+import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
+import { getPublicReadyStatus } from '@/lib/truckPublicReady';
 
 const parseJsonArray = (val: any): any[] => {
   if (Array.isArray(val)) return val;
@@ -521,6 +522,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
           : typeof row.last_owner_activity_at === 'number'
           ? row.last_owner_activity_at
           : undefined,
+      created_at: typeof row.created_at === 'string' ? row.created_at : undefined,
     };
   }, []);
 
@@ -3604,7 +3606,7 @@ export function useFilteredTrucks(searchQuery: string, cuisineFilter: string, op
       const incompleteSamples = incompleteFiltered.slice(0, 12).map(truck => ({
         id: truck.id,
         name: truck.name,
-        missing: getTruckProfileCompleteness(truck).missing,
+        missing: getPublicReadyStatus(truck).missing,
         ownerAllowed:
           (!!currentUser?.id && truck.owner_id === currentUser.id) ||
           (currentUser?.role === 'truck' && currentUser.truck_id === truck.id),

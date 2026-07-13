@@ -45,6 +45,14 @@ const actionTemplates: Record<TruckNextBestAction, TruckCoachMessage> = {
     celebration: '',
     severity: 'actionRequired',
   },
+  'Add Bio': {
+    headline: 'Next Action',
+    message: 'Add a short bio.',
+    encouragement: 'Add a short bio so customers know what makes your truck special.',
+    estimatedTime: 'About 1 minute.',
+    celebration: '',
+    severity: 'actionRequired',
+  },
   'Add Service Area': {
     headline: 'Next Action',
     message: 'Add your service area.',

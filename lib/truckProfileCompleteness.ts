@@ -1,5 +1,6 @@
 import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
 import { FoodTruck, User } from '@/types';
+import { isTruckPublicReady } from './truckPublicReady';
 
 export type TruckProfileRequirement = 'name' | 'logo' | 'hero' | 'service_area';
 
@@ -14,6 +15,12 @@ export type TruckAdminStatus = 'Archived' | 'Test' | 'Incomplete' | 'Inactive' |
 
 const normalize = (value?: string | null): string => value?.trim() ?? '';
 
+/**
+ * Broader owner/admin "profile polish" completeness (name, logo, hero, service area).
+ * This is a coaching/admin-diagnostic signal, not the customer-visibility gate — a
+ * truck can fail this and still be Public Ready. See lib/truckPublicReady.ts for
+ * the canonical gate that actually determines customer visibility.
+ */
 export function getTruckProfileCompleteness(truck: FoodTruck): TruckProfileCompleteness {
   const name = normalize(truck.name);
   const logo = normalize(truck.logo);
@@ -43,11 +50,18 @@ export function isTruckProfileComplete(truck: FoodTruck): boolean {
   return getTruckProfileCompleteness(truck).complete;
 }
 
+/**
+ * The actual customer-visibility gate: a truck is viewable by a non-owner/non-admin
+ * customer only once it is Public Ready (lib/truckPublicReady.ts). Despite the name,
+ * this is intentionally NOT based on the broader `isTruckProfileComplete` coaching
+ * completeness above — service area (and, for legacy trucks, bio) must never hide an
+ * otherwise Public Ready truck from customers.
+ */
 export function canViewIncompleteTruckProfile(
   truck: FoodTruck,
   viewer?: Pick<User, 'id' | 'role' | 'truck_id'> | null
 ): boolean {
-  if (isTruckProfileComplete(truck)) return true;
+  if (isTruckPublicReady(truck)) return true;
   if (viewer?.role === 'admin') return true;
   return (
     (!!viewer?.id && truck.owner_id === viewer.id) ||

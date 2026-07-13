@@ -12,9 +12,9 @@ import Toast from '@/components/Toast';
 import { DEBUG } from '@/constants/debug';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
-import { getTruckProfileCompleteness } from '@/lib/truckProfileCompleteness';
 import { getTruckCommandCenter } from '@/lib/truckCommandCenter';
 import { isTruckVisibilitySetupComplete } from '@/lib/truckVisibilitySetup';
+import { getPublicReadyRequirementKeys, PublicReadyRequirement } from '@/lib/truckPublicReady';
 import { getTruckCoachMessage } from '@/lib/truckCoach';
 import { getTruckCoachProgressCelebration } from '@/lib/truckCoachProgress';
 import { getTruckOpportunities } from '@/lib/truckOpportunities';
@@ -76,14 +76,12 @@ const getDailyBriefingGreeting = (): string => {
 
 let hasShownOwnerSetupPromptThisSession = false;
 
-const requiredProfileLabels = {
+const requiredProfileLabels: Record<PublicReadyRequirement, string> = {
   name: 'Truck Name',
   logo: 'Logo',
   hero: 'Hero Image',
-  service_area: 'Primary Service Area',
-} as const;
-
-const publicProfileRequirements = ['name', 'logo', 'hero', 'service_area'] as const;
+  bio: 'Bio',
+};
 
 const opportunityPriorityLabels: Record<TruckOpportunityPriority, string> = {
   high: 'High',
@@ -182,8 +180,8 @@ export default function TruckDashboard() {
   };
 
   const profileComplete = truck ? isProfileComplete(truck.id) : false;
-  const publicProfileCompleteness = useMemo(
-    () => truck ? getTruckProfileCompleteness(truck) : null,
+  const publicReadyRequirementKeys = useMemo(
+    () => truck ? getPublicReadyRequirementKeys(truck) : [],
     [truck]
   );
   const profileUrl = getTruckShareUrl(truck?.id);
@@ -231,12 +229,14 @@ export default function TruckDashboard() {
     commandCenter.health === 'Hidden' &&
     !isArchived &&
     truck?.is_test !== true &&
-    !commandCenter.profileCompleteness.complete
+    !commandCenter.publicReady.complete
     ? {
-      completedCount: commandCenter.profileCompleteness.completedCount,
-      totalCount: commandCenter.profileCompleteness.totalCount,
-      progressPercent: (commandCenter.profileCompleteness.completedCount / commandCenter.profileCompleteness.totalCount) * 100,
-      missingLabels: commandCenter.profileCompleteness.missing.map(requirement => requiredProfileLabels[requirement]),
+      completedCount: publicReadyRequirementKeys.length - commandCenter.publicReady.missing.length,
+      totalCount: publicReadyRequirementKeys.length,
+      progressPercent: publicReadyRequirementKeys.length > 0
+        ? ((publicReadyRequirementKeys.length - commandCenter.publicReady.missing.length) / publicReadyRequirementKeys.length) * 100
+        : 100,
+      missingLabels: commandCenter.publicReady.missing.map(requirement => requiredProfileLabels[requirement]),
     }
     : null;
   const shouldShowSetupPrompt =
@@ -254,6 +254,7 @@ export default function TruckDashboard() {
       case 'Add Truck Name':
       case 'Upload Logo':
       case 'Upload Hero Image':
+      case 'Add Bio':
       case 'Add Service Area':
         return '/(truck)/edit-profile';
       case 'Add Menu':
@@ -710,26 +711,30 @@ export default function TruckDashboard() {
           </View>
 
           <View style={styles.inspectionCard}>
-            <Text style={styles.inspectionTitle}>Public profile requirements</Text>
-            {publicProfileRequirements.map(requirement => (
+            <Text style={styles.inspectionTitle}>Public Ready requirements</Text>
+            {publicReadyRequirementKeys.map(requirement => (
               <View style={styles.dataRow} key={requirement}>
                 <Text style={styles.dataLabel}>{requiredProfileLabels[requirement]}</Text>
                 <Text style={styles.dataValue}>
-                  {publicProfileCompleteness?.missing.includes(requirement) ? 'Missing' : 'Complete'}
+                  {commandCenter?.publicReady.missing.includes(requirement) ? 'Missing' : 'Complete'}
                 </Text>
               </View>
             ))}
             <View style={styles.dataRow}>
+              <Text style={styles.dataLabel}>Legacy (bio grandfathered)</Text>
+              <Text style={styles.dataValue}>{commandCenter?.publicReady.isLegacy ? 'Yes' : 'No'}</Text>
+            </View>
+            <View style={styles.dataRow}>
               <Text style={styles.dataLabel}>completion</Text>
               <Text style={styles.dataValue}>
-                {publicProfileCompleteness?.completedCount ?? 0}/{publicProfileCompleteness?.totalCount ?? 3}
+                {publicReadyRequirementKeys.length - (commandCenter?.publicReady.missing.length ?? 0)}/{publicReadyRequirementKeys.length}
               </Text>
             </View>
             <View style={styles.dataRow}>
               <Text style={styles.dataLabel}>missing fields</Text>
               <Text style={styles.dataValue}>
-                {publicProfileCompleteness?.missing.length
-                  ? publicProfileCompleteness.missing.join(', ')
+                {commandCenter?.publicReady.missing.length
+                  ? commandCenter.publicReady.missing.join(', ')
                   : 'None'}
               </Text>
             </View>
@@ -912,7 +917,7 @@ export default function TruckDashboard() {
               <View style={styles.welcomeSetupPromptTitleWrap}>
                 <Text style={styles.welcomeSetupPromptTitle}>Welcome to TruckTap!</Text>
                 <Text style={styles.welcomeSetupPromptBody}>
-                  Your dashboard is ready. Customers cannot discover your truck until you complete a few quick setup steps.
+                  Your dashboard is ready. Complete these items before customers can discover your truck.
                 </Text>
               </View>
             </View>
@@ -942,15 +947,15 @@ export default function TruckDashboard() {
                 <AlertCircle size={22} color={Colors.error} />
               </View>
               <View style={styles.incompleteProfileTitleWrap}>
-                <Text style={styles.incompleteProfileTitle}>Your truck is hidden from customers</Text>
+                <Text style={styles.incompleteProfileTitle}>Your truck isn&apos;t Public Ready yet</Text>
                 <Text style={styles.incompleteProfileBody}>
-                  Complete your profile so customers can find your truck on the map and in search.
+                  Complete these items before customers can discover your truck.
                 </Text>
               </View>
             </View>
 
             <Text style={styles.incompleteProfileProgress}>
-              {incompleteProfileEducation.completedCount} of {incompleteProfileEducation.totalCount} required steps complete
+              {incompleteProfileEducation.completedCount} of {incompleteProfileEducation.totalCount} Public Ready steps complete
             </Text>
             <View style={styles.incompleteProfileProgressTrack}>
               <View
