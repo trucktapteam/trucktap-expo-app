@@ -15,7 +15,8 @@ import { getTruckDisplayLocation } from '@/lib/truckLocation';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { getPublicReadyStatus, isTruckPublicReady } from '@/lib/truckPublicReady';
 
-const TRUCK_MARKER_COLOR = '#f97316';
+const OPEN_TRUCK_MARKER_COLOR = '#f97316';
+const CLOSED_TRUCK_MARKER_COLOR = '#800080';
 const FOREGROUND_SCREEN_REFRESH_DEBOUNCE_MS = 5000;
 const SIGHTING_NOTES_MAX_LENGTH = 280;
 
@@ -929,13 +930,15 @@ export default function CustomerHomeScreen() {
                   return null;
                 }
 
+                const truckOpenNow = openTruckIds.has(truck.id);
+
                 return (
                   <Marker
                     key={truck.id}
                     coordinate={truckCoordinate}
                     title={truck.name}
-                    description={openTruckIds.has(truck.id) ? truck.location?.address || 'Food truck' : 'Not currently serving'}
-                    pinColor={TRUCK_MARKER_COLOR}
+                    description={truckOpenNow ? truck.location?.address || 'Food truck' : 'Not currently serving'}
+                    pinColor={truckOpenNow ? OPEN_TRUCK_MARKER_COLOR : CLOSED_TRUCK_MARKER_COLOR}
                     anchor={{ x: 0.5, y: 1 }}
                     onPress={() => handleTruckPress(truck.id)}
                   />

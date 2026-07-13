@@ -16,8 +16,9 @@ import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpott
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { trackEvent } from '@/lib/analytics';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
-import TruckMapMarker from '@/components/map/TruckMapMarker';
 
+const OPEN_TRUCK_MARKER_COLOR = '#f97316';
+const CLOSED_TRUCK_MARKER_COLOR = '#800080';
 const FOREGROUND_SCREEN_REFRESH_DEBOUNCE_MS = 5000;
 const SIGHTING_NOTES_MAX_LENGTH = 280;
 
@@ -520,11 +521,10 @@ export default function FullMapScreen() {
                   coordinate={truckCoordinate}
                   title={truck.name}
                   description={openNow ? truck.location?.address || 'Food truck' : 'Not currently serving'}
+                  pinColor={openNow ? OPEN_TRUCK_MARKER_COLOR : CLOSED_TRUCK_MARKER_COLOR}
                   anchor={{ x: 0.5, y: 1 }}
                   onPress={() => handleTruckPress(truck.id)}
-                >
-                  <TruckMapMarker imageUrl={truck.logo} isOpen={openNow} />
-                </Marker>
+                />
               );
             })}
             {sightings.map((sighting) => {
