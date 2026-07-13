@@ -8,6 +8,7 @@ import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Image } from 'expo-image';
 import FullscreenImageViewer from '@/components/FullscreenImageViewer';
+import FeaturedMenuPreview from '@/components/menu/FeaturedMenuPreview';
 import TruckHero from '@/components/TruckHero';
 import TruckSectionCard from '@/components/TruckSectionCard';
 import ReviewerAvatar from '@/components/ReviewerAvatar';
@@ -853,7 +854,7 @@ console.log('[FORMAT DATE]', dateInput);
           {(truckMenuItems.length > 0 || menuBoardImageUrl) && (
             <TruckSectionCard>
               <View style={styles.sectionHeaderRow}>
-               <Text style={{ color: '#111111', fontSize: 20, fontWeight: '700' }}>Menu</Text>
+                <Text style={{ color: colors.text, fontSize: 20, fontWeight: '700' }}>Menu</Text>
                 <TouchableOpacity
                   style={styles.seeAllButton}
                   onPress={() => router.push(`/truck/menu?id=${truck.id}` as any)}
@@ -863,50 +864,47 @@ console.log('[FORMAT DATE]', dateInput);
                   <ChevronRight size={16} color={colors.primary} />
                 </TouchableOpacity>
               </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.menuScrollContent}
-                onScrollBeginDrag={() => incrementMenuView(truck.id)}
-              >
-                {menuBoardImageUrl ? (
-                  <TouchableOpacity
-                    style={styles.menuItemCard}
-                    onPress={() => setSelectedImage(menuBoardImageUrl)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.menuBoardTileImageWrap}>
-                      <Image source={{ uri: menuBoardImageUrl }} style={styles.menuItemImage} contentFit="contain" />
-                      <View style={styles.menuBoardBadge}>
-                        <Text style={styles.menuBoardBadgeText}>Menu Board</Text>
+              {menuBoardImageUrl ? (
+                <FeaturedMenuPreview
+                  imageUrl={menuBoardImageUrl}
+                  title="📋 Original Menu"
+                  subtitle="Tap to enlarge"
+                  accessibilityLabel="Enlarge original menu"
+                  onPress={() => setSelectedImage(menuBoardImageUrl)}
+                />
+              ) : null}
+              {truckMenuItems.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.menuScrollContent}
+                  onScrollBeginDrag={() => incrementMenuView(truck.id)}
+                >
+                  {truckMenuItems.slice(0, 6).map((item, index) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.menuItemCard, index === 0 && styles.firstMenuItem]}
+                      onPress={() => {
+                        setSelectedMenuItem(item);
+                        setShowMenuItemModal(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      {item.image ? (
+                        <Image source={{ uri: item.image }} style={styles.menuItemImage} contentFit="cover" />
+                      ) : (
+                        <View style={styles.menuItemImagePlaceholder}>
+                          <Utensils size={32} color={colors.secondaryText} />
+                        </View>
+                      )}
+                      <View style={styles.menuItemInfo}>
+                        <Text style={styles.menuItemName} numberOfLines={2}>{item.name}</Text>
+                        {item.price > 0 ? <Text style={styles.menuItemPrice}>${item.price.toFixed(2)}</Text> : null}
                       </View>
-                    </View>
-                  </TouchableOpacity>
-                ) : null}
-                {truckMenuItems.slice(0, 6).map((item, index) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[styles.menuItemCard, !menuBoardImageUrl && index === 0 && styles.firstMenuItem]}
-                    onPress={() => {
-                      setSelectedMenuItem(item);
-                      setShowMenuItemModal(true);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    {item.image ? (
-                      <Image source={{ uri: item.image }} style={styles.menuItemImage} contentFit="cover" />
-                    ) : (
-                      <View style={styles.menuItemImagePlaceholder}>
-                        <Utensils size={32} color={colors.secondaryText} />
-                      </View>
-                    )}
-                    <View style={styles.menuItemInfo}>
-                      <Text style={styles.menuItemName} numberOfLines={2}>{item.name}</Text>
-                      {item.price > 0 ? <Text style={styles.menuItemPrice}>${item.price.toFixed(2)}</Text> : null}
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              ) : null}
             </TruckSectionCard>
           )}
 
@@ -1998,26 +1996,6 @@ announcementTime: {
     fontSize: 16,
     fontWeight: '700' as const,
     color: colors.primary,
-  },
-  menuBoardTileImageWrap: {
-    position: 'relative',
-    width: '100%',
-    height: 120,
-    backgroundColor: colors.secondaryBackground,
-  },
-  menuBoardBadge: {
-    position: 'absolute',
-    left: 8,
-    bottom: 8,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.68)',
-  },
-  menuBoardBadgeText: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    color: '#fff',
   },
   emptyAnnouncementState: {
     alignItems: 'center',

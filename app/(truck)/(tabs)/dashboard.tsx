@@ -221,13 +221,13 @@ export default function TruckDashboard() {
   );
   const dashboardRecommendations = useMemo(
     () => commandCenter
-      ? coordinateTruckDashboardRecommendations(commandCenter, rawOpportunities)
+      ? coordinateTruckDashboardRecommendations(commandCenter, rawOpportunities, truck?.id)
       : null,
-    [commandCenter, rawOpportunities]
+    [commandCenter, rawOpportunities, truck?.id]
   );
   useEffect(() => {
     setIsRoadTipExpanded(false);
-  }, [dashboardRecommendations?.roadTip.id, truck?.id]);
+  }, [commandCenter?.nextAction, dashboardRecommendations?.roadTip.id, truck?.id]);
   const displayTruckCoach = dashboardRecommendations
     ? {
       ...dashboardRecommendations.coach,
