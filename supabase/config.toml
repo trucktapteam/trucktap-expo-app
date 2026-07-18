@@ -1,7 +1,9 @@
 
 [functions.notify-favorite-truck-open]
 enabled = true
-verify_jwt = true
+# This function authenticates the database webhook with the dedicated
+# FAVORITE_TRUCK_OPEN_WEBHOOK_SECRET header instead of a Supabase JWT.
+verify_jwt = false
 import_map = "./functions/notify-favorite-truck-open/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx

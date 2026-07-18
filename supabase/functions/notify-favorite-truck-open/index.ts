@@ -30,19 +30,52 @@ type ExpoTicket = {
   };
 };
 
+const WEBHOOK_SECRET_ENV = "FAVORITE_TRUCK_OPEN_WEBHOOK_SECRET";
+const WEBHOOK_SECRET_HEADER = "x-trucktap-webhook-secret";
+
+const secretsMatch = async (
+  provided: string,
+  expected: string,
+): Promise<boolean> => {
+  const encoder = new TextEncoder();
+  const [providedDigest, expectedDigest] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(provided)),
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+  ]);
+  const left = new Uint8Array(providedDigest);
+  const right = new Uint8Array(expectedDigest);
+  let difference = left.length ^ right.length;
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
+  }
+  return difference === 0;
+};
+
 const isValidExpoPushToken = (token: unknown): token is string => {
   if (typeof token !== "string") return false;
   const trimmed = token.trim();
   return /^(ExpoPushToken|ExponentPushToken)\[[^\]]+\]$/.test(trimmed);
 };
 
-const hasValidExpoPushToken = (profile: ProfileRow): profile is ValidProfileRow =>
-  isValidExpoPushToken(profile.push_token);
+const hasValidExpoPushToken = (
+  profile: ProfileRow,
+): profile is ValidProfileRow => isValidExpoPushToken(profile.push_token);
 
-Deno.serve(async (req: Request) => {
+export const handler = async (req: Request): Promise<Response> => {
   const startedAt = Date.now();
 
   try {
+    const expectedSecret = Deno.env.get(WEBHOOK_SECRET_ENV) ?? "";
+    const providedSecret = req.headers.get(WEBHOOK_SECRET_HEADER) ?? "";
+    const secretMatches = await secretsMatch(providedSecret, expectedSecret);
+    if (!expectedSecret || !providedSecret || !secretMatches) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    if (req.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+
     const payload = await req.json();
     const record = payload.record;
     const oldRecord = payload.old_record;
@@ -69,7 +102,7 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
     const { data: favorites, error: favoritesError } = await supabase
@@ -127,7 +160,9 @@ Deno.serve(async (req: Request) => {
 
     const tokenRows = (profiles ?? []) as ProfileRow[];
     const validTokenRows = tokenRows.filter(hasValidExpoPushToken);
-    const invalidTokenRows = tokenRows.filter((profile: ProfileRow) => !hasValidExpoPushToken(profile));
+    const invalidTokenRows = tokenRows.filter((profile: ProfileRow) =>
+      !hasValidExpoPushToken(profile)
+    );
     let invalidTokensCleared = 0;
 
     if (invalidTokenRows.length > 0) {
@@ -182,20 +217,37 @@ Deno.serve(async (req: Request) => {
     });
 
     const expoJson = await expoResponse.json();
-    const tickets = (Array.isArray(expoJson?.data) ? expoJson.data : []) as ExpoTicket[];
-    const expoAccepted = tickets.filter((ticket: ExpoTicket) => ticket?.status === "ok").length;
-    const expoRejected = tickets.filter((ticket: ExpoTicket) => ticket?.status === "error").length;
+    const tickets =
+      (Array.isArray(expoJson?.data) ? expoJson.data : []) as ExpoTicket[];
+    const expoAccepted = tickets.filter((ticket: ExpoTicket) =>
+      ticket?.status === "ok"
+    ).length;
+    const expoRejected = tickets.filter((ticket: ExpoTicket) =>
+      ticket?.status === "error"
+    ).length;
 
     const staleTokenRows = tickets
-      .map((ticket: ExpoTicket, index: number) => ({ ticket, profile: validTokenRows[index] }))
-      .filter(({ ticket, profile }: { ticket: ExpoTicket; profile?: ProfileRow }) => {
-        if (!profile || ticket?.status !== "error") return false;
-        const detailError = ticket?.details?.error;
-        const message = typeof ticket?.message === "string" ? ticket.message.toLowerCase() : "";
-        return detailError === "DeviceNotRegistered" || message.includes("not a registered push notification recipient");
-      })
-      .map(({ profile }: { ticket: ExpoTicket; profile?: ProfileRow }) => profile)
-      .filter((profile: ProfileRow | undefined): profile is ProfileRow => Boolean(profile));
+      .map((ticket: ExpoTicket, index: number) => ({
+        ticket,
+        profile: validTokenRows[index],
+      }))
+      .filter(
+        ({ ticket, profile }: { ticket: ExpoTicket; profile?: ProfileRow }) => {
+          if (!profile || ticket?.status !== "error") return false;
+          const detailError = ticket?.details?.error;
+          const message = typeof ticket?.message === "string"
+            ? ticket.message.toLowerCase()
+            : "";
+          return detailError === "DeviceNotRegistered" ||
+            message.includes("not a registered push notification recipient");
+        },
+      )
+      .map(({ profile }: { ticket: ExpoTicket; profile?: ProfileRow }) =>
+        profile
+      )
+      .filter((profile: ProfileRow | undefined): profile is ProfileRow =>
+        Boolean(profile)
+      );
 
     let staleTokensCleared = invalidTokensCleared;
 
@@ -241,4 +293,8 @@ Deno.serve(async (req: Request) => {
     });
     return new Response("Function crashed", { status: 500 });
   }
-});
+};
+
+if (import.meta.main) {
+  Deno.serve(handler);
+}
