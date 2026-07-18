@@ -13,6 +13,10 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { clearPushTokenForUser } from '@/lib/pushToken';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { getPublicReadyStatus } from '@/lib/truckPublicReady';
+import {
+  findPersistedRequestedLiveLocation,
+  rpcSupportsCanonicalLiveLocation,
+} from '@/lib/liveLocationCompatibility';
 
 const parseJsonArray = (val: any): any[] => {
   if (Array.isArray(val)) return val;
@@ -2037,11 +2041,65 @@ if (error) {
       throw new Error('Failed to go live: truck not found or not authorized.');
     }
 
-    let hydrated = mapSupabaseTruckToLocal(rpcRow);
-    const locationRows = await fetchTruckLocationRows([truckId], 'goLive');
-    if (!locationRows || locationRows.length === 0) {
+    const requestedLocation = {
+      latitude: location.latitude,
+      longitude: location.longitude,
+      label: locationLabel ?? '',
+    };
+    let locationRows = await fetchTruckLocationRows([truckId], 'goLive');
+    let persistedRequestedLocation = findPersistedRequestedLiveLocation(
+      locationRows,
+      truckId,
+      requestedLocation,
+    );
+    const rpcUsesCanonicalLocation = rpcSupportsCanonicalLiveLocation(rpcRow);
+    const rpcPersistedRequestedLocation =
+      rpcUsesCanonicalLocation && Boolean(persistedRequestedLocation);
+
+    // The current production RPC records LIVE state/audit only. Phase 1A also
+    // writes the canonical location atomically. Inspect the persisted value so
+    // one client supports both contracts without issuing a duplicate write.
+    if (!rpcUsesCanonicalLocation) {
+      const locationWrite = await upsertTruckLiveLocation(
+        truckId,
+        location,
+        new Date().toISOString(),
+      );
+
+      if (locationWrite.error) {
+        console.log('[AppContext] Legacy location upsert error:', locationWrite.error.message);
+        throw new Error(`Failed to update location: ${locationWrite.error.message}`);
+      }
+
+      persistedRequestedLocation = findPersistedRequestedLiveLocation(
+        locationWrite.data as LocationRow[] | null,
+        truckId,
+        requestedLocation,
+      );
+      locationRows = persistedRequestedLocation ? [persistedRequestedLocation] : null;
+
+      if (!persistedRequestedLocation) {
+        console.log('[AppContext] Legacy location write did not persist the requested location:', {
+          currentUserId: authUser.id,
+          truckId,
+        });
+        throw new Error('Failed to save live location: no matching location row was written.');
+      }
+    } else if (persistedRequestedLocation) {
+      locationRows = [persistedRequestedLocation];
+    } else {
       throw new Error('Live location was saved but could not be verified.');
     }
+
+    if (__DEV__) {
+      console.log('[AppContext] Go Live location persistence path:', {
+        truckId,
+        persistedByRpc: rpcPersistedRequestedLocation,
+        usedLegacyFallback: !rpcPersistedRequestedLocation,
+      });
+    }
+
+    let hydrated = mapSupabaseTruckToLocal(rpcRow);
     hydrated = mergeTruckLocations([hydrated], locationRows)[0];
 
     const hasVerifiedLocation =
@@ -2073,7 +2131,7 @@ if (error) {
     setSupabaseOwnedTrucks(prev =>
       prev.map(truck => (truck.id === truckId ? { ...truck, ...hydrated } : truck))
     );
-  }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured, mapSupabaseTruckToLocal, mergeTruckLocations, fetchTruckLocationRows]);
+  }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured, upsertTruckLiveLocation, mapSupabaseTruckToLocal, mergeTruckLocations, fetchTruckLocationRows]);
 
   const goOffline = useCallback(async ({ truckId, source, updates }: GoOfflineInput): Promise<void> => {
     if (!isAuthenticated || !authUser) {

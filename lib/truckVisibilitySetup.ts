@@ -1,5 +1,9 @@
-import { FoodTruck } from '@/types';
-import { getPublicReadyStatus, PublicReadyRequirement } from './truckPublicReady';
+import type { FoodTruck } from '../types';
+import { getPublicReadyStatus } from './truckPublicReady';
+import type {
+  PublicReadyEvaluationOptions,
+  PublicReadyRequirement,
+} from './truckPublicReady';
 
 export type TruckVisibilitySetupRequirement = PublicReadyRequirement;
 export type TruckVisibilityRecommendedItem = 'bio' | 'service_area';
@@ -20,13 +24,18 @@ const normalize = (value?: string | null): string => value?.trim() ?? '';
  * Consumes the same canonical Public Ready helper as lib/truckProfileCompleteness.ts
  * so the owner setup wizard and the customer-visibility gate can never drift apart.
  */
-export function getTruckVisibilitySetupStatus(truck: FoodTruck): TruckVisibilitySetupStatus {
-  const publicReady = getPublicReadyStatus(truck);
+export function getTruckVisibilitySetupStatus(
+  truck: FoodTruck,
+  publicReadyOptions?: PublicReadyEvaluationOptions,
+): TruckVisibilitySetupStatus {
+  const publicReady = getPublicReadyStatus(truck, publicReadyOptions);
   const bio = normalize(truck.bio);
   const serviceArea = normalize(truck.service_area);
 
   const recommended: TruckVisibilityRecommendedItem[] = [];
-  if (publicReady.isLegacy && bio.length === 0) recommended.push('bio');
+  if (publicReady.isLegacy && !publicReady.bioRequired && bio.length === 0) {
+    recommended.push('bio');
+  }
   if (serviceArea.length === 0) recommended.push('service_area');
 
   return {
@@ -37,6 +46,9 @@ export function getTruckVisibilitySetupStatus(truck: FoodTruck): TruckVisibility
   };
 }
 
-export function isTruckVisibilitySetupComplete(truck: FoodTruck): boolean {
-  return getTruckVisibilitySetupStatus(truck).complete;
+export function isTruckVisibilitySetupComplete(
+  truck: FoodTruck,
+  publicReadyOptions?: PublicReadyEvaluationOptions,
+): boolean {
+  return getTruckVisibilitySetupStatus(truck, publicReadyOptions).complete;
 }

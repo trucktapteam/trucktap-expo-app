@@ -42,7 +42,7 @@ export default function VisibilityWizardScreen() {
   } = useApp();
   const truck = getUserTruck();
   // Required steps only — matches the Public Ready gate exactly. Bio is required
-  // here only for trucks created on/after PUBLIC_READY_BIO_REQUIRED_AT; service
+  // by the centralized Public Ready enforcement policy; service
   // area is never a required step (recommended-only, surfaced after completion).
   const steps = useMemo(() => truck ? getPublicReadyRequirementKeys(truck) : [], [truck]);
   const status = useMemo(() => truck ? getTruckVisibilitySetupStatus(truck) : null, [truck]);

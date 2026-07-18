@@ -1,16 +1,17 @@
-import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
-import { FoodTruck } from '@/types';
+import { PUBLIC_READY_ENFORCEMENT_POLICY } from '../constants/publicReady';
+import type { PublicReadyEnforcementPolicy } from '../constants/publicReady';
+import {
+  DEFAULT_TRUCK_HERO_IMAGE,
+  DEFAULT_TRUCK_LOGO_IMAGE,
+} from '../constants/truckDefaults';
+import type { FoodTruck } from '../types';
 
 /**
  * Bio became a Public Ready requirement with TruckTap 2.0. Trucks created
- * before this cutoff are grandfathered and are never required to add a bio
- * to remain publicly visible — only trucks created on or after this cutoff
- * must supply one. Revisit this cutoff once legacy-truck bio adoption is
- * sufficiently high.
+ * before the configured cohort boundary are grandfathered while legacy
+ * enforcement is disabled. Trucks created on or after the cohort boundary
+ * must supply one immediately.
  */
-export const PUBLIC_READY_BIO_REQUIRED_AT = '2026-07-19T00:00:00Z';
-
-const PUBLIC_READY_BIO_REQUIRED_AT_MS = Date.parse(PUBLIC_READY_BIO_REQUIRED_AT);
 
 export type PublicReadyRequirement = 'name' | 'logo' | 'hero' | 'bio';
 
@@ -21,46 +22,97 @@ export type PublicReadyStatus = {
   bioRequired: boolean;
 };
 
-type PublicReadyTruckInput = Pick<FoodTruck, 'name' | 'logo' | 'hero_image' | 'bio' | 'created_at'>;
+type PublicReadyTruckInput = Pick<
+  FoodTruck,
+  'name' | 'logo' | 'hero_image' | 'bio' | 'created_at'
+>;
+
+export type PublicReadyEvaluationOptions = {
+  now?: string | number | Date;
+  policy?: PublicReadyEnforcementPolicy;
+};
 
 const normalize = (value?: string | null): string => value?.trim() ?? '';
 
+const parseTimestamp = (value: string | number | Date): number => {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  return Date.parse(value);
+};
+
+const getPolicy = (
+  options?: PublicReadyEvaluationOptions,
+): PublicReadyEnforcementPolicy =>
+  options?.policy ?? PUBLIC_READY_ENFORCEMENT_POLICY;
+
 /**
- * A truck is legacy (grandfathered from the bio requirement) when it was
- * created before the Public Ready rollout, or when its creation time is
- * missing/invalid and therefore cannot be proven to be a new truck.
+ * A truck belongs to the legacy cohort when it was created before the Public
+ * Ready rollout, or when its creation time is missing/invalid and it therefore
+ * cannot be proven to be a new truck.
  */
-export function isLegacyTruck(truck: Pick<FoodTruck, 'created_at'>): boolean {
+export function isLegacyTruck(
+  truck: Pick<FoodTruck, 'created_at'>,
+  options?: PublicReadyEvaluationOptions,
+): boolean {
   const createdAt = truck.created_at;
   if (!createdAt) return true;
 
   const parsed = Date.parse(createdAt);
   if (!Number.isFinite(parsed)) return true;
 
-  return parsed < PUBLIC_READY_BIO_REQUIRED_AT_MS;
+  return parsed < Date.parse(getPolicy(options).newTruckBioRequiredAt);
 }
 
-export function isBioRequiredForTruck(truck: Pick<FoodTruck, 'created_at'>): boolean {
-  return !isLegacyTruck(truck);
+export function isLegacyTruckBioEnforcementActive(
+  options?: PublicReadyEvaluationOptions,
+): boolean {
+  const enforcementAt = getPolicy(options).legacyTruckBioEnforcementAt;
+  if (!enforcementAt) return false;
+
+  const enforcementAtMs = Date.parse(enforcementAt);
+  const nowMs = parseTimestamp(options?.now ?? Date.now());
+  return Number.isFinite(enforcementAtMs)
+    && Number.isFinite(nowMs)
+    && nowMs >= enforcementAtMs;
 }
 
-/** The full set of Public Ready requirement keys that apply to this truck (bio only for non-legacy trucks). */
-export function getPublicReadyRequirementKeys(truck: Pick<FoodTruck, 'created_at'>): PublicReadyRequirement[] {
-  return isBioRequiredForTruck(truck) ? ['name', 'logo', 'hero', 'bio'] : ['name', 'logo', 'hero'];
+export function isBioRequiredForTruck(
+  truck: Pick<FoodTruck, 'created_at'>,
+  options?: PublicReadyEvaluationOptions,
+): boolean {
+  return !isLegacyTruck(truck, options)
+    || isLegacyTruckBioEnforcementActive(options);
 }
 
-export function getPublicReadyStatus(truck: PublicReadyTruckInput): PublicReadyStatus {
+/** The Public Ready requirement keys that apply to this truck. */
+export function getPublicReadyRequirementKeys(
+  truck: Pick<FoodTruck, 'created_at'>,
+  options?: PublicReadyEvaluationOptions,
+): PublicReadyRequirement[] {
+  return isBioRequiredForTruck(truck, options)
+    ? ['name', 'logo', 'hero', 'bio']
+    : ['name', 'logo', 'hero'];
+}
+
+export function getPublicReadyStatus(
+  truck: PublicReadyTruckInput,
+  options?: PublicReadyEvaluationOptions,
+): PublicReadyStatus {
   const name = normalize(truck.name);
   const logo = normalize(truck.logo);
   const hero = normalize(truck.hero_image);
   const bio = normalize(truck.bio);
-  const legacy = isLegacyTruck(truck);
-  const bioRequired = !legacy;
+  const legacy = isLegacyTruck(truck, options);
+  const bioRequired = isBioRequiredForTruck(truck, options);
 
   const missing: PublicReadyRequirement[] = [];
   if (name.length === 0) missing.push('name');
-  if (logo.length === 0 || logo === DEFAULT_TRUCK_LOGO_IMAGE) missing.push('logo');
-  if (hero.length === 0 || hero === DEFAULT_TRUCK_HERO_IMAGE) missing.push('hero');
+  if (logo.length === 0 || logo === DEFAULT_TRUCK_LOGO_IMAGE) {
+    missing.push('logo');
+  }
+  if (hero.length === 0 || hero === DEFAULT_TRUCK_HERO_IMAGE) {
+    missing.push('hero');
+  }
   if (bioRequired && bio.length === 0) missing.push('bio');
 
   return {
@@ -71,6 +123,9 @@ export function getPublicReadyStatus(truck: PublicReadyTruckInput): PublicReadyS
   };
 }
 
-export function isTruckPublicReady(truck: PublicReadyTruckInput): boolean {
-  return getPublicReadyStatus(truck).complete;
+export function isTruckPublicReady(
+  truck: PublicReadyTruckInput,
+  options?: PublicReadyEvaluationOptions,
+): boolean {
+  return getPublicReadyStatus(truck, options).complete;
 }

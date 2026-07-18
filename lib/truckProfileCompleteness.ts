@@ -1,6 +1,10 @@
-import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
-import { FoodTruck, User } from '@/types';
+import {
+  DEFAULT_TRUCK_HERO_IMAGE,
+  DEFAULT_TRUCK_LOGO_IMAGE,
+} from '../constants/truckDefaults';
+import type { FoodTruck, User } from '../types';
 import { isTruckPublicReady } from './truckPublicReady';
+import type { PublicReadyEvaluationOptions } from './truckPublicReady';
 
 export type TruckProfileRequirement = 'name' | 'logo' | 'hero' | 'service_area';
 
@@ -59,9 +63,10 @@ export function isTruckProfileComplete(truck: FoodTruck): boolean {
  */
 export function canViewIncompleteTruckProfile(
   truck: FoodTruck,
-  viewer?: Pick<User, 'id' | 'role' | 'truck_id'> | null
+  viewer?: Pick<User, 'id' | 'role' | 'truck_id'> | null,
+  publicReadyOptions?: PublicReadyEvaluationOptions,
 ): boolean {
-  if (isTruckPublicReady(truck)) return true;
+  if (isTruckPublicReady(truck, publicReadyOptions)) return true;
   if (viewer?.role === 'admin') return true;
   return (
     (!!viewer?.id && truck.owner_id === viewer.id) ||
