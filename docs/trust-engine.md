@@ -2,115 +2,146 @@
 
 ## Purpose
 
-The Trust Engine is TruckTap's guarantee that a truck's LIVE badge reflects
-reality: if a truck shows as LIVE to customers, that status change actually
-happened, is auditable, and expires on its own if the owner goes silent.
-It has three parts:
+The Trust Engine keeps TruckTap's LIVE badge truthful: LIVE state changes are
+atomic and auditable, and stale state resolves closed. Its product philosophy
+is simple:
 
-1. A single, canonical way to change LIVE status (the RPCs below).
-2. An immutable audit log of every LIVE status change (`truck_live_events`).
-3. A cron job that force-closes a truck if it goes stale, so "LIVE" never
-   silently lies about a truck that stopped updating.
+> TruckTap assists. Owners stay in control.
 
-## Canonical LIVE flow (`goLive()` → `public.go_live_truck`)
+The database has one private canonical transition,
+`private.transition_truck_live`, shared by authenticated owner RPCs and
+internal cleanup/automation paths. Clients cannot execute it directly. A
+database guard rejects direct updates to `is_open`, the LIVE timestamps/source,
+and `live_stop_id`, so owners and admins cannot bypass the transition or forge
+session ownership with a table update.
 
-`AppContext.goLive({ truckId, source, location })` is the only app-side
-entry point for putting a truck LIVE. It calls the `go_live_truck(p_truck_id,
-p_source, p_latitude, p_longitude, p_location_label, p_metadata)` Postgres
-RPC, which in one transaction:
+## Canonical LIVE transition
 
-1. Verifies the caller owns the truck (`trucks.owner_id = auth.uid()`) or
-   holds `profiles.role = 'admin'`. Anyone else gets an authorization error
-   and no rows change.
-2. Updates `trucks`: `is_open = true`, `live_started_at`, `last_live_updated_at`,
-   `live_expires_at` (now + 12h), `live_source`, `updated_at`.
-3. Inserts a `truck_live_events` row: `action = 'go_live'`, the real `source`
-   the caller passed, `actor_user_id = auth.uid()`, and the location fields.
+`public.go_live_truck` retains its existing signature and owner/admin
+authorization boundary. It delegates to the private transition, which performs
+the following in one database transaction:
 
-Because both the update and the insert are inside the RPC's single
-transaction, one cannot happen without the other. Afterward, `goLive()`
-separately upserts the truck's live coordinates into the `locations` table
-(a distinct table that customer-facing map queries read from) and verifies
-the save before updating local app state.
+1. Locks the truck row.
+2. Upserts the canonical `locations` row.
+3. Sets the truck's LIVE timestamps/source and `is_open = true`.
+4. Sets `live_stop_id` only for an internal scheduled-stop start. An
+   owner-initiated/manual Go LIVE clears `live_stop_id`.
+5. Inserts the matching `truck_live_events` audit row.
 
-## Canonical OFFLINE flow (`goOffline()` → `public.go_offline_truck`)
+An automatic scheduled start never replaces a truck that is already LIVE.
+This is the first "manual always wins" boundary.
 
-`AppContext.goOffline({ truckId, source, updates? })` calls
-`go_offline_truck(p_truck_id, p_source, p_metadata)`, which in one
-transaction:
+Caller-provided source labels on the public owner RPC are untrusted. The
+canonical source for every owner/admin `go_live_truck` call is `manual`; the
+requested label is retained only as explicitly untrusted audit metadata.
 
-1. Verifies ownership/admin the same way `go_live_truck` does.
-2. Updates `trucks`: `is_open = false`, `live_expires_at = null`,
-   `live_source`, `updated_at`. It deliberately does **not** touch
-   `last_live_updated_at` or `live_started_at` — those remain the historical
-   record of the most recent LIVE session.
-3. Inserts a `truck_live_events` row: `action = 'go_offline'`, the real
-   `source`, `actor_user_id = auth.uid()`.
+Direct `locations` writes remain available while a truck is offline. Once the
+truck is open, a trigger permits location insert/update/delete only from the
+private canonical transition. This prevents owners from moving an active
+customer-facing LIVE marker without the matching canonical state and audit
+transaction.
 
-If the caller also passes `updates` (today, only the archive flow does —
-`archived`, `archivedAt`, `archiveReason`), those are persisted with a
-follow-up `updateTruckDetails()` call after the RPC succeeds. This keeps
-`go_offline_truck` single-purpose (LIVE status only); archiving a truck is a
-separate concern that happens to often occur alongside going offline.
+## Canonical OFFLINE transition and session ownership
 
-## Cron expiration flow (`close_stale_open_trucks`)
+`public.go_offline_truck` also retains its existing signature and owner/admin
+checks. Every successful offline transition clears `live_stop_id` and writes
+the audit row atomically. Its caller-provided source is also untrusted and is
+normalized to canonical `manual`. Trusted `schedule`, `expiration`, and
+`archive` sources are reserved for private/server-controlled paths.
+The current owner Archive flow remains functionally compatible but is audited
+as `manual` until a dedicated controlled archive transition exists.
 
-Every 15 minutes, `public.close_stale_open_trucks()` (unchanged by this
-work) finds trucks where `is_open = true` and `live_expires_at` has passed
-(or, for legacy rows, `last_live_updated_at` is older than 12 hours), and in
-one statement closes them (`is_open = false`, `live_source = 'expiration'`)
-and inserts the matching `truck_live_events` row
-(`action = 'go_offline'`, `source = 'expiration'`, `actor_user_id = null`).
-This is the reference implementation the `go_live_truck` / `go_offline_truck`
-RPCs were built to match: update and audit insert in the same transaction,
-so a stale close can never happen without leaving a trace.
+`trucks.live_stop_id` is the owner of an automated LIVE session. A future
+scheduled end passes its stop ID as an expected owner:
 
-## Why `trucks.updated_at` is NOT a LIVE freshness signal
+- If `live_stop_id` still matches, it may close the truck.
+- If the owner manually went LIVE, went offline, or another stop owns the
+  session, the transition returns a structured no-op and changes nothing.
 
-`updated_at` is a generic "something on this truck changed" timestamp. It is
-set on every truck write — menu edits, gallery uploads, operating hours,
-profile edits, archiving — not just LIVE status changes. There is no
-database trigger that manages it; every write path that touches `trucks`
-sets it explicitly. Because of this, `updated_at` cannot tell you whether a
-truck is still genuinely LIVE — a truck could have `is_open = true` from six
-hours ago and still get its `updated_at` bumped a minute ago by an unrelated
-menu edit. LIVE freshness is tracked on dedicated columns instead (below).
+This compare-and-set contract prevents an old stop from closing a newer manual
+or scheduled session. The primitive rejects construction of an unconditional
+schedule-sourced end: it requires a non-null expected `live_stop_id`, a
+non-null expected `live_started_at`, and restart matching enabled. Valid stale
+work remains distinguishable as `live_stop_mismatch`,
+`live_session_restarted`, or `already_offline`.
 
-## Purpose of the dedicated LIVE columns
+## Stale cleanup
 
-- **`last_live_updated_at`** — the last time the truck's LIVE status was
-  confirmed fresh (set on go-live, left untouched on go-offline). This is
-  the legacy fallback signal `close_stale_open_trucks` uses for rows that
-  predate `live_expires_at`.
-- **`live_started_at`** — when the current or most recent LIVE session
-  began. Historical; not touched by going offline.
-- **`live_expires_at`** — when the current LIVE session should auto-expire
-  if untouched. Set to 12 hours out on go-live, cleared (`null`) on
-  go-offline. This is the primary signal `close_stale_open_trucks` checks.
-- **`live_source`** — what caused the most recent LIVE status change:
-  `manual`, `schedule`, `nudge_confirmation`, `expiration`, or `archive`.
+`public.close_stale_open_trucks()` now delegates each expiration to the same
+private transition. It also passes the candidate session's `live_started_at`.
+If an owner restarts LIVE between the candidate scan and the locked transition,
+the timestamp no longer matches and cleanup returns a safe no-op. A later pass
+can reassess the current state.
 
-## Audit guarantees
+The former client-side stale auto-close call was removed because it used the
+unconditional owner RPC and could race with a newly restarted session. Database
+cleanup is now the only expiration writer.
 
-Every LIVE status change — go-live, go-offline, or cron expiration — writes
-exactly one row to `truck_live_events` with the real `source` and, for
-app-triggered changes, the real `actor_user_id`. Because the update and the
-insert happen inside a single Postgres transaction (either the RPC body or
-the cron function's CTE), there is no code path where a truck's `is_open`
-changes without a corresponding audit row, and no code path where a
-`truck_live_events` row is written without the corresponding state change.
-`truck_live_events` is protected by RLS: a truck's owner and admins can read
-its rows; only the owner, an admin, or a `SECURITY DEFINER` function
-(`close_stale_open_trucks`, `go_live_truck`, `go_offline_truck`) can write to
-it.
+Each stale candidate runs inside its own PL/pgSQL exception block. If one
+transition raises, that candidate's subtransaction rolls back, a sanitized
+warning records its truck ID and SQLSTATE, and cleanup continues. Successful
+closes before and after the failure remain part of the successful top-level
+call. A failed candidate remains unchanged and receives no misleading
+`go_offline` event.
 
-## Why all LIVE state changes now flow through the RPCs
+`live_expires_at` remains the primary stale signal, with
+`last_live_updated_at` as the legacy 12-hour fallback. General
+`trucks.updated_at` is not a LIVE freshness signal.
 
-Before this change, `goLive()`/`goOffline()` performed the `trucks` update
-and the `truck_live_events` insert as two independent client-issued network
-calls. The insert's failure was swallowed (logged, not thrown), so a
-transient network error could change a truck's LIVE status with no audit
-trail — silently breaking the guarantee this whole system exists to provide.
-Routing both operations through `go_live_truck` / `go_offline_truck` closes
-that gap: the two writes are now one atomic unit, so they always succeed or
-fail together, exactly like `close_stale_open_trucks` already did.
+Future scheduled-start processing must treat the canonical `already_live`
+result as a recheck/retry condition before resolving the start. A previous
+stop's end may be concurrently committing. The retry must be bounded, short,
+and idempotent; it must re-read current `live_stop_id` and `live_started_at`
+before retrying and must never replace or override a manual LIVE session.
+
+## Scheduled-stop automation foundation
+
+Hands-Free LIVE is opt-in per explicitly created `upcoming_stops` row and
+defaults off. An enabled row must have:
+
+- `status = 'scheduled'`;
+- an end after its start;
+- a nonblank display location;
+- finite coordinates in valid latitude/longitude ranges;
+- a valid IANA timezone from PostgreSQL's timezone catalog; and
+- a future start whenever a relevant armed-stop edit occurs before automatic
+  start resolves.
+
+The future-start rule is lifecycle-aware trigger logic, not a
+wall-clock-dependent permanent `CHECK`. Before start resolution, owners may
+edit the automation window only while the complete contract remains valid and
+the start remains future. Once `auto_start_resolved_at` or
+`auto_live_started_at` is populated, Phase 1A freezes both `starts_at` and
+`ends_at` to avoid an ambiguous post-start window.
+
+If an open truck's `live_stop_id` points to a stop, that stop cannot be
+deleted, disabled, moved to another truck, or changed to any automation-
+ineligible status (`delayed`, `cancelled`, `sold_out`, or `completed`). The
+owner must first go offline. Phase 1B needs a controlled cancellation RPC that
+locks both rows, closes only the matching session, updates the stop, and writes
+explicit cancellation audit metadata atomically.
+
+All new automation configuration and lifecycle fields are hidden from current
+public stop reads and are not directly client-writable. Phase 1B must add
+controlled owner RPCs before an owner UI can configure them.
+
+## Explicit non-goals
+
+Hands-Free LIVE is automatic scheduled start/stop only:
+
+- no auto-pause;
+- no auto-resume;
+- no auto-announcements; and
+- no Operating Hours automation.
+
+Operating Hours remain display/configuration data and never trigger LIVE state.
+
+## Audit and closed-safe guarantees
+
+Every successful canonical LIVE/OFFLINE transition updates state and inserts
+one `truck_live_events` row in the same transaction. Expected-session failures
+return a no-op and create no misleading audit event.
+
+When TruckTap cannot prove that an automated action owns the current session,
+it does not mutate that session. Stale cleanup remains the closed-safe fallback
+for genuinely abandoned LIVE state.

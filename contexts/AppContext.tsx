@@ -237,6 +237,9 @@ const mapUpcomingStopRow = (row: any): UpcomingStop => ({
   updated_at: row.updated_at ?? undefined,
 });
 
+const UPCOMING_STOP_PUBLIC_COLUMNS =
+  'id, truck_id, starts_at, ends_at, location_text, note, status, created_at, updated_at';
+
 export type TruckActivitySummary = {
   inactive: boolean;
   lastLiveAt?: string;
@@ -431,7 +434,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const lastForegroundRefreshAtRef = useRef(0);
   const foregroundRefreshInFlightRef = useRef(false);
   const suppressForegroundRefreshRef = useRef(0);
-  const staleOpenAutoCloseAttemptedRef = useRef(new Set<string>());
 
   const beginImagePickerSession = useCallback((source: string) => {
     suppressForegroundRefreshRef.current += 1;
@@ -726,7 +728,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     try {
       const { data, error } = await supabase
         .from('upcoming_stops')
-        .select('*')
+        .select(UPCOMING_STOP_PUBLIC_COLUMNS)
         .order('starts_at', { ascending: true });
 
       if (error) {
@@ -2001,8 +2003,6 @@ if (error) {
       return;
     }
 
-    const liveAt = new Date();
-    const liveAtIso = liveAt.toISOString();
     const locationLabel = location?.address?.trim() || null;
     const latitude = Number.isFinite(location?.latitude) ? location.latitude : null;
     const longitude = Number.isFinite(location?.longitude) ? location.longitude : null;
@@ -2037,17 +2037,12 @@ if (error) {
       throw new Error('Failed to go live: truck not found or not authorized.');
     }
 
-    const locationWrite = await upsertTruckLiveLocation(truckId, location, liveAtIso);
-    if (locationWrite.error) {
-      console.log('[AppContext] Location upsert error:', locationWrite.error.message);
-      throw new Error(`Failed to update location: ${locationWrite.error.message}`);
-    }
-
     let hydrated = mapSupabaseTruckToLocal(rpcRow);
-    const locationRow = locationWrite.data?.[0] ?? null;
-    if (locationRow) {
-      hydrated = mergeTruckLocations([hydrated], [locationRow])[0];
+    const locationRows = await fetchTruckLocationRows([truckId], 'goLive');
+    if (!locationRows || locationRows.length === 0) {
+      throw new Error('Live location was saved but could not be verified.');
     }
+    hydrated = mergeTruckLocations([hydrated], locationRows)[0];
 
     const hasVerifiedLocation =
       Number.isFinite(hydrated.location?.latitude) &&
@@ -2078,7 +2073,7 @@ if (error) {
     setSupabaseOwnedTrucks(prev =>
       prev.map(truck => (truck.id === truckId ? { ...truck, ...hydrated } : truck))
     );
-  }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured, upsertTruckLiveLocation, mapSupabaseTruckToLocal, mergeTruckLocations]);
+  }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured, mapSupabaseTruckToLocal, mergeTruckLocations, fetchTruckLocationRows]);
 
   const goOffline = useCallback(async ({ truckId, source, updates }: GoOfflineInput): Promise<void> => {
     if (!isAuthenticated || !authUser) {
@@ -2142,58 +2137,6 @@ if (error) {
       await updateTruckDetails(truckId, updates);
     }
   }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured, mapSupabaseTruckToLocal, mergeTruckLocations, fetchTruckLocationRows, updateTruckDetails]);
-
-  useEffect(() => {
-    if (!isAuthenticated || !authUser) return;
-
-    const staleOpenTrucks = foodTrucks.filter((truck) => {
-      const canAutoCloseTruck = userProfile?.role === 'admin' || truck.owner_id === authUser.id;
-      if (!canAutoCloseTruck) return false;
-      if (!isTruckStaleOpen(truck)) return false;
-
-      const timestamp = getTruckLiveTimestamp(truck) ?? 'unknown';
-      const attemptKey = `${truck.id}:${timestamp}`;
-      if (staleOpenAutoCloseAttemptedRef.current.has(attemptKey)) return false;
-
-      staleOpenAutoCloseAttemptedRef.current.add(attemptKey);
-      if (__DEV__) {
-        console.log('[AppContext] Stale open truck detected:', {
-          truckId: truck.id,
-          timestampUsed: timestamp,
-        });
-      }
-      return true;
-    });
-
-    if (staleOpenTrucks.length === 0) return;
-
-    staleOpenTrucks.forEach((truck) => {
-      void goOffline({
-        truckId: truck.id,
-        source: 'expiration',
-      })
-        .then(() => {
-          if (__DEV__) {
-            console.log('[AppContext] Stale open auto-close update result:', {
-              truckId: truck.id,
-              currentUserId: authUser.id,
-              error: null,
-            });
-          }
-        })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
-          if (__DEV__) {
-            console.log('[AppContext] Stale open auto-close update result:', {
-              truckId: truck.id,
-              currentUserId: authUser.id,
-              error: message,
-            });
-          }
-          console.log('[AppContext] Stale open auto-close error:', message);
-        });
-    });
-  }, [authUser, foodTrucks, goOffline, isAuthenticated, userProfile?.role]);
 
   const addMenuImage = useCallback(async (truckId: string, imageUrl: string) => {
     if (!isAuthenticated || !authUser) {
@@ -3061,7 +3004,7 @@ if (error) {
     const { data, error } = await supabase
       .from('upcoming_stops')
       .insert(payload)
-      .select('*')
+      .select(UPCOMING_STOP_PUBLIC_COLUMNS)
       .single();
 
     if (error) {
@@ -3131,7 +3074,7 @@ if (error) {
       .from('upcoming_stops')
       .update(payload)
       .eq('id', stopId)
-      .select('*')
+      .select(UPCOMING_STOP_PUBLIC_COLUMNS)
       .single();
 
     if (error) {
