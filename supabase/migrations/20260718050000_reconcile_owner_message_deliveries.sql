@@ -59,19 +59,29 @@ grant execute on function public.reconcile_owner_message_notification_deliveries
 to service_role;
 
 do $$
+declare
+  has_pg_cron boolean;
+  has_existing_job boolean := false;
 begin
-  if to_regprocedure('cron.schedule(text,text,text)') is not null
-    and not exists (
-      select 1
-      from cron.job
-      where jobname = 'reconcile_owner_message_notification_deliveries'
-    )
-  then
-    perform cron.schedule(
-      'reconcile_owner_message_notification_deliveries',
-      '* * * * *',
-      'select public.reconcile_owner_message_notification_deliveries();'
-    );
+  has_pg_cron :=
+    to_regnamespace('cron') is not null
+    and to_regclass('cron.job') is not null
+    and to_regprocedure('cron.schedule(text,text,text)') is not null;
+
+  if has_pg_cron then
+    execute 'select exists (select 1 from cron.job where jobname = $1)'
+      into has_existing_job
+      using 'reconcile_owner_message_notification_deliveries';
+
+    if not has_existing_job then
+      execute 'select cron.schedule($1, $2, $3)'
+        using
+          'reconcile_owner_message_notification_deliveries',
+          '* * * * *',
+          'select public.reconcile_owner_message_notification_deliveries();';
+    end if;
+  else
+    raise notice 'pg_cron is not enabled; owner notification reconciliation was not scheduled.';
   end if;
 end;
 $$;
