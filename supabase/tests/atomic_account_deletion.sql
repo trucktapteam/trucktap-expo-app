@@ -13,8 +13,8 @@ do $$
 declare
   v_success_user uuid := 'a6000000-0000-4000-8000-000000000001';
   v_blocked_user uuid := 'a6000000-0000-4000-8000-000000000002';
-  v_success_event uuid := 'a6000000-0000-4000-8000-000000000003';
-  v_blocked_event uuid := 'a6000000-0000-4000-8000-000000000004';
+  v_success_event bigint := 600001;
+  v_blocked_event bigint := 600002;
   v_result jsonb;
   v_failed boolean := false;
 begin
@@ -52,15 +52,32 @@ begin
       statement_timestamp()
     );
 
-  insert into public.profiles (id, role, display_name)
-  values
-    (v_success_user, 'customer', 'Delete Success'),
-    (v_blocked_user, 'customer', 'Delete Blocked');
+  update public.profiles p
+  set role = fixture.role,
+      display_name = fixture.display_name
+  from (
+    values
+      (v_success_user, 'customer', 'Delete Success'),
+      (v_blocked_user, 'customer', 'Delete Blocked')
+  ) as fixture(id, role, display_name)
+  where p.id = fixture.id;
 
-  insert into public.analytics_events (id, event_name, user_id)
+  insert into public.analytics_events (
+    id, event_type, event_source, user_id
+  )
   values
-    (v_success_event, 'atomic-delete-success', v_success_user),
-    (v_blocked_event, 'atomic-delete-blocked', v_blocked_user);
+    (
+      v_success_event,
+      'atomic-delete-success',
+      'database-test',
+      v_success_user
+    ),
+    (
+      v_blocked_event,
+      'atomic-delete-blocked',
+      'database-test',
+      v_blocked_user
+    );
 
   set local role service_role;
   select public.delete_customer_account(v_success_user) into v_result;

@@ -20,8 +20,10 @@ begin
     statement_timestamp()
   );
 
-  insert into public.profiles (id, role, display_name)
-  values (v_user_id, 'customer', 'Before');
+  update public.profiles
+  set role = 'customer',
+      display_name = 'Before'
+  where id = v_user_id;
 
   perform set_config('request.jwt.claim.sub', v_user_id::text, true);
   set local role authenticated;
@@ -82,6 +84,11 @@ begin
     statement_timestamp(),
     statement_timestamp()
   );
+
+  -- Signup creates the ordinary customer profile. Remove it as the trusted
+  -- test role so the adversarial client INSERT boundary can still be tested.
+  delete from public.profiles
+  where id = v_user_id;
 
   perform set_config('request.jwt.claim.sub', v_user_id::text, true);
   set local role authenticated;

@@ -33,11 +33,16 @@ begin
     (v_owner, 'release-owner@example.test'),
     (v_customer, 'release-customer@example.test');
 
-  insert into public.profiles (id, role, display_name)
-  values
-    (v_admin, 'admin', 'Release Admin'),
-    (v_owner, 'truck', 'Release Owner'),
-    (v_customer, 'customer', 'Release Customer');
+  update public.profiles p
+  set role = fixture.role,
+      display_name = fixture.display_name
+  from (
+    values
+      (v_admin, 'admin', 'Release Admin'),
+      (v_owner, 'truck', 'Release Owner'),
+      (v_customer, 'customer', 'Release Customer')
+  ) as fixture(id, role, display_name)
+  where p.id = fixture.id;
 
   insert into public.trucks (id, owner_id, name)
   values (v_truck, v_owner, 'Release Policy Truck');

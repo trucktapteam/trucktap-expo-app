@@ -29,8 +29,10 @@ begin
   insert into auth.users (id, email)
   values (v_owner, 'legacy-live-repair-owner@example.test');
 
-  insert into public.profiles (id, role, display_name)
-  values (v_owner, 'truck', 'Legacy LIVE Repair Owner');
+  update public.profiles
+  set role = 'truck',
+      display_name = 'Legacy LIVE Repair Owner'
+  where id = v_owner;
 
   insert into public.trucks (
     id, owner_id, name, is_open, updated_at,

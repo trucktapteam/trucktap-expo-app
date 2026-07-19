@@ -54,10 +54,15 @@ begin
     (v_owner_a, 'hands-free-owner-a@example.test'),
     (v_owner_b, 'hands-free-owner-b@example.test');
 
-  insert into public.profiles (id, role, display_name)
-  values
-    (v_owner_a, 'truck', 'Automation Owner A'),
-    (v_owner_b, 'truck', 'Automation Owner B');
+  update public.profiles p
+  set role = fixture.role,
+      display_name = fixture.display_name
+  from (
+    values
+      (v_owner_a, 'truck', 'Automation Owner A'),
+      (v_owner_b, 'truck', 'Automation Owner B')
+  ) as fixture(id, role, display_name)
+  where p.id = fixture.id;
 
   insert into public.trucks (id, owner_id, name)
   values
