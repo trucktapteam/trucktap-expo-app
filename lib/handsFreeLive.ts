@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { emitOwnerReleaseRestriction } from '@/lib/releasePolicy';
 
 export type HandsFreeLiveOwnerSettings = {
   supported: boolean;
@@ -148,6 +149,7 @@ export const configureUpcomingStopAutomation = async (input: {
   });
 
   if (error) {
+    emitOwnerReleaseRestriction(error);
     throw new Error(error.message);
   }
 };
@@ -161,6 +163,7 @@ export const setHandsFreeLiveConfirmationNotifications = async (
   );
 
   if (error) {
+    emitOwnerReleaseRestriction(error);
     throw new Error(error.message);
   }
 };

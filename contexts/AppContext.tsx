@@ -17,6 +17,7 @@ import {
   findPersistedRequestedLiveLocation,
   rpcSupportsCanonicalLiveLocation,
 } from '@/lib/liveLocationCompatibility';
+import { emitOwnerReleaseRestriction } from '@/lib/releasePolicy';
 
 const parseJsonArray = (val: any): any[] => {
   if (Array.isArray(val)) return val;
@@ -1830,6 +1831,7 @@ if (error) {
       }
 
       if (error) {
+        emitOwnerReleaseRestriction(error);
         console.log('[AppContext] Truck update error:', error.message);
         throw new Error(`Failed to update truck: ${error.message}`);
       }
@@ -2030,6 +2032,7 @@ if (error) {
     });
 
     if (rpcError) {
+      emitOwnerReleaseRestriction(rpcError);
       console.log('[AppContext] go_live_truck RPC failed:', {
         truckId,
         source,
@@ -2162,6 +2165,7 @@ if (error) {
     });
 
     if (rpcError) {
+      emitOwnerReleaseRestriction(rpcError);
       console.log('[AppContext] go_offline_truck RPC failed:', {
         truckId,
         source,
@@ -3066,6 +3070,7 @@ if (error) {
       .single();
 
     if (error) {
+      emitOwnerReleaseRestriction(error);
       console.log('[AppContext] Add upcoming stop error:', error.message);
       throw new Error(`Could not add upcoming stop: ${error.message}`);
     }
@@ -3136,6 +3141,7 @@ if (error) {
       .single();
 
     if (error) {
+      emitOwnerReleaseRestriction(error);
       console.log('[AppContext] Update upcoming stop error:', error.message);
       throw new Error(`Could not update upcoming stop: ${error.message}`);
     }
@@ -3165,6 +3171,7 @@ if (error) {
         .eq('id', stopId);
 
       if (error) {
+        emitOwnerReleaseRestriction(error);
         console.log('[AppContext] Delete upcoming stop error:', error.message);
         throw new Error(`Could not delete upcoming stop: ${error.message}`);
       }

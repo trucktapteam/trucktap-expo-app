@@ -17,6 +17,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { trackEvent } from '@/lib/analytics';
 import { getTruckRouteFromUrl } from '@/lib/truckShare';
 import { PASSWORD_RECOVERY_PATH } from '@/lib/authRedirect';
+import { ReleasePolicyProvider } from '@/contexts/ReleasePolicyContext';
 
 void SplashScreen.preventAutoHideAsync().catch((e) => {
   console.log('[RootLayout] SplashScreen.preventAutoHideAsync error:', e);
@@ -306,6 +307,7 @@ function RootLayoutNav() {
       <Stack.Screen name="admin-truck-picker" options={{ title: 'Choose a Truck' }} />
       <Stack.Screen name="admin-live-activity" options={{ title: 'LIVE Activity' }} />
       <Stack.Screen name="customer-login" options={{ headerShown: false, presentation: 'transparentModal' }} />
+      <Stack.Screen name="owner-update-required" options={{ headerShown: false }} />
       <Stack.Screen name="auth/check-email" options={{ headerShown: false }} />
       <Stack.Screen name="auth/verified" options={{ headerShown: false }} />
       <Stack.Screen name="auth/reset-password" options={{ headerShown: false }} />
@@ -487,12 +489,14 @@ export default function RootLayout() {
             <ThemeProvider>
               <SupabaseAuthProvider>
                 <AuthProvider>
-                  <AppProvider>
-                    <NotificationProvider>
-                      <NotificationResponseCoordinator />
-                      <RootLayoutNav />
-                    </NotificationProvider>
-                  </AppProvider>
+                  <ReleasePolicyProvider>
+                    <AppProvider>
+                      <NotificationProvider>
+                        <NotificationResponseCoordinator />
+                        <RootLayoutNav />
+                      </NotificationProvider>
+                    </AppProvider>
+                  </ReleasePolicyProvider>
                 </AuthProvider>
               </SupabaseAuthProvider>
             </ThemeProvider>

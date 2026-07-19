@@ -5,6 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { DEBUG } from '@/constants/debug';
+import { useReleasePolicy } from '@/contexts/ReleasePolicyContext';
 
 export default function Index() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function Index() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { colors } = useTheme();
   const [didNavigate, setDidNavigate] = useState(false);
+  const { ownerAccess, loading: releasePolicyLoading } = useReleasePolicy();
 
   useEffect(() => {
     if (didNavigate) return;
@@ -30,7 +32,7 @@ export default function Index() {
       if (DEBUG) console.log('[Index] Waiting for pending notification route:', pendingNotificationRoute);
       return;
     }
-    if (authLoading || isOwnerLoading || (isAuthenticated && !currentUser)) {
+    if (authLoading || isOwnerLoading || releasePolicyLoading || (isAuthenticated && !currentUser)) {
       if (DEBUG) console.log('[Index] Waiting for auth/owner to load...');
       return;
     }
@@ -44,6 +46,7 @@ export default function Index() {
 
       const truck = getUserTruck();
       if (DEBUG) console.log('[Index] Resolving route for truck:', truck?.id ?? null, 'role:', currentUser?.role ?? null);
+      if (isOwner && ownerAccess !== 'allowed') return '/owner-update-required';
       return isOwner ? '/(truck)/(tabs)/dashboard' : '/(customer)/(tabs)/discover';
     };
 
@@ -70,7 +73,7 @@ export default function Index() {
       clearTimeout(timer);
       clearTimeout(failsafeTimer);
     };
-  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, didNavigate, getUserTruck, currentUser, pendingNotificationRoute, isInitialNotificationResponseChecked]);
+  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, releasePolicyLoading, ownerAccess, didNavigate, getUserTruck, currentUser, pendingNotificationRoute, isInitialNotificationResponseChecked]);
 
   if (didNavigate) {
     return null;

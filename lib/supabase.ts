@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getOwnerClientHeaders } from '@/lib/clientRelease';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -11,6 +12,9 @@ let supabase: SupabaseClient;
 
 if (supabaseUrl && supabaseAnonKey) {
   supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      headers: getOwnerClientHeaders(),
+    },
     auth: {
       storage: AsyncStorage,
       autoRefreshToken: true,

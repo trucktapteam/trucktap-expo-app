@@ -5,6 +5,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import { useReleasePolicy } from '@/contexts/ReleasePolicyContext';
 
 export default function TruckLayout() {
   const { colors } = useTheme();
@@ -13,8 +14,9 @@ export default function TruckLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const segments = useSegments();
+  const { ownerAccess, loading: releasePolicyLoading } = useReleasePolicy();
 
-  const loading = isLoading || isOwnerLoading || (isAuthenticated && !currentUser);
+  const loading = isLoading || isOwnerLoading || releasePolicyLoading || (isAuthenticated && !currentUser);
 
   useTruckLifecycleLogger('TruckLayout');
 
@@ -46,7 +48,10 @@ export default function TruckLayout() {
       router.replace('/truck-login' as any);
       return;
     }
-  }, [currentUser, isAuthenticated, loading, isOwner, pathname, router, segments]);
+    if (ownerAccess !== 'allowed') {
+      router.replace('/owner-update-required' as any);
+    }
+  }, [currentUser, isAuthenticated, loading, isOwner, ownerAccess, pathname, router, segments]);
 
   if (loading) {
     return (
@@ -56,7 +61,7 @@ export default function TruckLayout() {
     );
   }
 
-  if (!isAuthenticated || !isOwner) {
+  if (!isAuthenticated || !isOwner || ownerAccess !== 'allowed') {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
