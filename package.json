@@ -8,7 +8,9 @@
     "start-web-dev": "DEBUG=expo* bunx rork start -p cabbpmix6vr8nvkf3uuqm --web --tunnel",
     "export-web": "expo export --platform web --output-dir dist --clear",
     "verify-pages-artifact": "node scripts/verify-pages-artifact.mjs",
+    "check-credential-literals": "node scripts/check-credential-literals.mjs",
     "lint": "expo lint",
+    "test:node": "node --test lib/handsFreeLive.test.mjs lib/liveLocationCompatibility.test.mjs lib/releasePolicyCore.test.mjs lib/sightingLocation.test.mjs lib/truckPublicReady.test.mjs scripts/check-credential-literals.test.mjs supabase/functions/notify-hands-free-live-transition/index.node.test.mjs supabase/functions/notification-auth-boundaries.test.mjs",
     "typecheck": "tsc --noEmit",
     "android": "expo run:android",
     "ios": "expo run:ios"
