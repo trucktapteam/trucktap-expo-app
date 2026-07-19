@@ -105,6 +105,17 @@ call. A failed candidate remains unchanged and receives no misleading
 `last_live_updated_at` as the legacy 12-hour fallback. General
 `trucks.updated_at` is not a LIVE freshness signal.
 
+Migration `20260718070000_repair_legacy_live_freshness.sql` is the narrow
+exception for pre-Trust-Engine rows that are already open with both signals
+missing. It derives a one-time freshness anchor from the newest available
+`live_started_at`, recorded `go_live` event, or row `updated_at`, caps that
+anchor at migration time, labels the session `legacy_backfill`, and assigns a
+12-hour expiry. Already-expired repairs immediately pass through the canonical
+offline transition and receive the normal expiration audit event. Valid LIVE
+sessions and closed rows are not candidates. Independently, stale cleanup
+treats any future open row with both freshness signals null as malformed and
+closed-safe.
+
 Future scheduled-start processing must treat the canonical `already_live`
 result as a recheck/retry condition before resolving the start. A previous
 stop's end may be concurrently committing. The retry must be bounded, short,
