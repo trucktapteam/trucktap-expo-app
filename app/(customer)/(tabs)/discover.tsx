@@ -8,6 +8,7 @@ import { useFilteredTrucks, useApp } from '@/contexts/AppContext';
 import { Image } from 'expo-image';
 import { supabase } from '@/lib/supabase';
 import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, getSafeSpotterDisplayName, hasSightingCoordinates } from '@/lib/sightings';
+import { addDisplayLocationsToSightings, getSightingLocationText } from '@/lib/sightingLocation';
 import { FoodTruck, Sighting } from '@/types';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { getTruckDisplayLocation } from '@/lib/truckLocation';
@@ -38,32 +39,6 @@ const hasMapLocation = (truck: any) =>
 
 const hasCoordinates = (truck: any) =>
   isValidCoordinate(truck?.location);
-
-const formatSightingCoordinate = (value?: number | null) =>
-  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(5) : '';
-
-const getSightingLocationText = (sighting?: Sighting | null) => {
-  if (!sighting) return 'Location unavailable';
-
-  const address =
-    (sighting as any).address ||
-    (sighting as any).location_address ||
-    (sighting as any).formatted_address ||
-    (sighting as any).location?.address;
-
-  if (typeof address === 'string' && address.trim()) {
-    return address.trim();
-  }
-
-  const latitude = formatSightingCoordinate(sighting.latitude);
-  const longitude = formatSightingCoordinate(sighting.longitude);
-
-  if (latitude && longitude) {
-    return `Location: ${latitude}, ${longitude}`;
-  }
-
-  return 'Location unavailable';
-};
 
 const formatCardStopDateTime = (iso: string) => {
   const date = new Date(iso);
@@ -617,6 +592,9 @@ export default function CustomerHomeScreen() {
 
       const sightingsWithCoordinates = (data ?? []).filter(hasSightingCoordinates);
       const sightingsWithSpotters = await addSpotterNamesToSightings(supabase, sightingsWithCoordinates);
+      const sightingsWithDisplayLocations = await addDisplayLocationsToSightings(
+        sightingsWithSpotters
+      );
       if (__DEV__) {
         const submitterIds = new Set(
           sightingsWithCoordinates
@@ -630,7 +608,7 @@ export default function CustomerHomeScreen() {
           spottedByMappingCount: mappedSpotterCount,
         });
       }
-      setSightings(sightingsWithSpotters);
+      setSightings(sightingsWithDisplayLocations);
     } catch (error) {
       console.error('[Discover] Failed to load sightings:', error);
     }
@@ -1248,9 +1226,12 @@ export default function CustomerHomeScreen() {
               <View style={styles.sightingLocationCard}>
                 <View style={styles.sightingLocationTextWrap}>
                   <MapPin size={16} color={colors.primary} />
-                  <Text style={styles.sightingLocationText} numberOfLines={2}>
-                    {getSightingLocationText(selectedSighting)}
-                  </Text>
+                  <View style={styles.sightingLocationCopy}>
+                    <Text style={styles.sightingLocationLabel}>Last seen near:</Text>
+                    <Text style={styles.sightingLocationText} numberOfLines={2}>
+                      {getSightingLocationText(selectedSighting)}
+                    </Text>
+                  </View>
                 </View>
                 <TouchableOpacity
                   style={styles.sightingNavigateButton}
@@ -2146,8 +2127,16 @@ const createStyles = (colors: any) => StyleSheet.create({
     alignItems: 'flex-start',
     gap: 8,
   },
-  sightingLocationText: {
+  sightingLocationCopy: {
     flex: 1,
+  },
+  sightingLocationLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: colors.secondaryText,
+    marginBottom: 2,
+  },
+  sightingLocationText: {
     fontSize: 13,
     lineHeight: 18,
     color: colors.text,

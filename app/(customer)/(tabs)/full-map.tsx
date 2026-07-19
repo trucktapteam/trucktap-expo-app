@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { AppState as RNAppState, View, Text, StyleSheet, TextInput, TouchableOpacity, Platform, Alert, Animated, PanResponder, Dimensions, Linking, ScrollView } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter } from 'expo-router';
-import { Target, ChevronRight, Heart, Star, Navigation, Eye, EyeOff } from 'lucide-react-native';
+import { Target, ChevronRight, Heart, Star, Navigation, Eye, EyeOff, MapPin } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useFilteredTrucks, useApp, useTruckRating } from '@/contexts/AppContext';
@@ -12,6 +12,7 @@ import { Image } from 'expo-image';
 import { FoodTruck, Sighting } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, hasSightingCoordinates } from '@/lib/sightings';
+import { addDisplayLocationsToSightings, getSightingLocationText } from '@/lib/sightingLocation';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { trackEvent } from '@/lib/analytics';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
@@ -87,7 +88,10 @@ export default function FullMapScreen() {
 
       const sightingsWithCoordinates = (data ?? []).filter(hasSightingCoordinates);
       const sightingsWithSpotters = await addSpotterNamesToSightings(supabase, sightingsWithCoordinates);
-      setSightings(sightingsWithSpotters);
+      const sightingsWithDisplayLocations = await addDisplayLocationsToSightings(
+        sightingsWithSpotters
+      );
+      setSightings(sightingsWithDisplayLocations);
     } catch (error) {
       console.error('[FullMapScreen] Failed to load sightings:', error);
     }
@@ -807,6 +811,16 @@ function SightingBottomSheet({
           <Text style={styles.sightingNotesMuted}>Community photo sighting</Text>
         )}
 
+        <View style={styles.sightingLocationCard}>
+          <MapPin size={16} color={colors.primary} />
+          <View style={styles.sightingLocationCopy}>
+            <Text style={styles.sightingLocationLabel}>Last seen near:</Text>
+            <Text style={styles.sightingLocationText} numberOfLines={2}>
+              {getSightingLocationText(sighting)}
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.sightingActionsRow}>
           {canEdit && !isEditing ? (
             <>
@@ -1192,6 +1206,31 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.secondaryText,
     marginTop: 4,
     marginBottom: 10,
+  },
+  sightingLocationCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: colors.secondaryBackground,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+    marginBottom: 12,
+  },
+  sightingLocationCopy: {
+    flex: 1,
+  },
+  sightingLocationLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: colors.secondaryText,
+    marginBottom: 2,
+  },
+  sightingLocationText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.text,
   },
   sightingActionsRow: {
     flexDirection: 'row',

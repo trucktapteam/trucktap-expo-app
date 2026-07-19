@@ -73,6 +73,20 @@ export type Sighting = {
   notes?: string | null;
   created_at: string;
   expires_at: string;
+  business_name?: string | null;
+  location_name?: string | null;
+  venue_name?: string | null;
+  place_name?: string | null;
+  street_address?: string | null;
+  address?: string | null;
+  location_address?: string | null;
+  formatted_address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  resolved_location_name?: string | null;
+  resolved_street_address?: string | null;
+  resolved_city?: string | null;
+  resolved_state?: string | null;
 };
 
 export type Review = {
