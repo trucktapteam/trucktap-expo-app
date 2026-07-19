@@ -43,8 +43,7 @@ begin
 
   select p.role
   into v_role
-  from public.profiles p
-  where p.id = auth.uid();
+  from public.get_private_profile(auth.uid()) p;
 
   if v_role is distinct from 'customer' then
     raise exception 'Rejected self-promotion changed the stored role to %', v_role;
@@ -56,9 +55,8 @@ begin
 
   if not exists (
     select 1
-    from public.profiles p
-    where p.id = auth.uid()
-      and p.display_name = 'After'
+    from public.get_private_profile(auth.uid()) p
+    where p.display_name = 'After'
       and p.role = 'customer'
   ) then
     raise exception 'Normal self-profile update no longer works';
