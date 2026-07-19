@@ -753,6 +753,8 @@ begin
       using errcode = '42501';
   end if;
 
+  perform private.require_supported_owner_client('go_live_truck');
+
   select (r.truck_row).*
   into v_truck
   from private.transition_truck_live(
@@ -831,6 +833,8 @@ begin
     raise exception 'Not authorized to change LIVE status for truck %', p_truck_id
       using errcode = '42501';
   end if;
+
+  perform private.require_supported_owner_client('go_offline_truck');
 
   select (r.truck_row).*
   into v_truck

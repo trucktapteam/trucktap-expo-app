@@ -514,6 +514,10 @@ begin
       using errcode = '42501';
   end if;
 
+  perform private.require_supported_owner_client(
+    'configure_upcoming_stop_live_automation'
+  );
+
   if p_enabled then
     select s.enabled
     into v_system_enabled
@@ -593,6 +597,10 @@ begin
     raise exception 'Confirmation notification preference is required'
       using errcode = '22023';
   end if;
+
+  perform private.require_supported_owner_client(
+    'set_hands_free_live_confirmation_notifications'
+  );
 
   update public.profiles
   set notify_hands_free_live_confirmations = p_enabled
