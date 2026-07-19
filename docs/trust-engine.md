@@ -8,6 +8,23 @@ is simple:
 
 > TruckTap assists. Owners stay in control.
 
+## Owner client release boundary
+
+Native owner-management requests are subject to the permanent release policy
+described in `docs/owner-release-policy.md`. Independent Android/iOS minimum
+native builds and an emergency owner-management pause are remotely controlled
+through an admin-authorized, audited RPC. Both controls default disabled.
+
+Compatible clients provide platform/build headers and upsert bounded
+last-seen owner-version observations. These values are compatibility and
+operational signals only: authentication, ownership, RLS, canonical
+transitions, and session compare-and-set checks remain independently required.
+
+When enabled, an incompatible owner is rejected before Go LIVE changes truck
+state, canonical location, or audit history. Customer discovery remains
+available. There is no legacy location-write exception and
+`guard_open_truck_location` remains unchanged.
+
 The database has one private canonical transition,
 `private.transition_truck_live`, shared by authenticated owner RPCs and
 internal cleanup/automation paths. Clients cannot execute it directly. A
