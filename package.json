@@ -6,7 +6,8 @@
     "start": "bunx rork start -p cabbpmix6vr8nvkf3uuqm --tunnel",
     "start-web": "bunx rork start -p cabbpmix6vr8nvkf3uuqm --web --tunnel",
     "start-web-dev": "DEBUG=expo* bunx rork start -p cabbpmix6vr8nvkf3uuqm --web --tunnel",
-    "export-web": "expo export --platform web --output-dir dist",
+    "export-web": "expo export --platform web --output-dir dist --clear",
+    "verify-pages-artifact": "node scripts/verify-pages-artifact.mjs",
     "lint": "expo lint",
     "android": "expo run:android",
     "ios": "expo run:ios"

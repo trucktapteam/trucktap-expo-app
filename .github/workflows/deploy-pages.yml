@@ -18,6 +18,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      EXPO_PUBLIC_RORK_API_BASE_URL: ${{ vars.EXPO_PUBLIC_RORK_API_BASE_URL }}
+      EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,15 +36,38 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Verify production web environment
+        shell: bash
+        run: |
+          required=(
+            EXPO_PUBLIC_SUPABASE_URL
+            EXPO_PUBLIC_SUPABASE_ANON_KEY
+            EXPO_PUBLIC_RORK_API_BASE_URL
+            EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
+          )
+          for name in "${required[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not configured for the Pages build"
+              exit 1
+            fi
+          done
+
       - name: Export web
         run: npm run export-web
 
-      - name: Verify Pages fallback files
+      - name: Generate fresh SPA fallback
+        run: cp dist/index.html dist/404.html
+
+      - name: Verify Pages artifact
+        run: npm run verify-pages-artifact
+
+      - name: Verify Pages support files
         run: |
           test -f dist/index.html
           test -f dist/404.html
           test -f dist/CNAME
           test -f dist/.nojekyll
+          cmp -s dist/index.html dist/404.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
