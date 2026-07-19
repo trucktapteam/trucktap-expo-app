@@ -4,53 +4,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const TRUCK_OWNER_DELETE_MESSAGE =
   "This account owns a food truck profile. Please contact TruckTap support to transfer or remove the truck before deleting your account.";
 
-const isMissingTableError = (error: any) => {
-  const message = String(error?.message ?? "").toLowerCase();
-  return error?.code === "42P01" || (message.includes("relation") && message.includes("does not exist"));
-};
-
 const jsonResponse = (body: Record<string, unknown>, status: number) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
-
-async function deleteRows(admin: any, table: string, userId: string) {
-  console.log(`Deleting ${table} rows for userId:`, userId);
-  const { error } = await admin.from(table).delete().eq("user_id", userId);
-
-  if (error) {
-    if (isMissingTableError(error)) {
-      console.log(`Skipping ${table} cleanup because table does not exist`);
-      return;
-    }
-
-    console.log(`${table} deletion error:`, error);
-    throw new Error(`${table}: ${error.message}`);
-  }
-
-  console.log(`${table} rows deleted successfully`);
-}
-
-async function nullUserIdRows(admin: any, table: string, userId: string) {
-  console.log(`Nulling ${table}.user_id rows for userId:`, userId);
-  const { error } = await admin
-    .from(table)
-    .update({ user_id: null })
-    .eq("user_id", userId);
-
-  if (error) {
-    if (isMissingTableError(error)) {
-      console.log(`Skipping ${table} cleanup because table does not exist`);
-      return;
-    }
-
-    console.log(`${table} user_id nulling error:`, error);
-    throw new Error(`${table}: ${error.message}`);
-  }
-
-  console.log(`${table}.user_id nulled successfully`);
-}
 
 serve(async (req) => {
   try {
@@ -131,49 +89,47 @@ serve(async (req) => {
       );
     }
 
-    await deleteRows(admin, "favorites", userId);
-    await deleteRows(admin, "truck_checkins", userId);
-    await deleteRows(admin, "owner_message_reads", userId);
-    await deleteRows(admin, "reviews", userId);
-    await nullUserIdRows(admin, "sightings", userId);
-    await nullUserIdRows(admin, "analytics_events", userId);
+    const { data: deletionResult, error: deletionError } = await admin.rpc(
+      "delete_customer_account",
+      { p_user_id: userId },
+    );
 
-    // Delete profile
-    console.log("Deleting profile for userId:", userId);
-    const { error: profileError } = await admin
-      .from("profiles")
-      .delete()
-      .eq("id", userId);
-
-    if (profileError) {
-      console.log("Profile deletion error:", profileError);
+    if (deletionError) {
+      console.log("Atomic account deletion failed:", {
+        userId,
+        code: deletionError.code,
+      });
       return jsonResponse(
         {
           success: false,
-          step: "profiles",
-          error: profileError.message,
+          step: "delete_account",
+          error: "Account deletion could not be completed.",
         },
         500
       );
     }
-    console.log("Profile deleted successfully");
 
-    // Delete auth user
-    console.log("Deleting auth user:", userId);
-    const { error: authDeleteError } = await admin.auth.admin.deleteUser(userId);
-
-    if (authDeleteError) {
-      console.log("Auth delete error:", authDeleteError);
+    if (deletionResult?.reason === "owns_truck") {
       return jsonResponse(
         {
           success: false,
-          step: "auth",
-          error: authDeleteError.message,
+          step: "owned_trucks",
+          error: TRUCK_OWNER_DELETE_MESSAGE,
         },
-        500
+        409,
       );
     }
-    console.log("Auth user deleted successfully");
+
+    if (deletionResult?.success !== true) {
+      return jsonResponse(
+        {
+          success: false,
+          step: "delete_account",
+          error: "Account deletion could not be completed.",
+        },
+        deletionResult?.reason === "user_not_found" ? 404 : 500,
+      );
+    }
 
     console.log("Account deletion completed successfully for userId:", userId);
     return jsonResponse(
