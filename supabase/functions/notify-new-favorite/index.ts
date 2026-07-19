@@ -1,22 +1,32 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  authorizeDatabaseNotificationWebhook,
+  DATABASE_NOTIFICATION_SECRET_ENV,
+} from "../_shared/notificationAuth.ts";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const FAVORITE_COOLDOWN_MS = 10 * 60 * 1000;
 
-Deno.serve(async (req) => {
+export const handler = async (req: Request): Promise<Response> => {
   try {
+    const unauthorized = await authorizeDatabaseNotificationWebhook(
+      req,
+      Deno.env.get(DATABASE_NOTIFICATION_SECRET_ENV) ?? "",
+    );
+    if (unauthorized) return unauthorized;
+
     const payload = await req.json();
     const record = payload.record ?? payload;
     const truckId = record?.truck_id;
 
     if (!truckId) {
       console.log("notify-new-favorite skipped: missing truck_id");
-      return new Response("Missing truck_id", { status: 200 });
+      return new Response("Missing truck_id", { status: 400 });
     }
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
     const { data: truck, error: truckError } = await supabase
@@ -48,16 +58,13 @@ Deno.serve(async (req) => {
 
     if (ownerError) {
       console.log("notify-new-favorite owner query with preference failed:", ownerError.message);
-
       const fallback = await supabase
         .from("profiles")
         .select("id, push_token, last_favorite_notification_at")
         .eq("id", truck.owner_id)
         .maybeSingle();
-
       owner = fallback.data;
       ownerError = fallback.error;
-
       if (ownerError) {
         console.log("notify-new-favorite owner fallback query error:", ownerError.message);
         return new Response("Owner query failed", { status: 500 });
@@ -65,41 +72,31 @@ Deno.serve(async (req) => {
     }
 
     if (owner?.notify_owner_favorites === false) {
-      console.log("notify-new-favorite skipped: owner preference disabled");
       return new Response("Owner preference disabled", { status: 200 });
     }
-
     if (!owner?.push_token) {
-      console.log("notify-new-favorite skipped: no push token");
       return new Response("No push token", { status: 200 });
     }
 
     const lastSentAt = owner.last_favorite_notification_at
       ? new Date(owner.last_favorite_notification_at).getTime()
       : 0;
-
     if (lastSentAt && Date.now() - lastSentAt < FAVORITE_COOLDOWN_MS) {
-      console.log("notify-new-favorite skipped: cooldown active");
       return new Response("Cooldown active", { status: 200 });
     }
-
-    const message = {
-      to: owner.push_token,
-      sound: "default",
-      title: "❤️ Someone favorited your truck!",
-      body: "You're gaining fans on TruckTap.",
-      data: { truckId, type: "new_favorite" },
-    };
 
     const expoResponse = await fetch(EXPO_PUSH_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(message),
+      body: JSON.stringify({
+        to: owner.push_token,
+        sound: "default",
+        title: "❤️ Someone favorited your truck!",
+        body: "You're gaining fans on TruckTap.",
+        data: { truckId, type: "new_favorite" },
+      }),
     });
-
     const expoResult = await expoResponse.json();
-    console.log("notify-new-favorite Expo response:", JSON.stringify(expoResult));
-
     if (!expoResponse.ok) {
       return new Response("Expo push failed", { status: 502 });
     }
@@ -108,17 +105,18 @@ Deno.serve(async (req) => {
       .from("profiles")
       .update({ last_favorite_notification_at: new Date().toISOString() })
       .eq("id", truck.owner_id);
-
     if (updateError) {
       console.log("notify-new-favorite throttle update error:", updateError.message);
     }
 
-    return new Response(JSON.stringify({ success: true, expoResult }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    console.log("notify-new-favorite error:", err);
+    return Response.json({ success: true, expoResult });
+  } catch (error) {
+    console.log(
+      "notify-new-favorite error:",
+      error instanceof Error ? error.message : "unknown",
+    );
     return new Response("Server error", { status: 500 });
   }
-});
+};
+
+Deno.serve(handler);

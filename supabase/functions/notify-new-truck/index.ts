@@ -1,61 +1,50 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  authorizeDatabaseNotificationWebhook,
+  DATABASE_NOTIFICATION_SECRET_ENV,
+} from "../_shared/notificationAuth.ts";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const NOTIFICATION_TYPE = "new_truck_joined";
 
-serve(async (req) => {
+export const handler = async (req: Request): Promise<Response> => {
   try {
+    const unauthorized = await authorizeDatabaseNotificationWebhook(
+      req,
+      Deno.env.get(DATABASE_NOTIFICATION_SECRET_ENV) ?? "",
+    );
+    if (unauthorized) return unauthorized;
+
     const payload = await req.json();
     const record = payload.record ?? payload;
     const truckId = record?.truckId ?? record?.truck_id ?? record?.id;
-    const truckName = record?.truckName ?? record?.truck_name ?? record?.name ?? "A new truck";
-    const ownerId = record?.ownerId ?? record?.owner_id;
-    const createdAt = record?.createdAt ?? record?.created_at;
-
-    console.log("[notify-new-truck] Trigger/function received payload:", {
-      truckId,
-      truckName,
-      ownerId,
-      createdAt,
-      sourceTable: payload?.table ?? null,
-      operation: payload?.type ?? null,
-      payloadKeys: Object.keys(payload ?? {}),
-      recordKeys: Object.keys(record ?? {}),
-    });
-
+    const truckName =
+      record?.truckName ?? record?.truck_name ?? record?.name ?? "A new truck";
     if (!truckId) {
-      console.log("[notify-new-truck] Error response: missing truck id");
       return new Response("Missing truck id", { status: 400 });
     }
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-
     const { data: adminProfiles, error } = await supabase
       .from("profiles")
       .select("id, push_token")
       .eq("role", "admin")
       .not("push_token", "is", null);
-
     if (error) {
-      console.log("[notify-new-truck] Error response: admin token query failed:", error.message);
-      return new Response("Error", { status: 500 });
+      console.log("notify-new-truck admin token query failed:", error.message);
+      return new Response("Admin query failed", { status: 500 });
     }
 
-    console.log("[notify-new-truck] Admin token count:", adminProfiles?.length ?? 0);
-
-    if (!adminProfiles || adminProfiles.length === 0) {
-      console.log("[notify-new-truck] Error response: no admin push tokens found");
-      return new Response("No admin push tokens", { status: 200 });
-    }
-
-    const messages = adminProfiles
-      .filter((p) => typeof p.push_token === "string" && p.push_token.trim().length > 0)
-      .map((p) => ({
-        to: p.push_token,
+    const messages = (adminProfiles ?? [])
+      .filter((profile) =>
+        typeof profile.push_token === "string" &&
+        profile.push_token.trim().length > 0
+      )
+      .map((profile) => ({
+        to: profile.push_token,
         sound: "default",
         title: "New food truck added",
         body: `${truckName} just joined TruckTap`,
@@ -66,56 +55,32 @@ serve(async (req) => {
           route: `/truck/${truckId}`,
         },
       }));
-
     if (messages.length === 0) {
-      console.log("[notify-new-truck] Error response: admin token query returned no usable push tokens");
       return new Response("No usable admin push tokens", { status: 200 });
     }
 
-    console.log("[notify-new-truck] Notification payload sent:", JSON.stringify(messages));
-
-    const res = await fetch(EXPO_PUSH_URL, {
+    const expoResponse = await fetch(EXPO_PUSH_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(messages),
     });
-
-    const result = await res.json();
-    console.log("[notify-new-truck] Expo push ticket response:", JSON.stringify(result, null, 2));
-
-    const tickets = Array.isArray(result?.data) ? result.data : [];
-    const ticketErrors = tickets
-      .map((ticket: any, index: number) => ({ index, ticket }))
-      .filter(({ ticket }: { ticket: any }) => ticket?.status === "error");
-
-    if (ticketErrors.length > 0 || result?.errors) {
-      console.log("[notify-new-truck] Expo ticket-level errors:", JSON.stringify({
-        ticketErrors,
-        requestErrors: result?.errors ?? null,
-      }, null, 2));
-    } else {
-      console.log("[notify-new-truck] Expo ticket-level errors: none");
-    }
-
-    if (!res.ok) {
-      console.log("[notify-new-truck] Error response: Expo push failed:", {
-        status: res.status,
-        result,
-      });
+    const expoResult = await expoResponse.json();
+    if (!expoResponse.ok) {
       return new Response("Expo push failed", { status: 502 });
     }
 
-    return new Response(
-      JSON.stringify({ success: true, expoResult: result, ticketErrorCount: ticketErrors.length }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
+    const tickets = Array.isArray(expoResult?.data) ? expoResult.data : [];
+    const ticketErrorCount = tickets.filter(
+      (ticket: { status?: string }) => ticket?.status === "error",
+    ).length;
+    return Response.json({ success: true, expoResult, ticketErrorCount });
+  } catch (error) {
+    console.log(
+      "notify-new-truck error:",
+      error instanceof Error ? error.message : "unknown",
     );
-  } catch (err) {
-    console.log("[notify-new-truck] Error response: function error:", err);
-    return new Response("Error", { status: 500 });
+    return new Response("Server error", { status: 500 });
   }
-});
+};
+
+Deno.serve(handler);

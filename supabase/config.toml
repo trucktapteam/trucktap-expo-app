@@ -13,11 +13,14 @@ entrypoint = "./functions/notify-favorite-truck-open/index.ts"
 # static_files = [ "./functions/notify-favorite-truck-open/*.html" ]
 [functions.notify-truck-announcement]
 enabled = true
-verify_jwt = false
+# Owner/admin initiated. The gateway and function both validate the user JWT.
+verify_jwt = true
 import_map = "./functions/notify-truck-announcement/deno.json"
 entrypoint = "./functions/notify-truck-announcement/index.ts"
 [functions.notify-new-truck]
 enabled = true
+# Database-triggered functions authenticate with the shared, Vault-backed
+# DATABASE_NOTIFICATION_WEBHOOK_SECRET header.
 verify_jwt = false
 import_map = "./functions/notify-new-truck/deno.json"
 entrypoint = "./functions/notify-new-truck/index.ts"
