@@ -139,7 +139,6 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
       });
 
       const token = tokenResponse.data;
-      console.log('[Notifications] Expo Push Token:', token);
 
       const { data: userData, error: userError } = await supabase.auth.getUser();
 

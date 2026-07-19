@@ -21,7 +21,7 @@ export function useAccountDeletion({
 
   const confirmationMessage =
     source === 'truck-settings'
-      ? 'This permanently deletes your account, truck profile, truck location data, reviews tied to your truck, and related records. This cannot be undone.'
+      ? 'Truck owner accounts cannot be deleted while they own a truck. Contact TruckTap support to transfer or remove your truck first.'
       : 'This permanently deletes your account, profile, favorites, reviews, and related records. This cannot be undone.';
 
   const performAccountDeletion = useCallback(async () => {
@@ -57,11 +57,6 @@ export function useAccountDeletion({
       if (!session?.access_token) {
         throw new Error('Missing access token for account-delete request.');
       }
-
-      console.log(
-        `[DeleteAccountFlow:${source}] Token preview:`,
-        session.access_token.slice(0, 20)
-      );
 
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 
