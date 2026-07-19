@@ -35,5 +35,11 @@ entrypoint = "./functions/notify-new-review/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/notify-owner-message/index.ts"
+[functions.notify-hands-free-live-transition]
+enabled = true
+# Database-triggered requests authenticate with a dedicated Vault-backed
+# HANDS_FREE_LIVE_WEBHOOK_SECRET, not a Supabase service-role JWT.
+verify_jwt = false
+entrypoint = "./functions/notify-hands-free-live-transition/index.ts"
 [functions.account-delete]
 verify_jwt = false

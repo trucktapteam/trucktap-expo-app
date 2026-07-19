@@ -3,18 +3,27 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, S
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { CalendarDays, ChevronDown, Clock, MapPin, RefreshCw, Trash2 } from 'lucide-react-native';
+import { Bell, CalendarDays, ChevronDown, Clock, MapPin, RefreshCw, Trash2, Zap } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { UpcomingStop, UpcomingStopStatus } from '@/types';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import {
+  configureUpcomingStopAutomation,
+  HandsFreeLiveOwnerSettings,
+  loadHandsFreeLiveOwnerState,
+  setHandsFreeLiveConfirmationNotifications,
+  UpcomingStopAutomationStatus,
+} from '@/lib/handsFreeLive';
 
 const STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
 const REMINDER_SETTINGS_KEY = 'upcomingStopReminderSettings';
 const REMINDER_IDS_KEY = 'upcomingStopReminderIds';
 const DEFAULT_REMINDER_MINUTES = 30;
+const REMINDER_MINUTE_OPTIONS = [15, 30, 60] as const;
 const GO_LIVE_WINDOW_MINUTES = 30;
 const GO_LIVE_WINDOW_MS = GO_LIVE_WINDOW_MINUTES * 60 * 1000;
 const REMINDER_NOTIFICATION_CHANNEL_ID = 'upcoming-stop-reminders';
@@ -119,8 +128,20 @@ type ReminderScheduleResult = {
 
 const normalizeReminderSettings = (settings?: Partial<ReminderSettings> | null): ReminderSettings => ({
   enabled: settings?.enabled !== false,
-  minutesBefore: DEFAULT_REMINDER_MINUTES,
+  minutesBefore: REMINDER_MINUTE_OPTIONS.includes(
+    settings?.minutesBefore as (typeof REMINDER_MINUTE_OPTIONS)[number]
+  )
+    ? settings!.minutesBefore!
+    : DEFAULT_REMINDER_MINUTES,
 });
+
+const DEFAULT_AUTOMATION_SETTINGS: HandsFreeLiveOwnerSettings = {
+  supported: false,
+  systemEnabled: false,
+  startGraceMinutes: 15,
+  endGraceMinutes: 5,
+  confirmationNotificationsEnabled: true,
+};
 
 const getStatusColor = (status: UpcomingStopStatus) => {
   switch (status) {
@@ -167,6 +188,35 @@ const withTimePeriod = (date: Date, period: TimePeriod) => {
   return nextDate;
 };
 
+const formatGeocodedAddress = (address: Location.LocationGeocodedAddress | undefined) => {
+  if (!address) return null;
+
+  const street = [address.streetNumber, address.street]
+    .filter(Boolean)
+    .join(' ');
+  const cityLine = [address.city, address.region, address.postalCode]
+    .filter(Boolean)
+    .join(', ');
+  return [address.name, street, cityLine]
+    .filter((part, index, values) => part && values.indexOf(part) === index)
+    .join('\n');
+};
+
+const confirmAutomationLocation = (locationLabel: string, resolvedAddress: string | null) =>
+  new Promise<boolean>(resolve => {
+    Alert.alert(
+      'Confirm automatic LIVE location',
+      resolvedAddress
+        ? `${locationLabel} was located as:\n\n${resolvedAddress}\n\nUse this location?`
+        : `Use the mapped coordinates found for ${locationLabel}?`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Use Location', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) }
+    );
+  });
+
 export default function UpcomingStopsScreen() {
   const router = useRouter();
   const {
@@ -199,6 +249,14 @@ export default function UpcomingStopsScreen() {
   );
   const [reminderIds, setReminderIds] = useState<ReminderIds>({});
   const [reminderSettingsLoaded, setReminderSettingsLoaded] = useState(false);
+  const [automationSettings, setAutomationSettings] = useState<HandsFreeLiveOwnerSettings>(
+    DEFAULT_AUTOMATION_SETTINGS
+  );
+  const [automationStatuses, setAutomationStatuses] = useState<
+    Record<string, UpcomingStopAutomationStatus>
+  >({});
+  const [automationLoading, setAutomationLoading] = useState(false);
+  const [confirmationPreferenceSaving, setConfirmationPreferenceSaving] = useState(false);
   const reminderSettingsRef = useRef(reminderSettings);
   const reminderIdsRef = useRef(reminderIds);
 
@@ -206,6 +264,32 @@ export default function UpcomingStopsScreen() {
     () => truck ? getUpcomingStops(truck.id) : [],
     [getUpcomingStops, truck]
   );
+
+  const refreshAutomationState = React.useCallback(async () => {
+    if (!truck) {
+      setAutomationSettings(DEFAULT_AUTOMATION_SETTINGS);
+      setAutomationStatuses({});
+      return;
+    }
+
+    setAutomationLoading(true);
+    try {
+      const state = await loadHandsFreeLiveOwnerState(truck.id);
+      setAutomationSettings(state.settings);
+      setAutomationStatuses(
+        Object.fromEntries(state.statuses.map(status => [status.stopId, status]))
+      );
+    } catch (error) {
+      console.log('[UpcomingStops] Failed to load Hands-Free LIVE state:', error);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Could not load Hands-Free LIVE status.'
+      );
+    } finally {
+      setAutomationLoading(false);
+    }
+  }, [truck]);
 
   React.useEffect(() => {
     reminderSettingsRef.current = reminderSettings;
@@ -218,10 +302,15 @@ export default function UpcomingStopsScreen() {
   React.useEffect(() => {
     const intervalId = setInterval(() => {
       setNowMs(Date.now());
+      void refreshAutomationState();
     }, 60000);
 
     return () => clearInterval(intervalId);
-  }, []);
+  }, [refreshAutomationState]);
+
+  React.useEffect(() => {
+    void refreshAutomationState();
+  }, [refreshAutomationState]);
 
   React.useEffect(() => {
     const loadReminderState = async () => {
@@ -471,6 +560,136 @@ export default function UpcomingStopsScreen() {
     await persistReminderIds(nextIds);
   };
 
+  const handleReminderMinutesChange = async (minutesBefore: number) => {
+    if (minutesBefore === reminderSettings.minutesBefore) return;
+
+    setErrorMessage(null);
+    try {
+      const nextSettings = {
+        ...reminderSettingsRef.current,
+        minutesBefore,
+      };
+      await persistReminderSettings(nextSettings);
+
+      if (!nextSettings.enabled) return;
+
+      let nextIds = reminderIdsRef.current;
+      for (const stop of stops) {
+        if (REMINDER_CANCEL_STATUSES.includes(stop.status)) {
+          nextIds = await cancelReminderForStop(stop.id, nextIds);
+        } else {
+          const scheduleResult = await scheduleReminderForStop(
+            stop,
+            nextIds,
+            nextSettings
+          );
+          nextIds = scheduleResult.ids;
+        }
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Could not update stop reminder timing.'
+      );
+    }
+  };
+
+  const handleConfirmationPreferenceChange = async (enabled: boolean) => {
+    setErrorMessage(null);
+    setConfirmationPreferenceSaving(true);
+    try {
+      await setHandsFreeLiveConfirmationNotifications(enabled);
+      setAutomationSettings(current => ({
+        ...current,
+        confirmationNotificationsEnabled: enabled,
+      }));
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Could not update confirmation notifications.'
+      );
+    } finally {
+      setConfirmationPreferenceSaving(false);
+    }
+  };
+
+  const handleAutomationToggle = async (stop: UpcomingStop, enabled: boolean) => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setBusyStopId(stop.id);
+
+    try {
+      if (enabled) {
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (!timezone) {
+          throw new Error('Your device timezone is unavailable. Check date and time settings.');
+        }
+
+        if (Platform.OS !== 'web') {
+          const existingPermission = await Location.getForegroundPermissionsAsync();
+          const permission = existingPermission.status === 'granted'
+            ? existingPermission
+            : await Location.requestForegroundPermissionsAsync();
+          if (permission.status !== 'granted') {
+            throw new Error(
+              'Location permission is required to verify the scheduled stop address.'
+            );
+          }
+        }
+
+        const matches = await Location.geocodeAsync(stop.location_text);
+        const match = matches.find(
+          candidate =>
+            Number.isFinite(candidate.latitude) &&
+            Number.isFinite(candidate.longitude)
+        );
+
+        if (!match) {
+          throw new Error(
+            'TruckTap could not locate this stop. Use a complete street address before turning on Hands-Free LIVE.'
+          );
+        }
+
+        const reverseMatches = await Location.reverseGeocodeAsync({
+          latitude: match.latitude,
+          longitude: match.longitude,
+        }).catch(() => []);
+        const confirmed = await confirmAutomationLocation(
+          stop.location_text,
+          formatGeocodedAddress(reverseMatches[0])
+        );
+        if (!confirmed) return;
+
+        await configureUpcomingStopAutomation({
+          stopId: stop.id,
+          enabled: true,
+          latitude: match.latitude,
+          longitude: match.longitude,
+          timezone,
+        });
+        setSuccessMessage(`Hands-Free LIVE is ready for ${stop.location_text}.`);
+      } else {
+        await configureUpcomingStopAutomation({
+          stopId: stop.id,
+          enabled: false,
+        });
+        setSuccessMessage(`Hands-Free LIVE is off for ${stop.location_text}.`);
+      }
+
+      await refreshAutomationState();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Could not update Hands-Free LIVE.'
+      );
+    } finally {
+      setBusyStopId(null);
+    }
+  };
+
   if (!truck) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -624,6 +843,16 @@ export default function UpcomingStopsScreen() {
     setBusyStopId(stop.id);
 
     try {
+      if (
+        status !== 'scheduled' &&
+        automationStatuses[stop.id]?.enabled
+      ) {
+        await configureUpcomingStopAutomation({
+          stopId: stop.id,
+          enabled: false,
+        });
+      }
+
       await updateUpcomingStop(stop.id, { status });
       const updatedStop = { ...stop, status };
 
@@ -632,6 +861,7 @@ export default function UpcomingStopsScreen() {
       } else if (reminderSettingsRef.current.enabled) {
         await scheduleReminderForStop(updatedStop, reminderIdsRef.current, reminderSettingsRef.current);
       }
+      await refreshAutomationState();
     } catch (error: any) {
       setErrorMessage(error?.message ?? 'Could not update stop status.');
     } finally {
@@ -670,7 +900,10 @@ export default function UpcomingStopsScreen() {
     setErrorMessage(null);
 
     try {
-      await refreshUpcomingStops();
+      await Promise.all([
+        refreshUpcomingStops(),
+        refreshAutomationState(),
+      ]);
     } catch (error: any) {
       setErrorMessage(error?.message ?? 'Could not refresh upcoming stops.');
     }
@@ -715,7 +948,73 @@ export default function UpcomingStopsScreen() {
                 thumbColor={reminderSettings.enabled ? Colors.primary : Colors.gray}
               />
             </View>
+            <View style={styles.reminderMinuteRow}>
+              {REMINDER_MINUTE_OPTIONS.map(minutes => (
+                <TouchableOpacity
+                  key={minutes}
+                  style={[
+                    styles.reminderMinuteChip,
+                    reminderSettings.minutesBefore === minutes &&
+                      styles.reminderMinuteChipActive,
+                  ]}
+                  onPress={() => void handleReminderMinutesChange(minutes)}
+                  disabled={!reminderSettingsLoaded}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[
+                      styles.reminderMinuteText,
+                      reminderSettings.minutesBefore === minutes &&
+                        styles.reminderMinuteTextActive,
+                    ]}
+                  >
+                    {minutes} min
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
+
+          {automationSettings.supported ? (
+            <View style={styles.automationOverviewCard}>
+              <View style={styles.automationOverviewHeader}>
+                <View style={styles.automationIcon}>
+                  <Zap size={20} color={Colors.primary} />
+                </View>
+                <View style={styles.reminderTextContainer}>
+                  <Text style={styles.reminderTitle}>Hands-Free LIVE</Text>
+                  <Text style={styles.reminderSubtitle}>
+                    {automationSettings.systemEnabled
+                      ? `Starts within a ${automationSettings.startGraceMinutes}-minute grace period and stops ${automationSettings.endGraceMinutes} minutes after the scheduled end.`
+                      : 'Scheduled automation is temporarily paused by TruckTap.'}
+                  </Text>
+                </View>
+                {automationLoading ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : null}
+              </View>
+              <View style={styles.confirmationRow}>
+                <Bell size={18} color={Colors.primary} />
+                <View style={styles.reminderTextContainer}>
+                  <Text style={styles.confirmationTitle}>Confirmation notifications</Text>
+                  <Text style={styles.confirmationSubtitle}>
+                    Get a push after automatic Go LIVE and Stop Serving.
+                  </Text>
+                </View>
+                <Switch
+                  value={automationSettings.confirmationNotificationsEnabled}
+                  onValueChange={value => void handleConfirmationPreferenceChange(value)}
+                  disabled={confirmationPreferenceSaving}
+                  trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
+                  thumbColor={
+                    automationSettings.confirmationNotificationsEnabled
+                      ? Colors.primary
+                      : Colors.gray
+                  }
+                />
+              </View>
+            </View>
+          ) : null}
 
           <View style={styles.formCard}>
             <View style={styles.formHeader}>
@@ -901,9 +1200,13 @@ export default function UpcomingStopsScreen() {
                 reminderOn={hasActiveReminder(stop)}
                 truckOpenNow={truck.open_now}
                 nowMs={nowMs}
+                automationSupported={automationSettings.supported}
+                automationSystemEnabled={automationSettings.systemEnabled}
+                automationStatus={automationStatuses[stop.id] ?? null}
                 onStatusChange={handleStatusChange}
                 onDelete={handleDelete}
                 onGoLive={handleGoLiveFromStop}
+                onAutomationToggle={handleAutomationToggle}
               />
             ))
           )}
@@ -919,9 +1222,13 @@ type StopCardProps = {
   reminderOn: boolean;
   truckOpenNow: boolean;
   nowMs: number;
+  automationSupported: boolean;
+  automationSystemEnabled: boolean;
+  automationStatus: UpcomingStopAutomationStatus | null;
   onStatusChange: (stop: UpcomingStop, status: UpcomingStopStatus) => void;
   onDelete: (stop: UpcomingStop) => void;
   onGoLive: (stop: UpcomingStop) => void;
+  onAutomationToggle: (stop: UpcomingStop, enabled: boolean) => void;
 };
 
 type PickerButtonProps = {
@@ -968,10 +1275,28 @@ function PeriodSegmentedControl({ value, onChange }: PeriodSegmentedControlProps
   );
 }
 
-function StopCard({ stop, busy, reminderOn, truckOpenNow, nowMs, onStatusChange, onDelete, onGoLive }: StopCardProps) {
+function StopCard({
+  stop,
+  busy,
+  reminderOn,
+  truckOpenNow,
+  nowMs,
+  automationSupported,
+  automationSystemEnabled,
+  automationStatus,
+  onStatusChange,
+  onDelete,
+  onGoLive,
+  onAutomationToggle,
+}: StopCardProps) {
   const statusColor = getStatusColor(stop.status);
   const ended = Date.parse(stop.ends_at) <= nowMs;
   const showGoLiveAction = canStopGoLive(stop, nowMs);
+  const automationEnabled = automationStatus?.enabled === true;
+  const canEnableAutomation =
+    automationSystemEnabled &&
+    stop.status === 'scheduled' &&
+    Date.parse(stop.starts_at) > nowMs;
 
   return (
     <View style={styles.stopCard}>
@@ -1000,6 +1325,46 @@ function StopCard({ stop, busy, reminderOn, truckOpenNow, nowMs, onStatusChange,
       <Text style={styles.stopTime}>{formatDateTime(stop.starts_at)} - {formatDateTime(stop.ends_at)}</Text>
       <Text style={styles.stopLocation}>{stop.location_text}</Text>
       {stop.note ? <Text style={styles.stopNote}>{stop.note}</Text> : null}
+
+      {automationSupported ? (
+        <View style={styles.stopAutomationPanel}>
+          <View style={styles.stopAutomationHeader}>
+            <View style={styles.stopAutomationTitleRow}>
+              <Zap
+                size={17}
+                color={automationEnabled ? Colors.primary : Colors.gray}
+              />
+              <Text style={styles.stopAutomationTitle}>Hands-Free LIVE</Text>
+            </View>
+            <Switch
+              value={automationEnabled}
+              onValueChange={enabled => onAutomationToggle(stop, enabled)}
+              disabled={busy || (!automationEnabled && !canEnableAutomation)}
+              trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
+              thumbColor={automationEnabled ? Colors.primary : Colors.gray}
+            />
+          </View>
+          <Text
+            style={[
+              styles.automationStatusLabel,
+              automationEnabled && styles.automationStatusLabelActive,
+            ]}
+          >
+            {automationStatus?.statusLabel ??
+              (canEnableAutomation ? 'Off' : 'Unavailable for this stop')}
+          </Text>
+          <Text style={styles.automationStatusDetail}>
+            {automationStatus?.statusDetail ??
+              (
+                canEnableAutomation
+                  ? 'Turn it on to use this stop location automatically.'
+                  : ended
+                    ? 'This stop has already ended.'
+                    : 'Hands-Free LIVE requires a future scheduled stop.'
+              )}
+          </Text>
+        </View>
+      ) : null}
 
       {showGoLiveAction ? (
         <View style={styles.goLivePanel}>
@@ -1083,6 +1448,72 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: Colors.gray,
+  },
+  reminderMinuteRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+  },
+  reminderMinuteChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  reminderMinuteChipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: `${Colors.primary}12`,
+  },
+  reminderMinuteText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.gray,
+  },
+  reminderMinuteTextActive: {
+    color: Colors.primary,
+  },
+  automationOverviewCard: {
+    backgroundColor: Colors.light,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}24`,
+  },
+  automationOverviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  automationIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: `${Colors.primary}12`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.lightGray,
+    marginTop: 14,
+    paddingTop: 14,
+  },
+  confirmationTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  confirmationSubtitle: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: Colors.gray,
+    marginTop: 2,
   },
   formCard: {
     backgroundColor: Colors.light,
@@ -1471,6 +1902,45 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: Colors.gray,
     marginBottom: 12,
+  },
+  stopAutomationPanel: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}20`,
+    backgroundColor: `${Colors.primary}08`,
+    padding: 12,
+    marginBottom: 14,
+  },
+  stopAutomationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  stopAutomationTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  stopAutomationTitle: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: Colors.dark,
+  },
+  automationStatusLabel: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.gray,
+    marginTop: 6,
+  },
+  automationStatusLabelActive: {
+    color: Colors.primary,
+  },
+  automationStatusDetail: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: Colors.gray,
+    marginTop: 3,
   },
   goLivePanel: {
     borderRadius: 12,

@@ -121,9 +121,47 @@ owner must first go offline. Phase 1B needs a controlled cancellation RPC that
 locks both rows, closes only the matching session, updates the stop, and writes
 explicit cancellation audit metadata atomically.
 
-All new automation configuration and lifecycle fields are hidden from current
-public stop reads and are not directly client-writable. Phase 1B must add
-controlled owner RPCs before an owner UI can configure them.
+All automation configuration and lifecycle fields are hidden from public stop
+reads and are not directly client-writable. The scheduled-automation layer
+adds controlled owner RPCs for opt-in, safe status reads, and confirmation
+notification preferences. Owners see human-readable outcomes rather than raw
+lifecycle columns.
+
+## Scheduled processor
+
+The service-role-only scheduled processor delegates every LIVE change to
+`private.transition_truck_live`. It processes scheduled ends before starts,
+uses deterministic bounded batches and row locks, and takes a transaction
+advisory lock so duplicate cron invocations cannot duplicate transitions.
+
+Back-to-back stops close the exact prior owned session before the next start is
+considered. True overlaps use first-owner-wins behavior. A later stop may
+briefly retry only when the current scheduled owner's end is within the
+configured bounded retry window. A manual LIVE collision is also rechecked,
+but only until the already-configured start grace expires. Neither retry path
+ever replaces a manual session, and overlap behavior remains first-owner-wins.
+
+Missed scheduler executions are recovered from persisted state. Starts are
+allowed only inside the configured start grace and before the stop ends. Due
+ends remain eligible regardless of lateness and retain both stop ownership and
+session restart compare-and-set checks.
+
+Each candidate has its own exception block. A failure rolls back only that
+candidate, records a private operational diagnostic, and leaves it unresolved
+for a later safe retry. Successful transitions alone create
+`truck_live_events` rows with `source = 'schedule'`.
+
+The global kill switch blocks new starts but continues due ends for sessions
+that automation already owns. Authenticated clients cannot insert
+`truck_live_events` directly; audit events are canonical server output.
+
+Optional owner confirmation pushes are triggered only from committed schedule
+audit events. They use a dedicated Vault-backed webhook secret and an
+attempt-aware delivery claim. Claims stuck in `processing` for more than two
+minutes are swept to an observable failed state and may be reclaimed by a
+replayed event. Attempt compare-and-set prevents a late prior attempt from
+overwriting its retry. Push delivery is best-effort and can never roll back or
+impersonate a LIVE transition.
 
 ## Explicit non-goals
 
