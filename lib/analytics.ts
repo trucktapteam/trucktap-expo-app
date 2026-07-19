@@ -41,11 +41,14 @@ export function trackEvent({
       metadata: metadata ?? null,
       platform: Platform.OS,
       session_id: sessionId,
-    }).then(({ error }) => {
-      if (error) {
-        logFailure(error);
-      }
-    }).catch(logFailure);
+    }).then(
+      ({ error }) => {
+        if (error) {
+          logFailure(error);
+        }
+      },
+      logFailure,
+    );
   } catch (error) {
     logFailure(error);
   }

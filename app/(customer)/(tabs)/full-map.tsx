@@ -667,7 +667,7 @@ function TruckBottomSheet({ truck, isFavorited, onViewDetails, onToggleFavorite 
       truck_id: truck.id,
       user_id: currentUser?.id ?? null,
     });
-    if (currentUser?.role !== 'owner' && currentUser?.role !== 'admin') {
+    if (currentUser?.role !== 'truck' && currentUser?.role !== 'admin') {
       void recordReviewEngagement('navigate_click', {
         truckId: truck.id,
         userId: currentUser?.id ?? null,

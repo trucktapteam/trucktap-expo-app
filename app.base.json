@@ -36,10 +36,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "notification": {
-        "icon": "./assets/images/notification-icon.png",
-        "color": "#FF6600"
-      },
       "package": "app.rork.trucktap_food_truck_finder_cqgko70",
       "googleServicesFile": "./google-services.json",
       "versionCode": 40,
@@ -109,7 +105,13 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#FF6600"
+        }
+      ],
       [
         "expo-location",
         {

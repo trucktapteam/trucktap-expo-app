@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert, Linking, Platform, Modal, Pressable } from 'react-native';
-import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, Truck, ChevronLeft, Sun, Moon, Smartphone, Facebook, Instagram } from 'lucide-react-native';
+import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, Truck, ChevronLeft, Sun, Moon, Smartphone } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import Colors from '@/constants/colors';
@@ -400,7 +400,7 @@ export default function SettingsScreen() {
 
             <TouchableOpacity style={styles.socialRow} onPress={() => handleOpenSocialLink(FACEBOOK_URL)}>
               <View style={styles.socialLeft}>
-                <Facebook size={20} color={colors.primary} />
+                <Ionicons name="logo-facebook" size={20} color={colors.primary} />
                 <Text style={[styles.socialText, { color: colors.primary }]}>Facebook</Text>
               </View>
               <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
@@ -410,7 +410,7 @@ export default function SettingsScreen() {
 
             <TouchableOpacity style={styles.socialRow} onPress={() => handleOpenSocialLink(INSTAGRAM_URL)}>
               <View style={styles.socialLeft}>
-                <Instagram size={20} color={colors.primary} />
+                <Ionicons name="logo-instagram" size={20} color={colors.primary} />
                 <Text style={[styles.socialText, { color: colors.primary }]}>Instagram</Text>
               </View>
               <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
