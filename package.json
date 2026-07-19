@@ -22,6 +22,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/slider": "5.0.1",
+    "@rork-ai/toolkit-sdk": "^0.2.54",
     "@stardazed/streams-text-encoding": "^1.0.2",
     "@supabase/supabase-js": "^2.96.0",
     "@tanstack/react-query": "^5.90.16",
