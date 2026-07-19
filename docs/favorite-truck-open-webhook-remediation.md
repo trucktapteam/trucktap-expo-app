@@ -1,5 +1,9 @@
 # Favorite Truck Open Webhook Credential Remediation
 
+The exact remaining cross-system production order is consolidated in
+`docs/critical-release-remediation-runbook.md`. This runbook remains the
+authoritative detailed procedure for the favorite-open portion of that order.
+
 ## Required secret names
 
 - Edge Function environment: `FAVORITE_TRUCK_OPEN_WEBHOOK_SECRET`
