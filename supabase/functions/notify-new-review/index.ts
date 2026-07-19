@@ -5,6 +5,10 @@ import {
 } from "../_shared/notificationAuth.ts";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+type ReviewOwner = {
+  push_token: string | null;
+  notify_owner_reviews?: boolean;
+};
 
 export const handler = async (req: Request): Promise<Response> => {
   try {
@@ -41,18 +45,20 @@ export const handler = async (req: Request): Promise<Response> => {
       return new Response("Owner review skipped", { status: 200 });
     }
 
-    let { data: owner, error: ownerError } = await supabase
+    const ownerResult = await supabase
       .from("profiles")
       .select("push_token, notify_owner_reviews")
       .eq("id", truck.owner_id)
       .maybeSingle();
+    let owner = ownerResult.data as ReviewOwner | null;
+    let ownerError = ownerResult.error;
     if (ownerError) {
       const fallback = await supabase
         .from("profiles")
         .select("push_token")
         .eq("id", truck.owner_id)
         .maybeSingle();
-      owner = fallback.data;
+      owner = fallback.data as ReviewOwner | null;
       ownerError = fallback.error;
       if (ownerError) {
         console.log("notify-new-review owner query error:", ownerError.message);

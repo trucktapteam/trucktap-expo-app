@@ -5,6 +5,7 @@ import {
 } from "../_shared/notificationAuth.ts";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+type PushProfile = { push_token: string | null };
 
 export const handler = async (req: Request): Promise<Response> => {
   try {
@@ -75,12 +76,12 @@ export const handler = async (req: Request): Promise<Response> => {
       return new Response("Profile query failed", { status: 500 });
     }
 
-    const messages = (profiles ?? [])
-      .filter((profile) =>
+    const messages = ((profiles ?? []) as PushProfile[])
+      .filter((profile: PushProfile) =>
         typeof profile.push_token === "string" &&
         profile.push_token.trim().length > 0
       )
-      .map((profile) => ({
+      .map((profile: PushProfile) => ({
         to: profile.push_token,
         sound: "default",
         title: "New Truck Update 🚚",

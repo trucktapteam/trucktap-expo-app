@@ -6,6 +6,12 @@ import {
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const FAVORITE_COOLDOWN_MS = 10 * 60 * 1000;
+type FavoriteOwner = {
+  id: string;
+  push_token: string | null;
+  last_favorite_notification_at: string | null;
+  notify_owner_favorites?: boolean;
+};
 
 export const handler = async (req: Request): Promise<Response> => {
   try {
@@ -50,11 +56,13 @@ export const handler = async (req: Request): Promise<Response> => {
       return new Response("Owner favorite skipped", { status: 200 });
     }
 
-    let { data: owner, error: ownerError } = await supabase
+    const ownerResult = await supabase
       .from("profiles")
       .select("id, push_token, last_favorite_notification_at, notify_owner_favorites")
       .eq("id", truck.owner_id)
       .maybeSingle();
+    let owner = ownerResult.data as FavoriteOwner | null;
+    let ownerError = ownerResult.error;
 
     if (ownerError) {
       console.log("notify-new-favorite owner query with preference failed:", ownerError.message);
@@ -63,7 +71,7 @@ export const handler = async (req: Request): Promise<Response> => {
         .select("id, push_token, last_favorite_notification_at")
         .eq("id", truck.owner_id)
         .maybeSingle();
-      owner = fallback.data;
+      owner = fallback.data as FavoriteOwner | null;
       ownerError = fallback.error;
       if (ownerError) {
         console.log("notify-new-favorite owner fallback query error:", ownerError.message);
