@@ -11,6 +11,7 @@ import { useAccountDeletion } from '@/hooks/useAccountDeletion';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { supabase } from '@/lib/supabase';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import { fetchPrivateProfile } from '@/lib/privateProfile';
 
 type OwnerNotificationPreferences = {
   favorites: boolean;
@@ -69,11 +70,7 @@ export default function TruckSettings() {
       if (!authUser?.id) return;
 
       try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('notify_owner_favorites, notify_owner_reviews')
-          .eq('id', authUser.id)
-          .maybeSingle();
+        const { data, error } = await fetchPrivateProfile(authUser.id);
 
         if (error) {
           console.log('Error loading owner notification preferences:', error.message);

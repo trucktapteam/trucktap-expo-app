@@ -18,6 +18,7 @@ import {
   rpcSupportsCanonicalLiveLocation,
 } from '@/lib/liveLocationCompatibility';
 import { emitOwnerReleaseRestriction } from '@/lib/releasePolicy';
+import { fetchPrivateProfile } from '@/lib/privateProfile';
 
 const parseJsonArray = (val: any): any[] => {
   if (Array.isArray(val)) return val;
@@ -1035,13 +1036,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
             }
           }
 
-          // Try to fetch from Supabase profiles table
+          // Load private account fields through the self/admin-authorized RPC.
           if (isSupabaseConfigured) {
-            const { data: profileData, error } = await supabase
-              .from('profiles')
-              .select('display_name, profile_photo, role, truck_id')
-              .eq('id', authUser.id)
-              .single();
+            const { data: profileData, error } = await fetchPrivateProfile(authUser.id);
 
             console.log('[AppContext] Raw profile data from Supabase:', profileData);
 
@@ -1204,7 +1201,7 @@ if (!favoritesError && favoriteRows) {
       // Preserve current favorites
       let currentFavorites = userProfile?.favorites || [];
       
-      // Try to fetch from Supabase profiles table
+      // Load private account fields through the self/admin-authorized RPC.
       if (isSupabaseConfigured) {
         const { data: favoriteRows, error: favoritesError } = await supabase
           .from('favorites')
@@ -1217,11 +1214,7 @@ if (!favoritesError && favoriteRows) {
           currentFavorites = favoriteRows.map((row: any) => row.truck_id).filter(Boolean);
         }
 
-        const { data: profileData, error } = await supabase
-          .from('profiles')
-          .select('display_name, profile_photo, role, truck_id')
-          .eq('id', authUser.id)
-          .single();
+        const { data: profileData, error } = await fetchPrivateProfile(authUser.id);
 
         console.log('[AppContext] Raw refreshed profile data from Supabase:', profileData);
 

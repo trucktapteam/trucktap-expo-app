@@ -2,6 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { AppState as RNAppState, Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchPrivateProfile } from '@/lib/privateProfile';
 
 import Constants from 'expo-constants';
 import { DEBUG } from '@/constants/debug';
@@ -42,8 +43,6 @@ const DEFAULT_PREFS: NotificationPreferences = {
 
 const STORAGE_KEY = 'notificationPreferences';
 const FOREGROUND_PERMISSION_REFRESH_DEBOUNCE_MS = 5000;
-const PREFERENCE_SELECT =
-  'notify_favorites_open, notify_new_trucks, notify_announcements';
 
 const profileRowToPreferences = (row: any): NotificationPreferences => ({
   favoritesOpen: row?.notify_favorites_open === true,
@@ -258,11 +257,7 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
         email: user.email,
       });
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(PREFERENCE_SELECT)
-        .eq('id', user.id)
-        .single();
+      const { data, error } = await fetchPrivateProfile(user.id);
 
       logNotificationPrefs('[Notifications] Loaded Supabase preference values:', data);
 
@@ -306,15 +301,12 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
       });
       logNotificationPrefs('[Notifications] Outgoing preference update payload:', payload);
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('profiles')
         .update(payload)
-        .eq('id', user.id)
-        .select(PREFERENCE_SELECT)
-        .single();
+        .eq('id', user.id);
 
       logNotificationPrefs('[Notifications] Supabase preference update result:', {
-        data,
         error,
       });
 
@@ -328,8 +320,8 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
         return false;
       }
 
-      logNotificationPrefs('[Notifications] Saved Supabase preference values:', data);
-      const savedPrefs = profileRowToPreferences(data);
+      logNotificationPrefs('[Notifications] Saved Supabase preference values:', newPrefs);
+      const savedPrefs = newPrefs;
       setPreferences(savedPrefs);
       setPreferencesUserId(user.id);
       await persistPreferencesLocally(savedPrefs);
