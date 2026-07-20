@@ -136,10 +136,13 @@ begin
     (v_policy ->> 'owner_gate_enabled')::boolean,
     'admin update RPC should atomically enable a complete policy'
   );
+  -- Audit writes now go to the generalized client_compatibility_policy_audit
+  -- table (scope = 'owner_management'); see the matching note further below.
   perform pg_temp.assert_true(
     (select count(*) = 1
-     from private.owner_release_policy_audit
+     from private.client_compatibility_policy_audit
      where actor_user_id = v_admin
+       and scope = 'owner_management'
        and reason = 'integration activation'),
     'policy update must append immutable actor-attributed history'
   );
@@ -268,9 +271,14 @@ begin
     'integration rollback'
   );
 
+  -- Audit writes now go to the generalized client_compatibility_policy_audit
+  -- table (scope = 'owner_management'); private.owner_release_policy_audit
+  -- is preserved unmodified as a historical record of pre-generalization
+  -- changes but no longer receives new rows.
   select count(*) into v_count
-  from private.owner_release_policy_audit
-  where actor_user_id = v_admin;
+  from private.client_compatibility_policy_audit
+  where actor_user_id = v_admin
+    and scope = 'owner_management';
   perform pg_temp.assert_true(v_count = 3, 'every successful policy change must be audited');
 
   perform set_config('request.jwt.claim.sub', v_owner::text, true);
