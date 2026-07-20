@@ -308,6 +308,7 @@ function RootLayoutNav() {
       <Stack.Screen name="admin-live-activity" options={{ title: 'LIVE Activity' }} />
       <Stack.Screen name="customer-login" options={{ headerShown: false, presentation: 'transparentModal' }} />
       <Stack.Screen name="owner-update-required" options={{ headerShown: false }} />
+      <Stack.Screen name="update-required" options={{ headerShown: false }} />
       <Stack.Screen name="auth/check-email" options={{ headerShown: false }} />
       <Stack.Screen name="auth/verified" options={{ headerShown: false }} />
       <Stack.Screen name="auth/reset-password" options={{ headerShown: false }} />

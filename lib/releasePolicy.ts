@@ -1,31 +1,55 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { getOwnerRestrictionFromError, mapOwnerReleasePolicy } from '@/lib/releasePolicyCore';
+import {
+  CompatibilityPolicy,
+  ClientRestriction,
+  KNOWN_CLIENT_SCOPES,
+  mapCompatibilityPolicy,
+  parseClientRestrictionFromError,
+} from '@/lib/releasePolicyCore';
 
-type RestrictionListener = (restriction: 'update_required' | 'paused') => void;
+type RestrictionListener = (scope: string, restriction: ClientRestriction) => void;
 const listeners = new Set<RestrictionListener>();
 
-export const subscribeToOwnerReleaseRestrictions = (listener: RestrictionListener) => {
+export const subscribeToClientRestrictions = (listener: RestrictionListener) => {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 };
 
-export const emitOwnerReleaseRestriction = (error: unknown): boolean => {
-  const restriction = getOwnerRestrictionFromError(
+// Single emission path for every scope. A caller does not need to know
+// which scope an RPC belongs to — the server-controlled error string
+// already carries that, matched here once.
+export const emitClientRestriction = (error: unknown): boolean => {
+  const result = parseClientRestrictionFromError(
     error as { message?: string | null; details?: string | null },
+    KNOWN_CLIENT_SCOPES,
   );
-  if (!restriction || restriction === 'allowed') return false;
-  listeners.forEach(listener => listener(restriction));
+  if (!result) return false;
+  listeners.forEach(listener => listener(result.scope, result.restriction));
   return true;
 };
 
-export const loadOwnerReleasePolicy = async () => {
-  if (!isSupabaseConfigured) return null;
-  const { data, error } = await supabase.rpc('get_owner_release_policy');
+// Preserved name for existing call sites (AppContext owner-write RPCs,
+// handsFreeLive.ts). Behavior is unchanged; it now also recognizes other
+// scopes' errors, which is harmless for owner-only call sites since those
+// only ever produce owner_management errors.
+export const emitOwnerReleaseRestriction = emitClientRestriction;
+
+export const loadClientCompatibilityPolicies = async (): Promise<
+  Record<string, CompatibilityPolicy>
+> => {
+  if (!isSupabaseConfigured) return {};
+  const { data, error } = await supabase.rpc('get_client_compatibility_policies');
   if (error) throw error;
-  const row = Array.isArray(data) ? data[0] : data;
-  return mapOwnerReleasePolicy(row as Record<string, unknown> | null);
+  const rows = Array.isArray(data) ? data : [];
+  const policies: Record<string, CompatibilityPolicy> = {};
+  for (const row of rows as Record<string, unknown>[]) {
+    const scope = typeof row?.scope === 'string' ? row.scope : null;
+    if (!scope) continue;
+    policies[scope] = mapCompatibilityPolicy(scope, row);
+  }
+  return policies;
 };
 
 export const observeOwnerClientVersion = async () => {
