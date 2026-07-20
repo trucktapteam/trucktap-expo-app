@@ -7,6 +7,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import AuthPromptModal from '@/components/AuthPromptModal';
+import PrivateDataGate from '@/components/PrivateDataGate';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 
 export default function ProfileScreen() {
@@ -72,39 +73,41 @@ const handleBecomeOwner = () => {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {isAuthenticated ? (
-  <View style={styles.profileCard}>
-    <View style={styles.avatarContainer}>
-      {currentUser?.profile_photo ? (
-        <Image
-          key={currentUser.profile_photo}
-          source={{
-            uri: `${currentUser.profile_photo}${currentUser.profile_photo.includes('?') ? '&' : '?'}cb=${Date.now()}`
-          }}
-          style={styles.profileImage}
-        />
-      ) : (
-        <View style={styles.avatar}>
-          <User size={40} color={colors.primary} />
-        </View>
-      )}
-    </View>
-    <Text style={styles.userName}>{currentUser?.name || 'Food Lover'}</Text>
-    <Text style={styles.userEmail}>{currentUser?.email}</Text>
+  <PrivateDataGate>
+    <View style={styles.profileCard}>
+      <View style={styles.avatarContainer}>
+        {currentUser?.profile_photo ? (
+          <Image
+            key={currentUser.profile_photo}
+            source={{
+              uri: `${currentUser.profile_photo}${currentUser.profile_photo.includes('?') ? '&' : '?'}cb=${Date.now()}`
+            }}
+            style={styles.profileImage}
+          />
+        ) : (
+          <View style={styles.avatar}>
+            <User size={40} color={colors.primary} />
+          </View>
+        )}
+      </View>
+      <Text style={styles.userName}>{currentUser?.name || 'Food Lover'}</Text>
+      <Text style={styles.userEmail}>{currentUser?.email}</Text>
 
-    <View style={styles.statsContainer}>
-      <View style={styles.statItem}>
-        <Heart size={20} color={colors.primary} />
-        <Text style={styles.statValue}>{favoriteTrucks.length}</Text>
-        <Text style={styles.statLabel}>Favorites</Text>
-      </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <MapPin size={20} color={colors.primary} />
-        <Text style={styles.statValue}>{visibleTrucks.length}</Text>
-        <Text style={styles.statLabel}>Trucks Nearby</Text>
+      <View style={styles.statsContainer}>
+        <View style={styles.statItem}>
+          <Heart size={20} color={colors.primary} />
+          <Text style={styles.statValue}>{favoriteTrucks.length}</Text>
+          <Text style={styles.statLabel}>Favorites</Text>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
+          <MapPin size={20} color={colors.primary} />
+          <Text style={styles.statValue}>{visibleTrucks.length}</Text>
+          <Text style={styles.statLabel}>Trucks Nearby</Text>
+        </View>
       </View>
     </View>
-  </View>
+  </PrivateDataGate>
 ) : (
   <View style={styles.profileCard}>
     <View style={styles.avatar}>

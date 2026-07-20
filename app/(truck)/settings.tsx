@@ -12,6 +12,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { supabase } from '@/lib/supabase';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { fetchPrivateProfile } from '@/lib/privateProfile';
+import { emitClientRestriction } from '@/lib/releasePolicy';
 
 type OwnerNotificationPreferences = {
   favorites: boolean;
@@ -73,6 +74,7 @@ export default function TruckSettings() {
         const { data, error } = await fetchPrivateProfile(authUser.id);
 
         if (error) {
+          emitClientRestriction(error);
           console.log('Error loading owner notification preferences:', error.message);
           return;
         }

@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { AppState as RNAppState, Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchPrivateProfile } from '@/lib/privateProfile';
+import { emitClientRestriction } from '@/lib/releasePolicy';
 
 import Constants from 'expo-constants';
 import { DEBUG } from '@/constants/debug';
@@ -262,6 +263,9 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
       logNotificationPrefs('[Notifications] Loaded Supabase preference values:', data);
 
       if (error) {
+        // A private_data compatibility restriction must be surfaced, not
+        // masqueraded as a normal default-preferences state.
+        emitClientRestriction(error);
         logNotificationPrefs('[Notifications] Preference load error:', error);
         console.log('[Notifications] Error loading notification preferences:', error.message);
         setPreferences(DEFAULT_PREFS);

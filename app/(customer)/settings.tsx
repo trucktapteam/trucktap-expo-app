@@ -11,6 +11,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AuthPromptModal from '@/components/AuthPromptModal';
+import PrivateDataGate from '@/components/PrivateDataGate';
 import { useAccountDeletion } from '@/hooks/useAccountDeletion';
 
 const FACEBOOK_URL = 'https://www.facebook.com/TruckTap';
@@ -272,69 +273,71 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Notifications</Text>
 
-          <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <Bell size={20} color={colors.secondaryText} />
-                <View style={styles.settingText}>
-                  <Text style={[styles.settingLabel, { color: colors.text }]}>Favorites are open</Text>
-                  <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Get notified when your favorite trucks open</Text>
+          <PrivateDataGate>
+              <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+                <View style={styles.settingRow}>
+                  <View style={styles.settingLeft}>
+                    <Bell size={20} color={colors.secondaryText} />
+                    <View style={styles.settingText}>
+                      <Text style={[styles.settingLabel, { color: colors.text }]}>Favorites are open</Text>
+                      <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Get notified when your favorite trucks open</Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={notifPrefs.favoritesOpen}
+                    onValueChange={(val) => togglePreference('favoritesOpen', val)}
+                    disabled={notificationSwitchesDisabled}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    ios_backgroundColor={colors.border}
+                  />
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                <View style={styles.settingRow}>
+                  <View style={styles.settingLeft}>
+                    <Bell size={20} color={colors.secondaryText} />
+                    <View style={styles.settingText}>
+                      <Text style={[styles.settingLabel, { color: colors.text }]}>New trucks added</Text>
+                      <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Get notified when new food trucks join TruckTap</Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={notifPrefs.newTrucksNearby}
+                    onValueChange={(val) => togglePreference('newTrucksNearby', val)}
+                    disabled={notificationSwitchesDisabled}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    ios_backgroundColor={colors.border}
+                  />
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                <View style={styles.settingRow}>
+                  <View style={styles.settingLeft}>
+                    <Bell size={20} color={colors.secondaryText} />
+                    <View style={styles.settingText}>
+                      <Text style={[styles.settingLabel, { color: colors.text }]}>Truck announcements</Text>
+                      <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Updates from trucks you follow</Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={notifPrefs.truckAnnouncements}
+                    onValueChange={(val) => togglePreference('truckAnnouncements', val)}
+                    disabled={notificationSwitchesDisabled}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    ios_backgroundColor={colors.border}
+                  />
                 </View>
               </View>
-              <Switch
-                value={notifPrefs.favoritesOpen}
-                onValueChange={(val) => togglePreference('favoritesOpen', val)}
-                disabled={notificationSwitchesDisabled}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                ios_backgroundColor={colors.border}
-              />
-            </View>
 
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <Bell size={20} color={colors.secondaryText} />
-                <View style={styles.settingText}>
-                  <Text style={[styles.settingLabel, { color: colors.text }]}>New trucks added</Text>
-                  <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Get notified when new food trucks join TruckTap</Text>
+              {notifStatus === 'denied' && (
+                <View style={[styles.noticeCard, { backgroundColor: `${Colors.error}10` }]}>
+                  <AlertCircle size={16} color={Colors.error} />
+                  <Text style={[styles.noticeText, { color: Colors.error }]}>Notifications are disabled. Enable them in your device settings to receive alerts.</Text>
                 </View>
-              </View>
-              <Switch
-                value={notifPrefs.newTrucksNearby}
-                onValueChange={(val) => togglePreference('newTrucksNearby', val)}
-                disabled={notificationSwitchesDisabled}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                ios_backgroundColor={colors.border}
-              />
-            </View>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <Bell size={20} color={colors.secondaryText} />
-                <View style={styles.settingText}>
-                  <Text style={[styles.settingLabel, { color: colors.text }]}>Truck announcements</Text>
-                  <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Updates from trucks you follow</Text>
-                </View>
-              </View>
-              <Switch
-                value={notifPrefs.truckAnnouncements}
-                onValueChange={(val) => togglePreference('truckAnnouncements', val)}
-                disabled={notificationSwitchesDisabled}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                ios_backgroundColor={colors.border}
-              />
-            </View>
-          </View>
-
-          {notifStatus === 'denied' && (
-            <View style={[styles.noticeCard, { backgroundColor: `${Colors.error}10` }]}>
-              <AlertCircle size={16} color={Colors.error} />
-              <Text style={[styles.noticeText, { color: Colors.error }]}>Notifications are disabled. Enable them in your device settings to receive alerts.</Text>
-            </View>
-          )}
+              )}
+          </PrivateDataGate>
         </View>
 
         <View style={styles.section}>

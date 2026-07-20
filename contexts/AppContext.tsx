@@ -17,7 +17,7 @@ import {
   findPersistedRequestedLiveLocation,
   rpcSupportsCanonicalLiveLocation,
 } from '@/lib/liveLocationCompatibility';
-import { emitOwnerReleaseRestriction } from '@/lib/releasePolicy';
+import { emitOwnerReleaseRestriction, emitClientRestriction } from '@/lib/releasePolicy';
 import { fetchPrivateProfile } from '@/lib/privateProfile';
 
 const parseJsonArray = (val: any): any[] => {
@@ -1068,7 +1068,11 @@ if (!favoritesError && favoriteRows) {
               await AsyncStorage.setItem('userProfile', JSON.stringify(newProfile));
               return;
             } else if (error && error.code !== 'PGRST116') {
-              // PGRST116 = not found, which is expected for new users
+              // PGRST116 = not found, which is expected for new users. Any
+              // other error (including a private_data compatibility
+              // restriction) must be surfaced, not silently treated as a
+              // normal missing-profile case.
+              emitClientRestriction(error);
               console.log('[AppContext] Profile fetch error:', error.message);
             }
           }
@@ -1233,6 +1237,7 @@ if (!favoritesError && favoriteRows) {
           await AsyncStorage.setItem('userProfile', JSON.stringify(refreshedProfile));
           return;
         } else if (error && error.code !== 'PGRST116') {
+          emitClientRestriction(error);
           console.log('[AppContext] Profile refresh error:', error.message);
         }
       }
