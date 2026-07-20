@@ -6,6 +6,20 @@ TruckTap keeps customer discovery available while requiring a compatible
 native build for owner-management actions. This is permanent release
 infrastructure, not a temporary Hands-Free LIVE exception.
 
+**This document describes one scope (`owner_management`) of the general
+client compatibility system in `docs/client-compatibility-policy.md`.**
+`private.owner_release_policy` (described below) is preserved unmodified as
+a rollback anchor; the live configuration and enforcement described in this
+document now live in `private.client_compatibility_policy` under
+`scope = 'owner_management'`, and `private.require_supported_owner_client()`
+is a one-line wrapper around the generalized
+`private.require_supported_client('owner_management', ...)`. Every RPC name,
+signature, and error string described below is unchanged. Read this
+document for owner-management specifics; read
+`docs/client-compatibility-policy.md` for how new protected RPCs (such as
+`get_private_profile()`, gated separately under the `private_data` scope)
+plug into the same system without duplicating this logic.
+
 The database remains authoritative. Client build headers improve compatibility
 decisions and operator visibility, but they never authenticate a user, prove
 ownership, or grant authorization.
