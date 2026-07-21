@@ -49,3 +49,4 @@ aab-check/
 *.aab
 *.zip
 supabase/.temp/
+supabase/.branches/
