@@ -10,7 +10,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import AuthPromptModal from '@/components/AuthPromptModal';
 import Toast from '@/components/Toast';
-import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
+
+type CreatedTruckRow = { id: string; name: string; owner_id: string };
 
 export default function TruckSetupScreen() {
   const router = useRouter();
@@ -70,67 +71,31 @@ export default function TruckSetupScreen() {
     console.log('[TruckSetup] Creating truck in Supabase:', truckName.trim(), 'owner_id:', authUser.id);
 
     try {
-      const insertPayload = {
-        owner_id: authUser.id,
-        name: truckName.trim(),
-        hero_image: DEFAULT_TRUCK_HERO_IMAGE,
-        logo: DEFAULT_TRUCK_LOGO_IMAGE,
-        cuisine_type: 'Unspecified',
-        bio: '',
-        is_open: false,
-        phone: '',
-        website: '',
-        facebook_url: '',
-        instagram_url: '',
-        tiktok_url: '',
-        service_area: '',
-        trust_badges: [],
-        is_verified: false,
-      };
-
+      // Truck creation and the customer->truck role promotion happen
+      // atomically server-side in create_owned_truck(); the RPC only
+      // accepts a name, so there is no client-controlled owner_id and no
+      // way to insert into public.trucks directly (see
+      // 20260721000000_secure_truck_creation.sql). Its return already
+      // reflects the persisted, authorized row, so the separate
+      // post-insert ownership verification this replaced is no longer
+      // needed.
       const { data, error } = await supabase
-        .from('trucks')
-        .insert(insertPayload)
-        .select('id, name, owner_id')
-        .single();
+        .rpc('create_owned_truck', { p_name: truckName.trim() })
+        .single<CreatedTruckRow>();
 
       if (error || !data?.id) {
         const errorMessage = error
           ? [error.message, error.details, error.hint].filter(Boolean).join(' ')
           : 'Truck creation did not return a new truck record.';
 
-        console.log('[TruckSetup] Supabase insert error:', {
+        console.log('[TruckSetup] create_owned_truck RPC error:', {
           message: error?.message,
           details: error?.details,
           hint: error?.hint,
           code: error?.code,
-          insertPayload,
+          truckName: truckName.trim(),
         });
         setToast({ visible: true, message: errorMessage, type: 'error' });
-        setIsSubmitting(false);
-        return;
-      }
-
-      const { data: verifiedTruck, error: verifyError } = await supabase
-        .from('trucks')
-        .select('id')
-        .eq('id', data.id)
-        .eq('owner_id', authUser.id)
-        .maybeSingle();
-
-      if (verifyError || !verifiedTruck?.id) {
-        console.log('[TruckSetup] Post-insert verification failed:', {
-          truckId: data.id,
-          message: verifyError?.message,
-          details: verifyError?.details,
-          hint: verifyError?.hint,
-          code: verifyError?.code,
-        });
-        setToast({
-          visible: true,
-          message: 'Truck creation could not be verified. Please check your Supabase trucks policies and try again.',
-          type: 'error',
-        });
         setIsSubmitting(false);
         return;
       }
