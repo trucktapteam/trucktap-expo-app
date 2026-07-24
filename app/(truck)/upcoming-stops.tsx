@@ -6,7 +6,7 @@ import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Bell, CalendarDays, ChevronDown, Clock, MapPin, RefreshCw, Trash2, Zap } from 'lucide-react-native';
+import { Bell, CalendarDays, ChevronDown, Clock, MapPin, Pencil, RefreshCw, Trash2, Zap } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { UpcomingStop, UpcomingStopStatus } from '@/types';
@@ -238,6 +238,7 @@ export default function UpcomingStopsScreen() {
   const [endsNextDay, setEndsNextDay] = useState(false);
   const [locationText, setLocationText] = useState('');
   const [note, setNote] = useState('');
+  const [editingStopId, setEditingStopId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [busyStopId, setBusyStopId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -259,6 +260,7 @@ export default function UpcomingStopsScreen() {
   const [confirmationPreferenceSaving, setConfirmationPreferenceSaving] = useState(false);
   const reminderSettingsRef = useRef(reminderSettings);
   const reminderIdsRef = useRef(reminderIds);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const stops = useMemo(
     () => truck ? getUpcomingStops(truck.id) : [],
@@ -728,8 +730,14 @@ export default function UpcomingStopsScreen() {
   };
 
   const addSelectedDate = (date: Date) => {
+    const dateToAdd = startOfSelectedDate(date);
+
+    if (editingStopId) {
+      setSelectedDates([dateToAdd]);
+      return;
+    }
+
     setSelectedDates(current => {
-      const dateToAdd = startOfSelectedDate(date);
       const dateKey = getDateKey(dateToAdd);
 
       if (current.some(date => getDateKey(date) === dateKey)) {
@@ -784,6 +792,33 @@ export default function UpcomingStopsScreen() {
 
   const pickerMode = activePicker === 'date' ? 'date' : 'time';
 
+  const handleEditStop = (stop: UpcomingStop) => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    const startsAtDate = new Date(stop.starts_at);
+    const endsAtDate = new Date(stop.ends_at);
+    const stopDate = startOfSelectedDate(startsAtDate);
+
+    setEditingStopId(stop.id);
+    setDateValue(startsAtDate);
+    setSelectedDates([stopDate]);
+    setStartTime(startsAtDate);
+    setEndTime(endsAtDate);
+    setEndsNextDay(getDateKey(startOfSelectedDate(endsAtDate)) !== getDateKey(stopDate));
+    setLocationText(stop.location_text);
+    setNote(stop.note ?? '');
+    setActivePicker(null);
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingStopId(null);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    resetForm();
+  };
+
   const handleSave = async () => {
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -800,37 +835,67 @@ export default function UpcomingStopsScreen() {
         throw new Error('Reminder settings are still loading. Please try again.');
       }
 
-      const dateRanges = selectedDates.map(selectedDate => buildDateRange(selectedDate));
       const currentSettings = reminderSettingsRef.current;
-
       setIsSaving(true);
 
-      const createdStops: UpcomingStop[] = [];
+      if (editingStopId) {
+        const previousStop = stops.find(stop => stop.id === editingStopId);
+        const { startsAt, endsAt } = buildDateRange(selectedDates[0]);
 
-      for (const { startsAt, endsAt } of dateRanges) {
-        const createdStop = await addUpcomingStop({
-          truck_id: truck.id,
+        const updatedStop = await updateUpcomingStop(editingStopId, {
           starts_at: startsAt.toISOString(),
           ends_at: endsAt.toISOString(),
           location_text: trimmedLocation,
           note: note.trim() || null,
-          status: 'scheduled',
         });
 
-        createdStops.push(createdStop);
-
         if (currentSettings.enabled) {
-          await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
+          await scheduleReminderForStop(updatedStop, reminderIdsRef.current, currentSettings);
+        } else {
+          await cancelReminderForStop(editingStopId, reminderIdsRef.current);
         }
-      }
 
-      if (createdStops.length > 1) {
-        setSuccessMessage(`${createdStops.length} stops scheduled.`);
+        if (
+          previousStop &&
+          previousStop.location_text !== trimmedLocation &&
+          automationStatuses[editingStopId]?.enabled
+        ) {
+          await configureUpcomingStopAutomation({ stopId: editingStopId, enabled: false });
+          await refreshAutomationState();
+        }
+
+        setSuccessMessage('Stop updated.');
+        setEditingStopId(null);
+        resetForm();
       } else {
-        setSuccessMessage('Stop scheduled.');
-      }
+        const dateRanges = selectedDates.map(selectedDate => buildDateRange(selectedDate));
+        const createdStops: UpcomingStop[] = [];
 
-      resetForm();
+        for (const { startsAt, endsAt } of dateRanges) {
+          const createdStop = await addUpcomingStop({
+            truck_id: truck.id,
+            starts_at: startsAt.toISOString(),
+            ends_at: endsAt.toISOString(),
+            location_text: trimmedLocation,
+            note: note.trim() || null,
+            status: 'scheduled',
+          });
+
+          createdStops.push(createdStop);
+
+          if (currentSettings.enabled) {
+            await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
+          }
+        }
+
+        if (createdStops.length > 1) {
+          setSuccessMessage(`${createdStops.length} stops scheduled.`);
+        } else {
+          setSuccessMessage('Stop scheduled.');
+        }
+
+        resetForm();
+      }
     } catch (error: any) {
       setErrorMessage(error?.message ?? 'Could not save upcoming stop.');
     } finally {
@@ -885,6 +950,9 @@ export default function UpcomingStopsScreen() {
             try {
               await deleteUpcomingStop(stop.id);
               await cancelReminderForStop(stop.id, reminderIdsRef.current);
+              if (editingStopId === stop.id) {
+                handleCancelEdit();
+              }
             } catch (error: any) {
               setErrorMessage(error?.message ?? 'Could not delete upcoming stop.');
             } finally {
@@ -927,6 +995,7 @@ export default function UpcomingStopsScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <ScrollView
+          ref={scrollViewRef}
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
@@ -1020,7 +1089,7 @@ export default function UpcomingStopsScreen() {
             <View style={styles.formHeader}>
               <View style={styles.formTitleRow}>
                 <CalendarDays size={24} color={Colors.primary} />
-                <Text style={styles.formTitle}>Add planned stop</Text>
+                <Text style={styles.formTitle}>{editingStopId ? 'Edit planned stop' : 'Add planned stop'}</Text>
               </View>
               <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton} disabled={upcomingStopsLoading}>
                 {upcomingStopsLoading ? (
@@ -1042,10 +1111,14 @@ export default function UpcomingStopsScreen() {
               <View style={styles.selectedDatesHeader}>
                 <View>
                   <Text style={styles.selectedDatesTitle}>Selected Dates</Text>
-                  <Text style={styles.selectedDatesSubtitle}>Tap a date above to add it.</Text>
-                  <Text style={styles.selectedDatesHelper}>
-                    Select multiple dates to create stops with the same location and hours.
+                  <Text style={styles.selectedDatesSubtitle}>
+                    {editingStopId ? 'Tap the date above to change it.' : 'Tap a date above to add it.'}
                   </Text>
+                  {!editingStopId ? (
+                    <Text style={styles.selectedDatesHelper}>
+                      Select multiple dates to create stops with the same location and hours.
+                    </Text>
+                  ) : null}
                 </View>
               </View>
               {selectedDates.length > 0 ? (
@@ -1175,9 +1248,20 @@ export default function UpcomingStopsScreen() {
               {isSaving ? (
                 <ActivityIndicator color={Colors.light} />
               ) : (
-                <Text style={styles.saveButtonText}>Save Stop</Text>
+                <Text style={styles.saveButtonText}>{editingStopId ? 'Save Changes' : 'Save Stop'}</Text>
               )}
             </TouchableOpacity>
+
+            {editingStopId ? (
+              <TouchableOpacity
+                style={styles.cancelEditButton}
+                onPress={handleCancelEdit}
+                disabled={isSaving}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.cancelEditButtonText}>Cancel Edit</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <View style={styles.listHeader}>
@@ -1204,6 +1288,7 @@ export default function UpcomingStopsScreen() {
                 automationSystemEnabled={automationSettings.systemEnabled}
                 automationStatus={automationStatuses[stop.id] ?? null}
                 onStatusChange={handleStatusChange}
+                onEdit={handleEditStop}
                 onDelete={handleDelete}
                 onGoLive={handleGoLiveFromStop}
                 onAutomationToggle={handleAutomationToggle}
@@ -1226,6 +1311,7 @@ type StopCardProps = {
   automationSystemEnabled: boolean;
   automationStatus: UpcomingStopAutomationStatus | null;
   onStatusChange: (stop: UpcomingStop, status: UpcomingStopStatus) => void;
+  onEdit: (stop: UpcomingStop) => void;
   onDelete: (stop: UpcomingStop) => void;
   onGoLive: (stop: UpcomingStop) => void;
   onAutomationToggle: (stop: UpcomingStop, enabled: boolean) => void;
@@ -1285,6 +1371,7 @@ function StopCard({
   automationSystemEnabled,
   automationStatus,
   onStatusChange,
+  onEdit,
   onDelete,
   onGoLive,
   onAutomationToggle,
@@ -1312,14 +1399,24 @@ function StopCard({
           </Text>
         </View>
         {ended ? <Text style={styles.endedText}>Ended</Text> : null}
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => onDelete(stop)}
-          disabled={busy}
-          activeOpacity={0.75}
-        >
-          {busy ? <ActivityIndicator size="small" color={Colors.gray} /> : <Trash2 size={18} color={Colors.danger} />}
-        </TouchableOpacity>
+        <View style={styles.stopHeaderActions}>
+          <TouchableOpacity
+            style={styles.iconActionButton}
+            onPress={() => onEdit(stop)}
+            disabled={busy}
+            activeOpacity={0.75}
+          >
+            <Pencil size={18} color={Colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.iconActionButton}
+            onPress={() => onDelete(stop)}
+            disabled={busy}
+            activeOpacity={0.75}
+          >
+            {busy ? <ActivityIndicator size="small" color={Colors.gray} /> : <Trash2 size={18} color={Colors.danger} />}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Text style={styles.stopTime}>{formatDateTime(stop.starts_at)} - {formatDateTime(stop.ends_at)}</Text>
@@ -1779,6 +1876,18 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.65,
   },
+  cancelEditButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingVertical: 13,
+    marginTop: 10,
+  },
+  cancelEditButtonText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.gray,
+  },
   errorMessage: {
     color: Colors.danger,
     fontSize: 14,
@@ -1881,8 +1990,13 @@ const styles = StyleSheet.create({
     color: Colors.gray,
     fontWeight: '700' as const,
   },
-  deleteButton: {
+  stopHeaderActions: {
     marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  iconActionButton: {
     padding: 6,
   },
   stopTime: {
