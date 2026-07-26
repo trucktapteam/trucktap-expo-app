@@ -15,6 +15,8 @@ import { usePathname, useRouter, useSegments } from 'expo-router';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, MapPin, Phone, Globe, Users, ShieldCheck } from 'lucide-react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { SOCIAL_BRAND_ICONS } from '@/lib/socialLinkIcons';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -802,7 +804,13 @@ export default function EditProfile() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Facebook (Optional)</Text>
                   <View style={styles.inputWithIcon}>
-                    <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <FontAwesome5
+                      name={SOCIAL_BRAND_ICONS.facebook.name}
+                      brand
+                      size={18}
+                      color={SOCIAL_BRAND_ICONS.facebook.color}
+                      style={styles.inputIcon}
+                    />
                     <TextInput
                       style={[styles.input, styles.inputWithIconText, errors.facebookUrl && styles.inputError]}
                       value={facebookUrl}
@@ -824,7 +832,13 @@ export default function EditProfile() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Instagram (Optional)</Text>
                   <View style={styles.inputWithIcon}>
-                    <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <FontAwesome5
+                      name={SOCIAL_BRAND_ICONS.instagram.name}
+                      brand
+                      size={18}
+                      color={SOCIAL_BRAND_ICONS.instagram.color}
+                      style={styles.inputIcon}
+                    />
                     <TextInput
                       style={[styles.input, styles.inputWithIconText, errors.instagramUrl && styles.inputError]}
                       value={instagramUrl}
@@ -846,7 +860,13 @@ export default function EditProfile() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>TikTok (Optional)</Text>
                   <View style={styles.inputWithIcon}>
-                    <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <FontAwesome5
+                      name={SOCIAL_BRAND_ICONS.tiktok.name}
+                      brand
+                      size={18}
+                      color={SOCIAL_BRAND_ICONS.tiktok.color}
+                      style={styles.inputIcon}
+                    />
                     <TextInput
                       style={[styles.input, styles.inputWithIconText, errors.tiktokUrl && styles.inputError]}
                       value={tiktokUrl}

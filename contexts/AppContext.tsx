@@ -14,6 +14,7 @@ import { clearPushTokenForUser } from '@/lib/pushToken';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { getPublicReadyStatus } from '@/lib/truckPublicReady';
 import {
+  findAnyPersistedLocationForTruck,
   findPersistedRequestedLiveLocation,
   rpcSupportsCanonicalLiveLocation,
 } from '@/lib/liveLocationCompatibility';
@@ -310,6 +311,7 @@ export type AppState = {
   pendingRedirect: string | null;
   pendingNotificationRoute: string | null;
   isInitialNotificationResponseChecked: boolean;
+  pendingDeepLinkRoute: string | null;
   lastViewedOwnerUpdates: string | null;
   selectedAdminTruckId: string | null;
   ownerMessages: OwnerMessage[];
@@ -397,6 +399,7 @@ export type AppState = {
   setPendingRedirect: (route: string | null) => void;
   setPendingNotificationRoute: (route: string | null) => void;
   setIsInitialNotificationResponseChecked: (checked: boolean) => void;
+  setPendingDeepLinkRoute: (route: string | null) => void;
   consumePendingRedirect: () => string | null;
   getTeamUpdates: () => OwnerMessage[];
   markOwnerUpdatesViewed: () => Promise<void>;
@@ -428,6 +431,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [pendingRedirect, setPendingRedirectState] = useState<string | null>(null);
   const [pendingNotificationRoute, setPendingNotificationRoute] = useState<string | null>(null);
   const [isInitialNotificationResponseChecked, setIsInitialNotificationResponseChecked] = useState(false);
+  const [pendingDeepLinkRoute, setPendingDeepLinkRoute] = useState<string | null>(null);
   const [lastViewedOwnerUpdates, setLastViewedOwnerUpdates] = useState<string | null>(null);
   const [selectedAdminTruckId, setSelectedAdminTruckId] = useState<string | null>(null);
   const [ownerMessages, setOwnerMessages] = useState<OwnerMessage[]>([]);
@@ -2021,6 +2025,14 @@ if (error) {
       });
     }
 
+    // On a genuine failure the caller's local truck state may already be
+    // stale (or the RPC may have partially applied server-side); force a
+    // refetch so the dashboard can't be left showing the wrong thing.
+    const forceTruckRefresh = () => {
+      void fetchOwnedTrucksFromSupabase();
+      void fetchAllTrucksFromSupabase();
+    };
+
     const { data: rpcRow, error: rpcError } = await supabase.rpc('go_live_truck', {
       p_truck_id: truckId,
       p_source: source,
@@ -2036,94 +2048,23 @@ if (error) {
         source,
         error: rpcError.message,
       });
+      forceTruckRefresh();
       throw new Error(`Failed to go live: ${rpcError.message}`);
     }
     if (!rpcRow) {
+      forceTruckRefresh();
       throw new Error('Failed to go live: truck not found or not authorized.');
     }
 
-    const requestedLocation = {
-      latitude: location.latitude,
-      longitude: location.longitude,
-      label: locationLabel ?? '',
-    };
-    let locationRows = await fetchTruckLocationRows([truckId], 'goLive');
-    let persistedRequestedLocation = findPersistedRequestedLiveLocation(
-      locationRows,
-      truckId,
-      requestedLocation,
-    );
-    const rpcUsesCanonicalLocation = rpcSupportsCanonicalLiveLocation(rpcRow);
-    const rpcPersistedRequestedLocation =
-      rpcUsesCanonicalLocation && Boolean(persistedRequestedLocation);
-
-    // The current production RPC records LIVE state/audit only. Phase 1A also
-    // writes the canonical location atomically. Inspect the persisted value so
-    // one client supports both contracts without issuing a duplicate write.
-    if (!rpcUsesCanonicalLocation) {
-      const locationWrite = await upsertTruckLiveLocation(
-        truckId,
-        location,
-        new Date().toISOString(),
-      );
-
-      if (locationWrite.error) {
-        console.log('[AppContext] Legacy location upsert error:', locationWrite.error.message);
-        throw new Error(`Failed to update location: ${locationWrite.error.message}`);
-      }
-
-      persistedRequestedLocation = findPersistedRequestedLiveLocation(
-        locationWrite.data as LocationRow[] | null,
-        truckId,
-        requestedLocation,
-      );
-      locationRows = persistedRequestedLocation ? [persistedRequestedLocation] : null;
-
-      if (!persistedRequestedLocation) {
-        console.log('[AppContext] Legacy location write did not persist the requested location:', {
-          currentUserId: authUser.id,
-          truckId,
-        });
-        throw new Error('Failed to save live location: no matching location row was written.');
-      }
-    } else if (persistedRequestedLocation) {
-      locationRows = [persistedRequestedLocation];
-    } else {
-      throw new Error('Live location was saved but could not be verified.');
-    }
-
-    if (__DEV__) {
-      console.log('[AppContext] Go Live location persistence path:', {
-        truckId,
-        persistedByRpc: rpcPersistedRequestedLocation,
-        usedLegacyFallback: !rpcPersistedRequestedLocation,
-      });
-    }
-
+    // The RPC's own returned row is the authoritative signal that Go LIVE
+    // succeeded. Confirm it and update the dashboard immediately, before any
+    // secondary (and best-effort) location lookup below.
     let hydrated = mapSupabaseTruckToLocal(rpcRow);
-    hydrated = mergeTruckLocations([hydrated], locationRows)[0];
-
-    const hasVerifiedLocation =
-      Number.isFinite(hydrated.location?.latitude) &&
-      Number.isFinite(hydrated.location?.longitude);
-
-    if (__DEV__) {
-      console.log('[AppContext] Go Live post-save verification:', {
-        currentUserId: authUser.id,
-        truckId,
-        refetchedIsOpen: hydrated.open_now,
-        hasVerifiedLocation,
-        latitude: hydrated.location?.latitude ?? null,
-        longitude: hydrated.location?.longitude ?? null,
-        lastLiveUpdatedAt: hydrated.lastLiveUpdatedAt ?? null,
-      });
-    }
 
     if (hydrated.open_now !== true) {
+      console.log('[AppContext] Go Live RPC returned but truck is not open:', { truckId });
+      forceTruckRefresh();
       throw new Error('Truck did not remain open after save. Please try again.');
-    }
-    if (!hasVerifiedLocation) {
-      throw new Error('Live location was not saved with valid coordinates.');
     }
 
     setFoodTrucks(prev =>
@@ -2132,7 +2073,72 @@ if (error) {
     setSupabaseOwnedTrucks(prev =>
       prev.map(truck => (truck.id === truckId ? { ...truck, ...hydrated } : truck))
     );
-  }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured, upsertTruckLiveLocation, mapSupabaseTruckToLocal, mergeTruckLocations, fetchTruckLocationRows]);
+
+    // Go LIVE has already succeeded server-side at this point. Everything
+    // below is best-effort location enrichment for the dashboard only - it
+    // must never turn a successful Go LIVE into a reported failure.
+    const requestedLocation = {
+      latitude: location.latitude,
+      longitude: location.longitude,
+      label: locationLabel ?? '',
+    };
+    const rpcUsesCanonicalLocation = rpcSupportsCanonicalLiveLocation(rpcRow);
+    let persistedLocation: LocationRow | null = null;
+
+    if (rpcUsesCanonicalLocation) {
+      let locationRows = await fetchTruckLocationRows([truckId], 'goLive');
+      persistedLocation = findPersistedRequestedLiveLocation(locationRows, truckId, requestedLocation);
+
+      if (!persistedLocation) {
+        // Retry once - covers a transient gap between the RPC's commit and
+        // this independent read before falling back to best-available data.
+        locationRows = await fetchTruckLocationRows([truckId], 'goLive-retry');
+        persistedLocation = findPersistedRequestedLiveLocation(locationRows, truckId, requestedLocation)
+          ?? findAnyPersistedLocationForTruck(locationRows, truckId);
+      }
+    } else {
+      const locationWrite = await upsertTruckLiveLocation(
+        truckId,
+        location,
+        new Date().toISOString(),
+      );
+
+      if (locationWrite.error) {
+        console.log('[AppContext] Legacy location upsert error:', locationWrite.error.message);
+      } else {
+        const writtenRows = locationWrite.data as LocationRow[] | null;
+        persistedLocation = findPersistedRequestedLiveLocation(writtenRows, truckId, requestedLocation)
+          ?? findAnyPersistedLocationForTruck(writtenRows, truckId);
+      }
+    }
+
+    // If nothing persisted could be matched, fall back to the location we
+    // just asked the server to save - the RPC already confirmed success.
+    const bestAvailableLocationRow: LocationRow = persistedLocation ?? {
+      truck_id: truckId,
+      latitude: requestedLocation.latitude,
+      longitude: requestedLocation.longitude,
+      label: requestedLocation.label,
+    };
+
+    hydrated = mergeTruckLocations([hydrated], [bestAvailableLocationRow])[0];
+
+    if (__DEV__) {
+      console.log('[AppContext] Go Live location enrichment:', {
+        truckId,
+        usedPersistedLocation: Boolean(persistedLocation),
+        latitude: hydrated.location?.latitude ?? null,
+        longitude: hydrated.location?.longitude ?? null,
+      });
+    }
+
+    setFoodTrucks(prev =>
+      prev.map(truck => (truck.id === truckId ? { ...truck, ...hydrated } : truck))
+    );
+    setSupabaseOwnedTrucks(prev =>
+      prev.map(truck => (truck.id === truckId ? { ...truck, ...hydrated } : truck))
+    );
+  }, [isAuthenticated, authUser, userOwnsTruck, isSupabaseConfigured, upsertTruckLiveLocation, mapSupabaseTruckToLocal, mergeTruckLocations, fetchTruckLocationRows, fetchOwnedTrucksFromSupabase, fetchAllTrucksFromSupabase]);
 
   const goOffline = useCallback(async ({ truckId, source, updates }: GoOfflineInput): Promise<void> => {
     if (!isAuthenticated || !authUser) {
@@ -3550,6 +3556,8 @@ if (error) {
     setPendingRedirect,
     setPendingNotificationRoute,
     setIsInitialNotificationResponseChecked,
+    pendingDeepLinkRoute,
+    setPendingDeepLinkRoute,
     consumePendingRedirect,
     getTeamUpdates,
     markOwnerUpdatesViewed,
@@ -3560,7 +3568,7 @@ if (error) {
   }), [
     currentUser, isOnboarded, isOnboardedHydrated, hasSeenLocationPrompt, markLocationPromptSeen, foodTrucks, reviews, menuItems, announcements, upcomingStops, upcomingStopsLoading,
     checklistDismissed, showClosed, customerRadius, exploreMode, exploreCenter,
-    pendingRedirect, pendingNotificationRoute, isInitialNotificationResponseChecked, lastViewedOwnerUpdates, selectedAdminTruckId, ownerMessages, setSelectedAdminTruckId,
+    pendingRedirect, pendingNotificationRoute, isInitialNotificationResponseChecked, pendingDeepLinkRoute, lastViewedOwnerUpdates, selectedAdminTruckId, ownerMessages, setSelectedAdminTruckId,
     beginImagePickerSession, endImagePickerSession,
     setShowClosed, setCustomerRadius, setExploreMode, setExploreCenter, setCurrentUser, completeOnboarding,
     refreshCustomerProfile,
@@ -3578,7 +3586,7 @@ if (error) {
     updateUpcomingStop, deleteUpcomingStop, fetchUpcomingStopsFromSupabase,
     setTruckVerified, logout,
     incrementQrScan, getQrScanStats, allTrucksLoading, fetchAllTrucksFromSupabase, isProfileComplete,
-    getDaysAgoText, setPendingRedirect, setPendingNotificationRoute, setIsInitialNotificationResponseChecked, consumePendingRedirect, getTeamUpdates,
+    getDaysAgoText, setPendingRedirect, setPendingNotificationRoute, setIsInitialNotificationResponseChecked, setPendingDeepLinkRoute, consumePendingRedirect, getTeamUpdates,
     markOwnerUpdatesViewed, hasUnreadOwnerUpdates, refreshOwnerMessages, createOwnerMessage, formatOperatingHours,
   ]);
 });

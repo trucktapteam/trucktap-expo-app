@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, TextInpu
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { CalendarDays, MapPin, Clock, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Globe, Users, ShieldCheck } from 'lucide-react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { getSocialBrandIcon } from '@/lib/socialLinkIcons';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -796,20 +798,28 @@ console.log('[FORMAT DATE]', dateInput);
                 <Clock size={20} color={colors.secondaryText} />
                 <Text style={styles.infoText}>{formatOperatingHours(truck.id)}</Text>
               </View>
-              {socialLinks.map(link => (
-                <TouchableOpacity
-                  key={link.key}
-                  style={styles.infoRow}
-                  onPress={() => handleOpenExternalProfileLink(link.url)}
-                  activeOpacity={0.7}
-                  accessibilityRole="link"
-                >
-                  <Globe size={20} color={colors.primary} />
-                  <Text style={[styles.infoText, styles.profileLinkText]} numberOfLines={1}>
-                    {link.label}: {getProfileLinkLabel(link.url)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {socialLinks.map(link => {
+                const brandIcon = getSocialBrandIcon(link.key);
+                return (
+                  <TouchableOpacity
+                    key={link.key}
+                    style={styles.infoRow}
+                    onPress={() => handleOpenExternalProfileLink(link.url)}
+                    activeOpacity={0.7}
+                    accessibilityRole="link"
+                    accessibilityLabel={`${link.label}: ${getProfileLinkLabel(link.url)}`}
+                  >
+                    {brandIcon ? (
+                      <FontAwesome5 name={brandIcon.name} brand size={20} color={brandIcon.color} />
+                    ) : (
+                      <Globe size={20} color={colors.primary} />
+                    )}
+                    <Text style={[styles.infoText, styles.profileLinkText]} numberOfLines={1}>
+                      {getProfileLinkLabel(link.url)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
               <View style={styles.bioDivider} />
               <ExpandableText text={truck.bio} numberOfLines={3} style={styles.bioText} />
             </View>
@@ -1037,7 +1047,7 @@ console.log('[FORMAT DATE]', dateInput);
         <ExpandableText text={review.text} numberOfLines={3} style={styles.reviewComment} />
         {review.ownerReply && (
           <View style={styles.ownerReplyCard}>
-            <Text style={styles.ownerReplyLabel}>Owner response</Text>
+            <Text style={styles.ownerReplyLabel}>Reply from {truck.name}</Text>
             <ExpandableText
               text={review.ownerReply.body}
               numberOfLines={3}
@@ -1192,7 +1202,7 @@ console.log('[FORMAT DATE]', dateInput);
             />
             {review.ownerReply && (
               <View style={styles.ownerReplyCard}>
-                <Text style={styles.ownerReplyLabel}>Owner response</Text>
+                <Text style={styles.ownerReplyLabel}>Reply from {truck.name}</Text>
                 <ExpandableText
                   text={review.ownerReply.body}
                   numberOfLines={6}
@@ -1723,8 +1733,6 @@ emptyReviewText: {
     fontWeight: '700' as const,
     color: colors.primary,
     marginBottom: 6,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.4,
   },
   ownerReplyText: {
     fontSize: 14,

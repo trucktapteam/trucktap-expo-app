@@ -9,6 +9,7 @@ export type TruckOpportunityAction =
   | 'reviews'
   | 'menu'
   | 'goLive'
+  | 'qrCenter'
   | 'none';
 
 export type TruckOpportunity = {
@@ -25,6 +26,7 @@ export type TruckOpportunitiesInput = FoodTruck & {
   menuItems?: MenuItem[];
   reviews?: Review[];
   upcomingStops?: UpcomingStop[];
+  qrShared?: boolean;
 };
 
 type SortableTruckOpportunity = TruckOpportunity & {
@@ -126,7 +128,7 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
   if (truck.announcements && !hasActiveAnnouncement(truck)) {
     opportunities.push({
       id: 'share-announcement',
-      priority: 'medium',
+      priority: 'high',
       recommendationPriority: 'high',
       icon: 'megaphone',
       title: 'Share an announcement',
@@ -138,7 +140,7 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
   if (Array.isArray(truck.images) && truck.images.length < 5) {
     opportunities.push({
       id: 'add-gallery-photos',
-      priority: 'high',
+      priority: 'medium',
       recommendationPriority: 'medium',
       icon: 'images',
       title: 'Add more photos',
@@ -180,6 +182,18 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
       title: 'Go LIVE more often',
       description: 'Frequent LIVE activity builds customer trust.',
       action: 'goLive',
+    });
+  }
+
+  if (!truck.qrShared) {
+    opportunities.push({
+      id: 'put-qr-to-work',
+      priority: 'low',
+      recommendationPriority: 'low',
+      icon: 'qr-code',
+      title: 'Put your QR to work',
+      description: 'Customers who scan it can follow you, view your menu, and find you again.',
+      action: 'qrCenter',
     });
   }
 

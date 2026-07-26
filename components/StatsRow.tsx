@@ -1,39 +1,41 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Star } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
-type StatItemProps = {
-  label: string;
-  value: string | number;
-  showStar?: boolean;
-};
-
-function StatItem({ label, value, showStar }: StatItemProps) {
-  return (
-    <View style={styles.statItem}>
-      <View style={styles.valueRow}>
-        {showStar && <Star size={18} color={Colors.starYellow} fill={Colors.starYellow} />}
-        <Text style={[styles.value, showStar && styles.valueWithStar]}>{value}</Text>
-      </View>
-      <Text style={styles.label}>{label}</Text>
-    </View>
-  );
-}
-
 type StatsRowProps = {
   stats: {
-    menuItems: number;
+    reviewsCount: number;
     rating: number;
   };
+  onReviewsPress: () => void;
 };
 
-export default function StatsRow({ stats }: StatsRowProps) {
+export default function StatsRow({ stats, onReviewsPress }: StatsRowProps) {
+  const hasReviews = stats.reviewsCount > 0;
+
   return (
     <View style={styles.container}>
-      <StatItem label="Menu Items" value={stats.menuItems} />
+      <TouchableOpacity
+        style={styles.statItem}
+        onPress={onReviewsPress}
+        activeOpacity={0.7}
+      >
+        <View style={styles.valueRow}>
+          <Text style={[styles.value, !hasReviews && styles.noReviewsValue]}>
+            {hasReviews ? stats.reviewsCount : 'No Reviews Yet'}
+          </Text>
+        </View>
+        <Text style={styles.label}>{hasReviews ? 'View & Reply →' : 'Tap to View'}</Text>
+      </TouchableOpacity>
       <View style={styles.divider} />
-      <StatItem label="Rating" value={stats.rating.toFixed(1)} showStar />
+      <View style={styles.statItem}>
+        <View style={styles.valueRow}>
+          <Star size={18} color={Colors.starYellow} fill={Colors.starYellow} />
+          <Text style={[styles.value, styles.valueWithStar]}>{stats.rating.toFixed(1)}</Text>
+        </View>
+        <Text style={styles.label}>Rating</Text>
+      </View>
     </View>
   );
 }
@@ -67,6 +69,9 @@ const styles = StyleSheet.create({
   },
   valueWithStar: {
     marginLeft: 4,
+  },
+  noReviewsValue: {
+    fontSize: 16,
   },
   label: {
     fontSize: 12,

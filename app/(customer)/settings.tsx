@@ -298,25 +298,6 @@ export default function SettingsScreen() {
                   <View style={styles.settingLeft}>
                     <Bell size={20} color={colors.secondaryText} />
                     <View style={styles.settingText}>
-                      <Text style={[styles.settingLabel, { color: colors.text }]}>New trucks added</Text>
-                      <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Get notified when new food trucks join TruckTap</Text>
-                    </View>
-                  </View>
-                  <Switch
-                    value={notifPrefs.newTrucksNearby}
-                    onValueChange={(val) => togglePreference('newTrucksNearby', val)}
-                    disabled={notificationSwitchesDisabled}
-                    trackColor={{ false: colors.border, true: colors.primary }}
-                    ios_backgroundColor={colors.border}
-                  />
-                </View>
-
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-                <View style={styles.settingRow}>
-                  <View style={styles.settingLeft}>
-                    <Bell size={20} color={colors.secondaryText} />
-                    <View style={styles.settingText}>
                       <Text style={[styles.settingLabel, { color: colors.text }]}>Truck announcements</Text>
                       <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Updates from trucks you follow</Text>
                     </View>

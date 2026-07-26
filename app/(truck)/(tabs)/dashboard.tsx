@@ -215,9 +215,10 @@ export default function TruckDashboard() {
         announcements,
         menuItems,
         reviews,
+        qrShared,
       })
       : [],
-    [announcements, menuItems, reviews, truck, upcomingStops]
+    [announcements, menuItems, qrShared, reviews, truck, upcomingStops]
   );
   const dashboardRecommendations = useMemo(
     () => commandCenter
@@ -338,10 +339,14 @@ export default function TruckDashboard() {
         return 'Share update';
       case 'gallery':
         return 'Add photos';
+      case 'menu':
+        return 'Add items';
       case 'reviews':
         return 'Reply';
       case 'goLive':
         return 'Go Live';
+      case 'qrCenter':
+        return 'Get QR Code';
       default:
         return null;
     }
@@ -380,11 +385,17 @@ export default function TruckDashboard() {
       case 'gallery':
         router.push('/(truck)/gallery' as any);
         return;
+      case 'menu':
+        router.push('/(truck)/menu-editor' as any);
+        return;
       case 'reviews':
         router.push('/(truck)/reviews' as any);
         return;
       case 'goLive':
         handleGoLive();
+        return;
+      case 'qrCenter':
+        router.push('/(truck)/qr' as any);
         return;
       default:
         return;
@@ -1182,14 +1193,15 @@ export default function TruckDashboard() {
         </TouchableOpacity>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Business Activity</Text>
+          <Text style={styles.sectionTitle}>Customer Feedback</Text>
         </View>
 
         <StatsRow
           stats={{
-            menuItems: menuItems.length,
+            reviewsCount: rating.count,
             rating: rating.average || 0,
           }}
+          onReviewsPress={() => router.push('/(truck)/reviews' as any)}
         />
 
         {qrStats.totalScans > 0 && (
@@ -1231,18 +1243,11 @@ export default function TruckDashboard() {
         </View>
 
         <View style={styles.gridContainer}>
-          <View style={styles.cardWithBadge}>
-            <DashboardCard 
-              icon={Clock}
-              label="Operating Hours"
-              onPress={() => router.push('/(truck)/operating-hours' as any)}
-            />
-            {!hoursSet && (
-              <View style={styles.warningBadge}>
-                <AlertCircle size={12} color={Colors.error} />
-              </View>
-            )}
-          </View>
+          <DashboardCard
+            icon={Clock}
+            label="Operating Hours"
+            onPress={() => router.push('/(truck)/operating-hours' as any)}
+          />
           <View style={styles.cardWithBadge}>
             <DashboardCard 
               icon={Bell}
@@ -2354,25 +2359,6 @@ const styles = StyleSheet.create({
   cardWithBadge: {
     flex: 1,
     position: 'relative',
-    marginHorizontal: 6,
-  },
-  warningBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Colors.error,
-    shadowColor: Colors.error,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
   },
   notificationBadge: {
     position: 'absolute',

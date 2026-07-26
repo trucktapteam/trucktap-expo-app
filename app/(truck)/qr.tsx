@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,15 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 
-import { Link2, AlertCircle } from 'lucide-react-native';
+import { Link2, AlertCircle, Share2, Download } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { DEBUG } from '@/constants/debug';
@@ -20,10 +23,27 @@ import QRCodeSVG from 'react-native-qrcode-svg';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
+// react-native-view-shot cannot reliably screenshot react-native-svg content
+// on Android (the SVG draws through its own native view, not the standard
+// compositing path a view snapshot reads from), which produced blank
+// exports. QRCodeSVG forwards `getRef` straight to the underlying
+// react-native-svg <Svg> node, which has its own native toDataURL() that
+// rasterizes the SVG's actual vector content directly (and internally waits
+// for the view to finish rendering before resolving) - reliable on both
+// platforms. A dedicated hidden instance renders at export resolution with
+// a real quiet-zone margin so the on-screen QR (unchanged, no quiet zone,
+// size 220) never has to change to serve the export.
+const QR_EXPORT_PIXEL_SIZE = 1024;
+const QR_EXPORT_QUIET_ZONE = 64;
+
 export default function QRCodeScreen() {
   const { getUserTruck, isProfileComplete, markQrShared } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('QRCodeScreen');
+  const qrExportSvgRef = useRef<{ toDataURL: (callback: (data: string) => void, options?: { width: number; height: number }) => void } | null>(null);
+  const [isSharingProfile, setIsSharingProfile] = useState(false);
+  const [isExportingQr, setIsExportingQr] = useState(false);
+  const isBusy = isSharingProfile || isExportingQr;
 
   const truckId = useMemo(() => {
     return truck?.id || '';
@@ -59,6 +79,75 @@ export default function QRCodeScreen() {
     } catch (error) {
       console.error('Error copying link:', error);
       Alert.alert('Error', 'Could not copy link');
+    }
+  };
+
+  const shareProfile = async () => {
+    if (!truck) return;
+
+    try {
+      setIsSharingProfile(true);
+      await Share.share({
+        message: `Check out ${truck.name} on TruckTap! ${profileUrl}`,
+        url: profileUrl,
+        title: `${truck.name} - TruckTap`,
+      });
+      markQrShared();
+    } catch (error) {
+      console.error('Error sharing profile:', error);
+      Alert.alert('Error', 'Could not share your profile link.');
+    } finally {
+      setIsSharingProfile(false);
+    }
+  };
+
+  const exportAndShareQrCode = async () => {
+    if (!truck || !qrUrl) return;
+
+    if (Platform.OS === 'web') {
+      Alert.alert('Not available on web', 'Saving or sharing the QR code image is available in the TruckTap mobile app.');
+      return;
+    }
+
+    try {
+      setIsExportingQr(true);
+
+      if (!qrExportSvgRef.current) {
+        throw new Error('QR code is not ready yet.');
+      }
+
+      const base64Png = await new Promise<string>((resolve, reject) => {
+        qrExportSvgRef.current!.toDataURL(
+          (data) => {
+            if (data) {
+              resolve(data);
+            } else {
+              reject(new Error('QR export returned no image data.'));
+            }
+          },
+          { width: QR_EXPORT_PIXEL_SIZE, height: QR_EXPORT_PIXEL_SIZE }
+        );
+      });
+
+      const fileUri = `${FileSystem.cacheDirectory}trucktap-qr-${truck.id}.png`;
+      await FileSystem.writeAsStringAsync(fileUri, base64Png, { encoding: 'base64' });
+
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('Sharing unavailable', 'Sharing is not available on this device.');
+        return;
+      }
+
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Save or Share Your QR Code',
+      });
+      markQrShared();
+    } catch (error) {
+      console.error('Error exporting QR code:', error);
+      Alert.alert('Error', 'Could not export your QR code image.');
+    } finally {
+      setIsExportingQr(false);
     }
   };
 
@@ -111,20 +200,83 @@ export default function QRCodeScreen() {
     <Text>No QR available</Text>
   )}
 </View>
+
+        {qrUrl && (
+          <View style={styles.hiddenExportQr} pointerEvents="none">
+            <QRCodeSVG
+              getRef={(ref) => {
+                qrExportSvgRef.current = ref;
+              }}
+              value={qrUrl}
+              size={QR_EXPORT_PIXEL_SIZE}
+              quietZone={QR_EXPORT_QUIET_ZONE}
+              backgroundColor="#ffffff"
+              color="#000000"
+            />
+          </View>
+        )}
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={copyProfileLink}
-            disabled={!truck}
+            onPress={shareProfile}
+            disabled={!truck || isBusy}
           >
-            <Link2 size={20} color={Colors.light} />
-            <Text style={styles.primaryButtonText}>Copy Profile Link</Text>
+            <Share2 size={20} color={Colors.light} />
+            <Text style={styles.primaryButtonText}>
+              {isSharingProfile ? 'Sharing...' : 'Share Profile'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={exportAndShareQrCode}
+            disabled={!truck || !qrUrl || isBusy}
+          >
+            <Download size={20} color={Colors.primary} />
+            <Text style={styles.secondaryButtonText}>
+              {isExportingQr ? 'Preparing...' : 'Save or Share QR Code'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.linkButton}
+            onPress={copyProfileLink}
+            disabled={!truck || isBusy}
+          >
+            <Link2 size={20} color={Colors.dark} />
+            <Text style={styles.linkButtonText}>Copy Profile Link</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.instructionCard}>
-          <Text style={styles.instructionText}>
-            Share this link with customers so they can view your menu, hours, location, and reviews. You can also print QR codes and display them on your truck, menus, and social media.
+        <View style={styles.infoCard}>
+          <Text style={styles.infoTitle}>Put your TruckTap QR to work</Text>
+
+          <Text style={styles.infoSectionLabel}>Customers who scan it can:</Text>
+          <Text style={styles.infoBulletText}>
+            • Open your TruckTap profile{'\n'}
+            • See when you&apos;re LIVE{'\n'}
+            • View your menu{'\n'}
+            • See upcoming stops{'\n'}
+            • Read reviews{'\n'}
+            • Follow your truck
+          </Text>
+
+          <Text style={[styles.infoSectionLabel, styles.infoSectionLabelSpaced]}>Great places to use it</Text>
+          <Text style={styles.infoBulletText}>
+            • Serving window{'\n'}
+            • Menu board{'\n'}
+            • Business cards{'\n'}
+            • Event banners{'\n'}
+            • Table signs{'\n'}
+            • Receipts{'\n'}
+            • Social media posts{'\n'}
+            • Website{'\n'}
+            • Email signature
+          </Text>
+
+          <View style={styles.tipDivider} />
+          <Text style={styles.tipText}>
+            Tip: Ask customers to follow your truck so they can be notified when you go LIVE.
           </Text>
         </View>
       </ScrollView>
@@ -164,6 +316,15 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     marginBottom: 32,
+  },
+  hiddenExportQr: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 1,
+    height: 1,
+    overflow: 'hidden',
+    opacity: 0,
   },
 
   buttonContainer: {
@@ -222,19 +383,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600' as const,
   },
-  instructionCard: {
+  infoCard: {
     backgroundColor: Colors.light,
-    padding: 24,
+    padding: 18,
     borderRadius: 16,
     width: '100%',
     borderWidth: 1,
     borderColor: Colors.lightGray,
   },
-  instructionText: {
-    fontSize: 15,
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 10,
+  },
+  infoSectionLabel: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.dark,
+    marginBottom: 4,
+  },
+  infoSectionLabelSpaced: {
+    marginTop: 12,
+  },
+  infoBulletText: {
+    fontSize: 13,
     color: Colors.gray,
-    lineHeight: 22,
-    textAlign: 'center',
+    lineHeight: 19,
+  },
+  tipDivider: {
+    height: 1,
+    backgroundColor: Colors.lightGray,
+    marginVertical: 12,
+  },
+  tipText: {
+    fontSize: 13,
+    color: Colors.dark,
+    lineHeight: 19,
+    fontStyle: 'italic' as const,
   },
   warningBanner: {
     flexDirection: 'row',

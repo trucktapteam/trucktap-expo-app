@@ -37,7 +37,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: 6,
     marginBottom: 12,
-    minHeight: 120,
+    height: 144,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -57,6 +57,7 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.dark,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 20,
+    height: 44,
   },
 });

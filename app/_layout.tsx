@@ -279,6 +279,59 @@ function NotificationResponseCoordinator() {
   return null;
 }
 
+function DeepLinkRouteCoordinator() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { pendingDeepLinkRoute, setPendingDeepLinkRoute } = useApp();
+  const handledUrls = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      devLog('[DeepLinkCoordinator] Skipping truck deep link setup on web');
+      return;
+    }
+
+    const handleUrl = (url: string) => {
+      if (handledUrls.current.has(url)) {
+        devLog('[DeepLinkCoordinator] URL already handled; ignoring duplicate:', url);
+        return;
+      }
+
+      const truckRoute = getTruckRouteFromUrl(url);
+      if (!truckRoute) return;
+
+      handledUrls.current.add(url);
+      devLog('[DeepLinkCoordinator] Truck deep link resolved:', truckRoute);
+      // Set the pending signal before navigating so index.tsx's fallback
+      // redirect (still in flight or about to run) sees it and stands down.
+      setPendingDeepLinkRoute(truckRoute);
+      router.replace(truckRoute as any);
+    };
+
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url) handleUrl(url);
+      })
+      .catch((error) => {
+        devLog('[DeepLinkCoordinator] Error reading initial URL:', error);
+      });
+
+    const subscription = Linking.addEventListener('url', (event) => handleUrl(event.url));
+
+    return () => subscription.remove();
+  }, [router, setPendingDeepLinkRoute]);
+
+  useEffect(() => {
+    if (!pendingDeepLinkRoute) return;
+    if (pathname === pendingDeepLinkRoute) {
+      devLog('[DeepLinkCoordinator] Arrived at deep-linked truck route; clearing pending signal:', pendingDeepLinkRoute);
+      setPendingDeepLinkRoute(null);
+    }
+  }, [pathname, pendingDeepLinkRoute, setPendingDeepLinkRoute]);
+
+  return null;
+}
+
 function RootLayoutNav() {
   const { colors } = useTheme();
   const pathname = usePathname();
@@ -455,12 +508,9 @@ export default function RootLayout() {
           return;
         }
 
-        const truckRoute = getTruckRouteFromUrl(event.url);
-        if (truckRoute) {
-          devLog('[RootLayout] Routing to truck screen from deep link:', truckRoute);
-          router.replace(truckRoute as any);
-          return;
-        }
+        // Truck-profile deep links are handled by DeepLinkRouteCoordinator,
+        // which lives inside AppProvider so it can set pendingDeepLinkRoute
+        // before navigating (see that component below).
       } catch (error) {
         devLog('[RootLayout] Error handling deep link:', error);
       }
@@ -494,6 +544,7 @@ export default function RootLayout() {
                     <AppProvider>
                       <NotificationProvider>
                         <NotificationResponseCoordinator />
+                        <DeepLinkRouteCoordinator />
                         <RootLayoutNav />
                       </NotificationProvider>
                     </AppProvider>
