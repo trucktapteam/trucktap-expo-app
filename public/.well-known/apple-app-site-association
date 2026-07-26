@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "UNWFP927MK.com.trucktap.app",
+        "paths": [
+          "/truck/*",
+          "/auth/*"
+        ]
+      }
+    ]
+  }
+}
