@@ -17,8 +17,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.trucktap.app",
       "associatedDomains": [
-        "applinks:gettrucktap.com",
-        "applinks:www.gettrucktap.com"
+        "applinks:gettrucktap.com"
       ],
       "config": {
         "googleMapsApiKey": "AIzaSyBNu2iITZWEnCL7NMOcp3jI0eKVvivRt-Q"
