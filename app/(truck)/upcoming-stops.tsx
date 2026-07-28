@@ -1759,6 +1759,12 @@ function StopCard({
         </View>
       </View>
 
+      <Text style={styles.controlClarifyingCaption}>
+        {reminderOn && automationEnabled
+          ? "We'll send a phone alert, but Hands-Free LIVE already handles this stop automatically - the alert is just a backup."
+          : "We'll send a phone alert - you still tap Go Live yourself."}
+      </Text>
+
       <Text style={styles.stopTime}>{formatDateTime(stop.starts_at)} - {formatDateTime(stop.ends_at)}</Text>
       <Text style={styles.stopLocation}>{stop.location_text}</Text>
       {locationVerificationFailed ? (
@@ -1786,6 +1792,9 @@ function StopCard({
               thumbColor={automationEnabled ? Colors.primary : Colors.gray}
             />
           </View>
+          <Text style={styles.controlClarifyingCaption}>
+            TruckTap goes live and off for you automatically - no action needed.
+          </Text>
           <Text
             style={[
               styles.automationStatusLabel,
@@ -2407,6 +2416,11 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   locationVerificationCaption: {
+    fontSize: 12,
+    color: Colors.gray,
+    marginBottom: 8,
+  },
+  controlClarifyingCaption: {
     fontSize: 12,
     color: Colors.gray,
     marginBottom: 8,
