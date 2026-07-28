@@ -281,6 +281,23 @@ export default function UpcomingStopsScreen() {
     [getSavedLocations, truck]
   );
 
+  const recentLocationTexts = useMemo(() => {
+    const savedTexts = new Set(savedLocationsForTruck.map(location => location.location_text));
+    const seen = new Set<string>();
+    const recent: string[] = [];
+
+    for (const stop of [...stops].sort((a, b) => Date.parse(b.starts_at) - Date.parse(a.starts_at))) {
+      if (stop.id === editingStopId) continue;
+      const text = stop.location_text.trim();
+      if (!text || seen.has(text) || savedTexts.has(text)) continue;
+      seen.add(text);
+      recent.push(text);
+      if (recent.length >= 5) break;
+    }
+
+    return recent;
+  }, [stops, editingStopId, savedLocationsForTruck]);
+
   const refreshAutomationState = React.useCallback(async () => {
     if (!truck) {
       setAutomationSettings(DEFAULT_AUTOMATION_SETTINGS);
@@ -784,6 +801,16 @@ export default function UpcomingStopsScreen() {
     locationInputRef.current?.focus();
   };
 
+  const applyRecentLocationText = (text: string) => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setLocationText(text);
+    // Recent entries don't carry verified coordinates (only Saved
+    // Locations do), so this doesn't skip live geocoding later.
+    setSelectedLocationSource(null);
+    locationInputRef.current?.focus();
+  };
+
   const buildDateRange = (selectedDate: Date) => {
     const startsAt = combineDateAndTime(selectedDate, startTime);
     const endsAt = combineDateAndTime(selectedDate, endTime);
@@ -1282,6 +1309,24 @@ export default function UpcomingStopsScreen() {
               </Text>
             </TouchableOpacity>
 
+            {recentLocationTexts.length > 0 && (
+              <View style={styles.locationChipSection}>
+                <Text style={styles.locationChipSectionLabel}>Recent</Text>
+                <View style={styles.locationChipRow}>
+                  {recentLocationTexts.map(text => (
+                    <TouchableOpacity
+                      key={text}
+                      style={styles.locationChip}
+                      onPress={() => applyRecentLocationText(text)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={styles.locationChipText} numberOfLines={1}>{text}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {savedLocationsForTruck.length > 0 && (
               <View style={styles.locationChipSection}>
                 <Text style={styles.locationChipSectionLabel}>Saved</Text>
@@ -1758,6 +1803,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 8,
+    maxWidth: 220,
   },
   locationChipText: {
     fontSize: 13,
