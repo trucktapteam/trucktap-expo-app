@@ -154,6 +154,76 @@ export const configureUpcomingStopAutomation = async (input: {
   }
 };
 
+export type UpcomingStopLocationStatus = {
+  stopId: string;
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string | null;
+  geocodeAttemptedAt: string | null;
+  geocodeFailedAt: string | null;
+};
+
+export const mapUpcomingStopLocationStatus = (
+  row: Record<string, unknown>
+): UpcomingStopLocationStatus => ({
+  stopId: String(row.stop_id ?? ''),
+  latitude: typeof row.latitude === 'number' ? row.latitude : null,
+  longitude: typeof row.longitude === 'number' ? row.longitude : null,
+  timezone: typeof row.timezone === 'string' ? row.timezone : null,
+  geocodeAttemptedAt:
+    typeof row.location_geocode_attempted_at === 'string'
+      ? row.location_geocode_attempted_at
+      : null,
+  geocodeFailedAt:
+    typeof row.location_geocode_failed_at === 'string'
+      ? row.location_geocode_failed_at
+      : null,
+});
+
+export const loadUpcomingStopLocationStatuses = async (
+  truckId: string
+): Promise<UpcomingStopLocationStatus[]> => {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  const { data, error } = await supabase.rpc('get_upcoming_stop_location_statuses', {
+    p_truck_id: truckId,
+  });
+
+  if (error) {
+    if (isHandsFreeLiveRpcUnavailable(error)) {
+      return [];
+    }
+    throw new Error(`Could not load stop location status: ${error.message}`);
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  return rows
+    .map(row => mapUpcomingStopLocationStatus(row as Record<string, unknown>))
+    .filter(status => status.stopId.length > 0);
+};
+
+export const setUpcomingStopLocation = async (input: {
+  stopId: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  timezone?: string | null;
+  failed?: boolean;
+}) => {
+  const { error } = await supabase.rpc('set_upcoming_stop_location', {
+    p_stop_id: input.stopId,
+    p_latitude: input.latitude ?? null,
+    p_longitude: input.longitude ?? null,
+    p_timezone: input.timezone ?? null,
+    p_failed: input.failed ?? false,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+};
+
 export const setHandsFreeLiveConfirmationNotifications = async (
   enabled: boolean
 ) => {

@@ -15,8 +15,11 @@ import {
   configureUpcomingStopAutomation,
   HandsFreeLiveOwnerSettings,
   loadHandsFreeLiveOwnerState,
+  loadUpcomingStopLocationStatuses,
   setHandsFreeLiveConfirmationNotifications,
+  setUpcomingStopLocation,
   UpcomingStopAutomationStatus,
+  UpcomingStopLocationStatus,
 } from '@/lib/handsFreeLive';
 
 const STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
@@ -265,6 +268,9 @@ export default function UpcomingStopsScreen() {
     Record<string, UpcomingStopAutomationStatus>
   >({});
   const [automationLoading, setAutomationLoading] = useState(false);
+  const [locationStatuses, setLocationStatuses] = useState<
+    Record<string, UpcomingStopLocationStatus>
+  >({});
   const [confirmationPreferenceSaving, setConfirmationPreferenceSaving] = useState(false);
   const reminderSettingsRef = useRef(reminderSettings);
   const reminderIdsRef = useRef(reminderIds);
@@ -324,6 +330,22 @@ export default function UpcomingStopsScreen() {
     }
   }, [truck]);
 
+  const refreshLocationStatuses = React.useCallback(async () => {
+    if (!truck) {
+      setLocationStatuses({});
+      return;
+    }
+
+    try {
+      const statuses = await loadUpcomingStopLocationStatuses(truck.id);
+      setLocationStatuses(
+        Object.fromEntries(statuses.map(status => [status.stopId, status]))
+      );
+    } catch (error) {
+      console.log('[UpcomingStops] Failed to load stop location status:', error);
+    }
+  }, [truck]);
+
   React.useEffect(() => {
     reminderSettingsRef.current = reminderSettings;
   }, [reminderSettings]);
@@ -336,14 +358,19 @@ export default function UpcomingStopsScreen() {
     const intervalId = setInterval(() => {
       setNowMs(Date.now());
       void refreshAutomationState();
+      void refreshLocationStatuses();
     }, 60000);
 
     return () => clearInterval(intervalId);
-  }, [refreshAutomationState]);
+  }, [refreshAutomationState, refreshLocationStatuses]);
 
   React.useEffect(() => {
     void refreshAutomationState();
   }, [refreshAutomationState]);
+
+  React.useEffect(() => {
+    void refreshLocationStatuses();
+  }, [refreshLocationStatuses]);
 
   React.useEffect(() => {
     const loadReminderState = async () => {
@@ -788,6 +815,66 @@ export default function UpcomingStopsScreen() {
     );
   };
 
+  // Populates a stop's coordinates/timezone without blocking the save flow
+  // and without a confirmation dialog - unlike Hands-Free LIVE enablement,
+  // this is best-effort data for future features, not something that
+  // changes the truck's public LIVE status. A failure is recorded (not
+  // silently dropped) so the UI can surface it.
+  const applyStopLocationInBackground = (
+    stopId: string,
+    stopLocationText: string,
+    cachedSource: { text: string; latitude: number; longitude: number; timezone: string } | null
+  ) => {
+    if (cachedSource && cachedSource.text === stopLocationText) {
+      setUpcomingStopLocation({
+        stopId,
+        latitude: cachedSource.latitude,
+        longitude: cachedSource.longitude,
+        timezone: cachedSource.timezone,
+      })
+        .then(() => refreshLocationStatuses())
+        .catch(error => {
+          console.log('[UpcomingStops] Failed to persist saved-location coordinates:', error);
+        });
+      return;
+    }
+
+    (async () => {
+      try {
+        const matches = await Location.geocodeAsync(stopLocationText);
+        const match = matches.find(
+          candidate =>
+            Number.isFinite(candidate.latitude) &&
+            Number.isFinite(candidate.longitude)
+        );
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+        if (!match || !timezone) {
+          await setUpcomingStopLocation({ stopId, failed: true });
+          await refreshLocationStatuses();
+          return;
+        }
+
+        await setUpcomingStopLocation({
+          stopId,
+          latitude: match.latitude,
+          longitude: match.longitude,
+          timezone,
+        });
+        await refreshLocationStatuses();
+        promptSaveLocationIfNew(stopLocationText, match.latitude, match.longitude, timezone);
+      } catch (error) {
+        console.log('[UpcomingStops] Background geocode failed:', error);
+        try {
+          await setUpcomingStopLocation({ stopId, failed: true });
+          await refreshLocationStatuses();
+        } catch (innerError) {
+          console.log('[UpcomingStops] Failed to record geocode failure:', innerError);
+        }
+      }
+    })();
+  };
+
   const applyLocationSelection = (location: SavedLocation) => {
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -920,6 +1007,7 @@ export default function UpcomingStopsScreen() {
   const handleSave = async () => {
     setErrorMessage(null);
     setSuccessMessage(null);
+    const locationSourceAtSave = selectedLocationSource;
 
     try {
       const trimmedLocation = locationText.trim();
@@ -953,13 +1041,12 @@ export default function UpcomingStopsScreen() {
           await cancelReminderForStop(editingStopId, reminderIdsRef.current);
         }
 
-        if (
-          previousStop &&
-          previousStop.location_text !== trimmedLocation &&
-          automationStatuses[editingStopId]?.enabled
-        ) {
-          await configureUpcomingStopAutomation({ stopId: editingStopId, enabled: false });
-          await refreshAutomationState();
+        if (previousStop && previousStop.location_text !== trimmedLocation) {
+          if (automationStatuses[editingStopId]?.enabled) {
+            await configureUpcomingStopAutomation({ stopId: editingStopId, enabled: false });
+            await refreshAutomationState();
+          }
+          applyStopLocationInBackground(editingStopId, trimmedLocation, locationSourceAtSave);
         }
 
         setSuccessMessage('Stop updated.');
@@ -980,6 +1067,7 @@ export default function UpcomingStopsScreen() {
           });
 
           createdStops.push(createdStop);
+          applyStopLocationInBackground(createdStop.id, trimmedLocation, locationSourceAtSave);
 
           if (currentSettings.enabled) {
             await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
@@ -1422,6 +1510,7 @@ export default function UpcomingStopsScreen() {
                 automationSupported={automationSettings.supported}
                 automationSystemEnabled={automationSettings.systemEnabled}
                 automationStatus={automationStatuses[stop.id] ?? null}
+                locationVerificationFailed={locationStatuses[stop.id]?.geocodeFailedAt != null}
                 onStatusChange={handleStatusChange}
                 onEdit={handleEditStop}
                 onDelete={handleDelete}
@@ -1445,6 +1534,7 @@ type StopCardProps = {
   automationSupported: boolean;
   automationSystemEnabled: boolean;
   automationStatus: UpcomingStopAutomationStatus | null;
+  locationVerificationFailed: boolean;
   onStatusChange: (stop: UpcomingStop, status: UpcomingStopStatus) => void;
   onEdit: (stop: UpcomingStop) => void;
   onDelete: (stop: UpcomingStop) => void;
@@ -1505,6 +1595,7 @@ function StopCard({
   automationSupported,
   automationSystemEnabled,
   automationStatus,
+  locationVerificationFailed,
   onStatusChange,
   onEdit,
   onDelete,
@@ -1556,6 +1647,11 @@ function StopCard({
 
       <Text style={styles.stopTime}>{formatDateTime(stop.starts_at)} - {formatDateTime(stop.ends_at)}</Text>
       <Text style={styles.stopLocation}>{stop.location_text}</Text>
+      {locationVerificationFailed ? (
+        <Text style={styles.locationVerificationCaption}>
+          Location couldn't be verified — edit to try again
+        </Text>
+      ) : null}
       {stop.note ? <Text style={styles.stopNote}>{stop.note}</Text> : null}
 
       {automationSupported ? (
@@ -2171,6 +2267,11 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     color: Colors.dark,
     marginBottom: 6,
+  },
+  locationVerificationCaption: {
+    fontSize: 12,
+    color: Colors.gray,
+    marginBottom: 8,
   },
   stopNote: {
     fontSize: 14,
