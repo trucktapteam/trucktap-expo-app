@@ -213,7 +213,7 @@ const confirmAutomationLocation = (locationLabel: string, resolvedAddress: strin
         { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
         { text: 'Use Location', onPress: () => resolve(true) },
       ],
-      { cancelable: true, onDismiss: () => resolve(false) }
+      { cancelable: false }
     );
   });
 
@@ -662,7 +662,10 @@ export default function UpcomingStopsScreen() {
           stop.location_text,
           formatGeocodedAddress(reverseMatches[0])
         );
-        if (!confirmed) return;
+        if (!confirmed) {
+          setSuccessMessage(`Hands-Free LIVE was not turned on for ${stop.location_text}.`);
+          return;
+        }
 
         await configureUpcomingStopAutomation({
           stopId: stop.id,
