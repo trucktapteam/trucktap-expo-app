@@ -149,6 +149,18 @@ export type UpcomingStop = {
   updated_at?: string;
 };
 
+export type SavedLocation = {
+  id: string;
+  truck_id: string;
+  label: string;
+  location_text: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type TeamUpdate = {
   id: string;
   title: string;

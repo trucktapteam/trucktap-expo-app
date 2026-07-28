@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import { AppState as RNAppState } from 'react-native';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, FoodTruck, Review, ReviewReply, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType, UpcomingStop, UpcomingStopStatus } from '@/types';
+import { User, FoodTruck, Review, ReviewReply, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType, UpcomingStop, UpcomingStopStatus, SavedLocation } from '@/types';
 import { teamUpdates } from '@/mocks/data';
 import { DEBUG } from '@/constants/debug';
 import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
@@ -247,6 +247,21 @@ const mapUpcomingStopRow = (row: any): UpcomingStop => ({
 const UPCOMING_STOP_PUBLIC_COLUMNS =
   'id, truck_id, starts_at, ends_at, location_text, note, status, created_at, updated_at';
 
+const mapSavedLocationRow = (row: any): SavedLocation => ({
+  id: row.id?.toString?.() ?? '',
+  truck_id: row.truck_id?.toString?.() ?? '',
+  label: row.label ?? '',
+  location_text: row.location_text ?? '',
+  latitude: Number(row.latitude),
+  longitude: Number(row.longitude),
+  timezone: row.timezone ?? '',
+  created_at: row.created_at ?? undefined,
+  updated_at: row.updated_at ?? undefined,
+});
+
+const SAVED_LOCATION_PUBLIC_COLUMNS =
+  'id, truck_id, label, location_text, latitude, longitude, timezone, created_at, updated_at';
+
 export type TruckActivitySummary = {
   inactive: boolean;
   lastLiveAt?: string;
@@ -382,6 +397,10 @@ export type AppState = {
   updateUpcomingStop: (stopId: string, updates: Partial<Omit<UpcomingStop, 'id' | 'truck_id' | 'created_at' | 'updated_at'>>) => Promise<UpcomingStop>;
   deleteUpcomingStop: (stopId: string) => Promise<void>;
   refreshUpcomingStops: () => Promise<void>;
+  getSavedLocations: (truckId: string) => SavedLocation[];
+  addSavedLocation: (location: Omit<SavedLocation, 'id' | 'created_at' | 'updated_at'>) => Promise<SavedLocation>;
+  deleteSavedLocation: (locationId: string) => Promise<void>;
+  savedLocationsLoading: boolean;
   setTruckVerified: (truckId: string, value: boolean) => void;
   dismissChecklist: () => void;
   hasHoursSet: (truckId: string) => boolean;
@@ -423,6 +442,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [upcomingStops, setUpcomingStops] = useState<UpcomingStop[]>([]);
   const [upcomingStopsLoading, setUpcomingStopsLoading] = useState<boolean>(true);
+  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
+  const [savedLocationsLoading, setSavedLocationsLoading] = useState<boolean>(true);
   const [checklistDismissed, setChecklistDismissed] = useState<boolean>(false);
   const [showClosed, setShowClosedState] = useState<boolean>(false);
   const [customerRadius, setCustomerRadiusState] = useState<number>(25);
@@ -757,6 +778,35 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
   }, []);
 
+  const fetchSavedLocationsFromSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setSavedLocations([]);
+      setSavedLocationsLoading(false);
+      return;
+    }
+
+    setSavedLocationsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('truck_saved_locations')
+        .select(SAVED_LOCATION_PUBLIC_COLUMNS)
+        .order('label', { ascending: true });
+
+      if (error) {
+        console.log('[AppContext] Supabase fetch saved locations error:', error.message);
+        setSavedLocations([]);
+        return;
+      }
+
+      setSavedLocations((data ?? []).map(mapSavedLocationRow));
+    } catch (err: any) {
+      console.log('[AppContext] Unexpected error fetching saved locations:', err?.message);
+      setSavedLocations([]);
+    } finally {
+      setSavedLocationsLoading(false);
+    }
+  }, []);
+
   const fetchAllTrucksFromSupabase = useCallback(async () => {
     if (!isSupabaseConfigured) {
       if (DEBUG) console.log('[AppContext] Supabase not configured, no trucks to fetch');
@@ -943,6 +993,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
   useEffect(() => {
     void fetchUpcomingStopsFromSupabase();
   }, [fetchUpcomingStopsFromSupabase]);
+
+  useEffect(() => {
+    void fetchSavedLocationsFromSupabase();
+  }, [fetchSavedLocationsFromSupabase]);
 
   useEffect(() => {
     void fetchOwnedTrucksFromSupabase();
@@ -1322,6 +1376,7 @@ if (!favoritesError && favoriteRows) {
         fetchAllTrucksFromSupabase(),
         fetchReviewsFromSupabase(),
         fetchUpcomingStopsFromSupabase(),
+        fetchSavedLocationsFromSupabase(),
       ];
 
       if (isAuthenticated && authUser) {
@@ -2859,6 +2914,14 @@ if (error) {
       .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
   }, [upcomingStops]);
 
+  const getSavedLocations = useCallback((truckId: string) => {
+    const requestedId = truckId?.toString() ?? '';
+
+    return savedLocations
+      .filter(location => location.truck_id?.toString() === requestedId)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [savedLocations]);
+
   const getNextUpcomingStopForTruck = useCallback((truckId: string) => {
     const requestedId = truckId?.toString() ?? '';
     const now = Date.now();
@@ -3183,6 +3246,93 @@ if (error) {
 
     setUpcomingStops(prev => prev.filter(stop => stop.id !== stopId));
   }, [authUser, isAuthenticated, upcomingStops, userOwnsTruck]);
+
+  const addSavedLocation = useCallback(async (
+    location: Omit<SavedLocation, 'id' | 'created_at' | 'updated_at'>
+  ): Promise<SavedLocation> => {
+    if (!isAuthenticated || !authUser) {
+      throw new Error('Not authenticated');
+    }
+    if (!userOwnsTruck(location.truck_id)) {
+      throw new Error(`User does not own truck ${location.truck_id}`);
+    }
+
+    const label = location.label.trim();
+    const locationText = location.location_text.trim();
+
+    if (!label) {
+      throw new Error('A name for this location is required');
+    }
+    if (!locationText) {
+      throw new Error('Location is required');
+    }
+
+    const payload = {
+      truck_id: location.truck_id,
+      label,
+      location_text: locationText,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      timezone: location.timezone,
+    };
+
+    if (!isSupabaseConfigured) {
+      const localLocation: SavedLocation = {
+        id: `saved-location-${Date.now()}`,
+        ...payload,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setSavedLocations(prev => [...prev, localLocation]);
+      return localLocation;
+    }
+
+    const { data, error } = await supabase
+      .from('truck_saved_locations')
+      .insert(payload)
+      .select(SAVED_LOCATION_PUBLIC_COLUMNS)
+      .single();
+
+    if (error) {
+      console.log('[AppContext] Add saved location error:', error.message);
+      if (error.code === '23505') {
+        throw new Error(`You already have a saved location named "${label}"`);
+      }
+      throw new Error(`Could not save location: ${error.message}`);
+    }
+
+    const created = mapSavedLocationRow(data);
+    setSavedLocations(prev => [...prev, created]);
+    return created;
+  }, [authUser, isAuthenticated, userOwnsTruck]);
+
+  const deleteSavedLocation = useCallback(async (locationId: string): Promise<void> => {
+    const existing = savedLocations.find(location => location.id === locationId);
+
+    if (!existing) {
+      throw new Error('Saved location not found');
+    }
+    if (!isAuthenticated || !authUser) {
+      throw new Error('Not authenticated');
+    }
+    if (!userOwnsTruck(existing.truck_id)) {
+      throw new Error(`User does not own truck ${existing.truck_id}`);
+    }
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase
+        .from('truck_saved_locations')
+        .delete()
+        .eq('id', locationId);
+
+      if (error) {
+        console.log('[AppContext] Delete saved location error:', error.message);
+        throw new Error(`Could not delete saved location: ${error.message}`);
+      }
+    }
+
+    setSavedLocations(prev => prev.filter(location => location.id !== locationId));
+  }, [authUser, isAuthenticated, savedLocations, userOwnsTruck]);
 
   const setTruckVerified = useCallback((truckId: string, value: boolean) => {
     setFoodTrucks(prev => 
@@ -3545,6 +3695,10 @@ if (error) {
     updateUpcomingStop,
     deleteUpcomingStop,
     refreshUpcomingStops: fetchUpcomingStopsFromSupabase,
+    getSavedLocations,
+    addSavedLocation,
+    deleteSavedLocation,
+    savedLocationsLoading,
     setTruckVerified,
     logout,
     incrementQrScan,
@@ -3584,6 +3738,7 @@ if (error) {
     deleteAnnouncement, getAnnouncements, getUpcomingStops, addUpcomingStop,
     getNextUpcomingStopForTruck, getTruckActivityStatus, getTruckActivitySummary, isTruckInactive,
     updateUpcomingStop, deleteUpcomingStop, fetchUpcomingStopsFromSupabase,
+    getSavedLocations, addSavedLocation, deleteSavedLocation, savedLocationsLoading,
     setTruckVerified, logout,
     incrementQrScan, getQrScanStats, allTrucksLoading, fetchAllTrucksFromSupabase, isProfileComplete,
     getDaysAgoText, setPendingRedirect, setPendingNotificationRoute, setIsInitialNotificationResponseChecked, setPendingDeepLinkRoute, consumePendingRedirect, getTeamUpdates,

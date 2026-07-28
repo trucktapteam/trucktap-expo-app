@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import { Bell, CalendarDays, ChevronDown, Clock, MapPin, Pencil, RefreshCw, Trash2, Zap } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
-import { UpcomingStop, UpcomingStopStatus } from '@/types';
+import { SavedLocation, UpcomingStop, UpcomingStopStatus } from '@/types';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import {
   configureUpcomingStopAutomation,
@@ -227,6 +227,8 @@ export default function UpcomingStopsScreen() {
     deleteUpcomingStop,
     refreshUpcomingStops,
     upcomingStopsLoading,
+    getSavedLocations,
+    addSavedLocation,
   } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('UpcomingStopsScreen');
@@ -237,6 +239,12 @@ export default function UpcomingStopsScreen() {
   const [endTime, setEndTime] = useState(() => atTime(14, 0));
   const [endsNextDay, setEndsNextDay] = useState(false);
   const [locationText, setLocationText] = useState('');
+  const [selectedLocationSource, setSelectedLocationSource] = useState<{
+    text: string;
+    latitude: number;
+    longitude: number;
+    timezone: string;
+  } | null>(null);
   const [note, setNote] = useState('');
   const [editingStopId, setEditingStopId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -261,10 +269,16 @@ export default function UpcomingStopsScreen() {
   const reminderSettingsRef = useRef(reminderSettings);
   const reminderIdsRef = useRef(reminderIds);
   const scrollViewRef = useRef<ScrollView>(null);
+  const locationInputRef = useRef<TextInput>(null);
 
   const stops = useMemo(
     () => truck ? getUpcomingStops(truck.id) : [],
     [getUpcomingStops, truck]
+  );
+
+  const savedLocationsForTruck = useMemo(
+    () => truck ? getSavedLocations(truck.id) : [],
+    [getSavedLocations, truck]
   );
 
   const refreshAutomationState = React.useCallback(async () => {
@@ -675,6 +689,7 @@ export default function UpcomingStopsScreen() {
           timezone,
         });
         setSuccessMessage(`Hands-Free LIVE is ready for ${stop.location_text}.`);
+        promptSaveLocationIfNew(stop.location_text, match.latitude, match.longitude, timezone);
       } else {
         await configureUpcomingStopAutomation({
           stopId: stop.id,
@@ -713,8 +728,60 @@ export default function UpcomingStopsScreen() {
     setEndTime(atTime(14, 0));
     setEndsNextDay(false);
     setLocationText('');
+    setSelectedLocationSource(null);
     setNote('');
     setActivePicker(null);
+  };
+
+  const promptSaveLocationIfNew = (
+    locationText: string,
+    latitude: number,
+    longitude: number,
+    timezone: string
+  ) => {
+    const alreadySaved = savedLocationsForTruck.some(
+      location => location.location_text === locationText
+    );
+    if (alreadySaved || !truck) {
+      return;
+    }
+
+    Alert.alert(
+      'Save this location?',
+      `Save "${locationText}" so you can reuse it next time?`,
+      [
+        { text: 'Skip', style: 'cancel' },
+        {
+          text: 'Save',
+          onPress: () => {
+            addSavedLocation({
+              truck_id: truck.id,
+              label: locationText,
+              location_text: locationText,
+              latitude,
+              longitude,
+              timezone,
+            }).catch(error => {
+              console.log('[UpcomingStops] Failed to save location:', error);
+            });
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const applyLocationSelection = (location: SavedLocation) => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setLocationText(location.location_text);
+    setSelectedLocationSource({
+      text: location.location_text,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      timezone: location.timezone,
+    });
+    locationInputRef.current?.focus();
   };
 
   const buildDateRange = (selectedDate: Date) => {
@@ -810,6 +877,7 @@ export default function UpcomingStopsScreen() {
     setEndTime(endsAtDate);
     setEndsNextDay(getDateKey(startOfSelectedDate(endsAtDate)) !== getDateKey(stopDate));
     setLocationText(stop.location_text);
+    setSelectedLocationSource(null);
     setNote(stop.note ?? '');
     setActivePicker(null);
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
@@ -1214,8 +1282,27 @@ export default function UpcomingStopsScreen() {
               </Text>
             </TouchableOpacity>
 
+            {savedLocationsForTruck.length > 0 && (
+              <View style={styles.locationChipSection}>
+                <Text style={styles.locationChipSectionLabel}>Saved</Text>
+                <View style={styles.locationChipRow}>
+                  {savedLocationsForTruck.map(location => (
+                    <TouchableOpacity
+                      key={location.id}
+                      style={styles.locationChip}
+                      onPress={() => applyLocationSelection(location)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={styles.locationChipText}>{location.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
             <Text style={styles.label}>Location name or address</Text>
             <TextInput
+              ref={locationInputRef}
               style={styles.input}
               value={locationText}
               onChangeText={setLocationText}
@@ -1651,6 +1738,31 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.gray,
     marginBottom: 8,
+  },
+  locationChipSection: {
+    marginBottom: 10,
+  },
+  locationChipSectionLabel: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.gray,
+    marginBottom: 6,
+  },
+  locationChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  locationChip: {
+    backgroundColor: Colors.lightGray,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  locationChipText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.dark,
   },
   input: {
     backgroundColor: Colors.lightGray,
