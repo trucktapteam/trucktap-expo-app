@@ -232,6 +232,7 @@ export default function UpcomingStopsScreen() {
     upcomingStopsLoading,
     getSavedLocations,
     addSavedLocation,
+    updateTruckDetails,
   } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('UpcomingStopsScreen');
@@ -249,6 +250,12 @@ export default function UpcomingStopsScreen() {
     timezone: string;
   } | null>(null);
   const [note, setNote] = useState('');
+  // Only used when creating a new stop (not editing) - pre-seeded from the
+  // truck's Hands-Free LIVE default, fully editable per stop before saving.
+  const [handsFreeLiveOnForNewStop, setHandsFreeLiveOnForNewStop] = useState(
+    () => truck?.hands_free_live_default_enabled === true
+  );
+  const [truckDefaultSaving, setTruckDefaultSaving] = useState(false);
   const [editingStopId, setEditingStopId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [busyStopId, setBusyStopId] = useState<string | null>(null);
@@ -675,6 +682,101 @@ export default function UpcomingStopsScreen() {
     }
   };
 
+  const handleTruckDefaultChange = async (enabled: boolean) => {
+    if (!truck) return;
+    setErrorMessage(null);
+    setTruckDefaultSaving(true);
+    try {
+      await updateTruckDetails(truck.id, { hands_free_live_default_enabled: enabled });
+      if (!editingStopId) {
+        setHandsFreeLiveOnForNewStop(enabled);
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Could not update the Hands-Free LIVE default.'
+      );
+    } finally {
+      setTruckDefaultSaving(false);
+    }
+  };
+
+  // Shared by the per-stop list toggle and the create-form's "Hands-Free
+  // LIVE for this stop" switch (Part 3). Uses cached Saved/Recent-location
+  // coordinates directly when they match the current text (no live geocode,
+  // no confirmation dialog); otherwise runs the same foreground, confirmed
+  // geocode flow as before. Returns false only when the owner declines the
+  // confirmation - everything else either succeeds or throws.
+  const enableAutomationForStop = async (
+    stopId: string,
+    stopLocationText: string,
+    cachedSource: { text: string; latitude: number; longitude: number; timezone: string } | null
+  ): Promise<boolean> => {
+    if (cachedSource && cachedSource.text === stopLocationText) {
+      await configureUpcomingStopAutomation({
+        stopId,
+        enabled: true,
+        latitude: cachedSource.latitude,
+        longitude: cachedSource.longitude,
+        timezone: cachedSource.timezone,
+      });
+      return true;
+    }
+
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!timezone) {
+      throw new Error('Your device timezone is unavailable. Check date and time settings.');
+    }
+
+    if (Platform.OS !== 'web') {
+      const existingPermission = await Location.getForegroundPermissionsAsync();
+      const permission = existingPermission.status === 'granted'
+        ? existingPermission
+        : await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        throw new Error(
+          'Location permission is required to verify the scheduled stop address.'
+        );
+      }
+    }
+
+    const matches = await Location.geocodeAsync(stopLocationText);
+    const match = matches.find(
+      candidate =>
+        Number.isFinite(candidate.latitude) &&
+        Number.isFinite(candidate.longitude)
+    );
+
+    if (!match) {
+      throw new Error(
+        'TruckTap could not locate this stop. Use a complete street address before turning on Hands-Free LIVE.'
+      );
+    }
+
+    const reverseMatches = await Location.reverseGeocodeAsync({
+      latitude: match.latitude,
+      longitude: match.longitude,
+    }).catch(() => []);
+    const confirmed = await confirmAutomationLocation(
+      stopLocationText,
+      formatGeocodedAddress(reverseMatches[0])
+    );
+    if (!confirmed) {
+      return false;
+    }
+
+    await configureUpcomingStopAutomation({
+      stopId,
+      enabled: true,
+      latitude: match.latitude,
+      longitude: match.longitude,
+      timezone,
+    });
+    promptSaveLocationIfNew(stopLocationText, match.latitude, match.longitude, timezone);
+    return true;
+  };
+
   const handleAutomationToggle = async (stop: UpcomingStop, enabled: boolean) => {
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -682,58 +784,12 @@ export default function UpcomingStopsScreen() {
 
     try {
       if (enabled) {
-        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (!timezone) {
-          throw new Error('Your device timezone is unavailable. Check date and time settings.');
-        }
-
-        if (Platform.OS !== 'web') {
-          const existingPermission = await Location.getForegroundPermissionsAsync();
-          const permission = existingPermission.status === 'granted'
-            ? existingPermission
-            : await Location.requestForegroundPermissionsAsync();
-          if (permission.status !== 'granted') {
-            throw new Error(
-              'Location permission is required to verify the scheduled stop address.'
-            );
-          }
-        }
-
-        const matches = await Location.geocodeAsync(stop.location_text);
-        const match = matches.find(
-          candidate =>
-            Number.isFinite(candidate.latitude) &&
-            Number.isFinite(candidate.longitude)
-        );
-
-        if (!match) {
-          throw new Error(
-            'TruckTap could not locate this stop. Use a complete street address before turning on Hands-Free LIVE.'
-          );
-        }
-
-        const reverseMatches = await Location.reverseGeocodeAsync({
-          latitude: match.latitude,
-          longitude: match.longitude,
-        }).catch(() => []);
-        const confirmed = await confirmAutomationLocation(
-          stop.location_text,
-          formatGeocodedAddress(reverseMatches[0])
-        );
-        if (!confirmed) {
+        const didEnable = await enableAutomationForStop(stop.id, stop.location_text, null);
+        if (!didEnable) {
           setSuccessMessage(`Hands-Free LIVE was not turned on for ${stop.location_text}.`);
           return;
         }
-
-        await configureUpcomingStopAutomation({
-          stopId: stop.id,
-          enabled: true,
-          latitude: match.latitude,
-          longitude: match.longitude,
-          timezone,
-        });
         setSuccessMessage(`Hands-Free LIVE is ready for ${stop.location_text}.`);
-        promptSaveLocationIfNew(stop.location_text, match.latitude, match.longitude, timezone);
       } else {
         await configureUpcomingStopAutomation({
           stopId: stop.id,
@@ -775,6 +831,7 @@ export default function UpcomingStopsScreen() {
     setSelectedLocationSource(null);
     setNote('');
     setActivePicker(null);
+    setHandsFreeLiveOnForNewStop(truck?.hands_free_live_default_enabled === true);
   };
 
   const promptSaveLocationIfNew = (
@@ -1008,6 +1065,7 @@ export default function UpcomingStopsScreen() {
     setErrorMessage(null);
     setSuccessMessage(null);
     const locationSourceAtSave = selectedLocationSource;
+    const handsFreeLiveOnAtSave = !editingStopId && handsFreeLiveOnForNewStop;
 
     try {
       const trimmedLocation = locationText.trim();
@@ -1067,7 +1125,29 @@ export default function UpcomingStopsScreen() {
           });
 
           createdStops.push(createdStop);
-          applyStopLocationInBackground(createdStop.id, trimmedLocation, locationSourceAtSave);
+
+          if (handsFreeLiveOnAtSave) {
+            try {
+              const didEnable = await enableAutomationForStop(
+                createdStop.id,
+                trimmedLocation,
+                locationSourceAtSave
+              );
+              if (didEnable) {
+                await refreshAutomationState();
+              } else {
+                applyStopLocationInBackground(createdStop.id, trimmedLocation, locationSourceAtSave);
+              }
+            } catch (automationError) {
+              console.log(
+                '[UpcomingStops] Could not enable Hands-Free LIVE for new stop:',
+                automationError
+              );
+              applyStopLocationInBackground(createdStop.id, trimmedLocation, locationSourceAtSave);
+            }
+          } else {
+            applyStopLocationInBackground(createdStop.id, trimmedLocation, locationSourceAtSave);
+          }
 
           if (currentSettings.enabled) {
             await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
@@ -1268,6 +1348,23 @@ export default function UpcomingStopsScreen() {
                   }
                 />
               </View>
+              <View style={styles.confirmationRow}>
+                <Zap size={18} color={Colors.primary} />
+                <View style={styles.reminderTextContainer}>
+                  <Text style={styles.confirmationTitle}>Default for new stops</Text>
+                  <Text style={styles.confirmationSubtitle}>
+                    Turn on Hands-Free LIVE for new stops by default. Each stop can still be
+                    switched off individually.
+                  </Text>
+                </View>
+                <Switch
+                  value={truck.hands_free_live_default_enabled === true}
+                  onValueChange={value => void handleTruckDefaultChange(value)}
+                  disabled={truckDefaultSaving}
+                  trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
+                  thumbColor={truck.hands_free_live_default_enabled ? Colors.primary : Colors.gray}
+                />
+              </View>
             </View>
           ) : null}
 
@@ -1454,6 +1551,23 @@ export default function UpcomingStopsScreen() {
               multiline
               textAlignVertical="top"
             />
+
+            {!editingStopId && automationSettings.supported && automationSettings.systemEnabled ? (
+              <View style={styles.newStopAutomationRow}>
+                <View style={styles.newStopAutomationTextGroup}>
+                  <Text style={styles.newStopAutomationLabel}>Hands-Free LIVE for this stop</Text>
+                  <Text style={styles.newStopAutomationDetail}>
+                    TruckTap goes live and off for you automatically - no action needed.
+                  </Text>
+                </View>
+                <Switch
+                  value={handsFreeLiveOnForNewStop}
+                  onValueChange={setHandsFreeLiveOnForNewStop}
+                  trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
+                  thumbColor={handsFreeLiveOnForNewStop ? Colors.primary : Colors.gray}
+                />
+              </View>
+            ) : null}
 
             {errorMessage ? (
               <Text style={styles.errorMessage}>{errorMessage}</Text>
@@ -1917,6 +2031,30 @@ const styles = StyleSheet.create({
   },
   noteInput: {
     minHeight: 82,
+  },
+  newStopAutomationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    backgroundColor: Colors.lightGray,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
+  newStopAutomationTextGroup: {
+    flex: 1,
+  },
+  newStopAutomationLabel: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+    marginBottom: 2,
+  },
+  newStopAutomationDetail: {
+    fontSize: 12,
+    color: Colors.gray,
   },
   timeRow: {
     flexDirection: 'row',

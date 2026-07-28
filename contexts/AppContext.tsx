@@ -159,6 +159,9 @@ const mapAppFieldsToDb = (updates: Partial<FoodTruck>): Record<string, any> => {
     dbUpdates.archive_reason = null;
   }
   if (updates.is_test !== undefined) dbUpdates.is_test = updates.is_test;
+  if (updates.hands_free_live_default_enabled !== undefined) {
+    dbUpdates.hands_free_live_default_enabled = updates.hands_free_live_default_enabled;
+  }
   if (updates.operatingHours !== undefined) dbUpdates.operating_hours = updates.operatingHours;
   if (updates.images !== undefined) dbUpdates.gallery_images = updates.images;
   if (updates.menu_images !== undefined) dbUpdates.menu_images = updates.menu_images;
@@ -554,6 +557,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       archivedAt: typeof row.archived_at === 'string' ? row.archived_at : undefined,
       archiveReason: row.archive_reason ?? undefined,
       is_test: row.is_test === true,
+      hands_free_live_default_enabled: row.hands_free_live_default_enabled === true,
       lastOwnerActivityAt:
         typeof row.last_owner_activity_at === 'string'
           ? Date.parse(row.last_owner_activity_at)

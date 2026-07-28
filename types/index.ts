@@ -60,6 +60,7 @@ export type FoodTruck = {
   is_test?: boolean;
   lastOwnerActivityAt?: number;
   created_at?: string;
+  hands_free_live_default_enabled?: boolean;
 };
 
 export type Sighting = {
