@@ -191,46 +191,18 @@ const withTimePeriod = (date: Date, period: TimePeriod) => {
   return nextDate;
 };
 
-const US_STATE_ABBREVIATIONS: Record<string, string> = {
-  Alabama: 'AL', Alaska: 'AK', Arizona: 'AZ', Arkansas: 'AR', California: 'CA',
-  Colorado: 'CO', Connecticut: 'CT', Delaware: 'DE', Florida: 'FL', Georgia: 'GA',
-  Hawaii: 'HI', Idaho: 'ID', Illinois: 'IL', Indiana: 'IN', Iowa: 'IA',
-  Kansas: 'KS', Kentucky: 'KY', Louisiana: 'LA', Maine: 'ME', Maryland: 'MD',
-  Massachusetts: 'MA', Michigan: 'MI', Minnesota: 'MN', Mississippi: 'MS', Missouri: 'MO',
-  Montana: 'MT', Nebraska: 'NE', Nevada: 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
-  'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', Ohio: 'OH',
-  Oklahoma: 'OK', Oregon: 'OR', Pennsylvania: 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
-  'South Dakota': 'SD', Tennessee: 'TN', Texas: 'TX', Utah: 'UT', Vermont: 'VT',
-  Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV', Wisconsin: 'WI', Wyoming: 'WY',
-  'District of Columbia': 'DC',
-};
-
-const abbreviateRegion = (region: string | null | undefined): string | null => {
-  if (!region) return null;
-  const trimmed = region.trim();
-  if (!trimmed) return null;
-  if (trimmed.length === 2) return trimmed.toUpperCase();
-  return US_STATE_ABBREVIATIONS[trimmed] ?? trimmed;
-};
-
 const formatGeocodedAddress = (address: Location.LocationGeocodedAddress | undefined) => {
   if (!address) return null;
 
-  // address.name is omitted: on-device testing showed it's unreliable
-  // (often just repeats the street number) and produced messy, duplicated
-  // first lines - street + city/state/zip is enough to confirm the spot.
   const street = [address.streetNumber, address.street]
     .filter(Boolean)
     .join(' ');
-  const cityStateZip = [
-    address.city,
-    [abbreviateRegion(address.region), address.postalCode].filter(Boolean).join(' '),
-  ]
+  const cityLine = [address.city, address.region, address.postalCode]
     .filter(Boolean)
     .join(', ');
-
-  const lines = [street, cityStateZip].filter(Boolean);
-  return lines.length > 0 ? lines.join('\n') : null;
+  return [address.name, street, cityLine]
+    .filter((part, index, values) => part && values.indexOf(part) === index)
+    .join('\n');
 };
 
 const confirmAutomationLocation = (locationLabel: string, resolvedAddress: string | null) =>
@@ -238,7 +210,7 @@ const confirmAutomationLocation = (locationLabel: string, resolvedAddress: strin
     Alert.alert(
       'Confirm automatic LIVE location',
       resolvedAddress
-        ? `We found this location:\n\n${resolvedAddress}\n\nUse this location?`
+        ? `${locationLabel} was located as:\n\n${resolvedAddress}\n\nUse this location?`
         : `Use the mapped coordinates found for ${locationLabel}?`,
       [
         { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
