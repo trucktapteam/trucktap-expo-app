@@ -402,6 +402,10 @@ export type AppState = {
   refreshUpcomingStops: () => Promise<void>;
   getSavedLocations: (truckId: string) => SavedLocation[];
   addSavedLocation: (location: Omit<SavedLocation, 'id' | 'created_at' | 'updated_at'>) => Promise<SavedLocation>;
+  updateSavedLocation: (
+    locationId: string,
+    updates: Partial<Pick<SavedLocation, 'label' | 'location_text' | 'latitude' | 'longitude' | 'timezone'>>
+  ) => Promise<SavedLocation>;
   deleteSavedLocation: (locationId: string) => Promise<void>;
   savedLocationsLoading: boolean;
   setTruckVerified: (truckId: string, value: boolean) => void;
@@ -3338,6 +3342,68 @@ if (error) {
     setSavedLocations(prev => prev.filter(location => location.id !== locationId));
   }, [authUser, isAuthenticated, savedLocations, userOwnsTruck]);
 
+  const updateSavedLocation = useCallback(async (
+    locationId: string,
+    updates: Partial<Pick<SavedLocation, 'label' | 'location_text' | 'latitude' | 'longitude' | 'timezone'>>
+  ): Promise<SavedLocation> => {
+    const existing = savedLocations.find(location => location.id === locationId);
+
+    if (!existing) {
+      throw new Error('Saved location not found');
+    }
+    if (!isAuthenticated || !authUser) {
+      throw new Error('Not authenticated');
+    }
+    if (!userOwnsTruck(existing.truck_id)) {
+      throw new Error(`User does not own truck ${existing.truck_id}`);
+    }
+
+    const payload: Record<string, any> = {};
+
+    if (updates.label !== undefined) {
+      const label = updates.label.trim();
+      if (!label) throw new Error('A name for this location is required');
+      payload.label = label;
+    }
+    if (updates.location_text !== undefined) {
+      const locationText = updates.location_text.trim();
+      if (!locationText) throw new Error('Location is required');
+      payload.location_text = locationText;
+    }
+    if (updates.latitude !== undefined) payload.latitude = updates.latitude;
+    if (updates.longitude !== undefined) payload.longitude = updates.longitude;
+    if (updates.timezone !== undefined) payload.timezone = updates.timezone;
+
+    if (!isSupabaseConfigured) {
+      const updated: SavedLocation = {
+        ...existing,
+        ...payload,
+        updated_at: new Date().toISOString(),
+      };
+      setSavedLocations(prev => prev.map(location => location.id === locationId ? updated : location));
+      return updated;
+    }
+
+    const { data, error } = await supabase
+      .from('truck_saved_locations')
+      .update(payload)
+      .eq('id', locationId)
+      .select(SAVED_LOCATION_PUBLIC_COLUMNS)
+      .single();
+
+    if (error) {
+      console.log('[AppContext] Update saved location error:', error.message);
+      if (error.code === '23505') {
+        throw new Error(`You already have a saved location named "${payload.label ?? existing.label}"`);
+      }
+      throw new Error(`Could not update saved location: ${error.message}`);
+    }
+
+    const updated = mapSavedLocationRow(data);
+    setSavedLocations(prev => prev.map(location => location.id === locationId ? updated : location));
+    return updated;
+  }, [authUser, isAuthenticated, savedLocations, userOwnsTruck]);
+
   const setTruckVerified = useCallback((truckId: string, value: boolean) => {
     setFoodTrucks(prev => 
       prev.map(truck => 
@@ -3701,6 +3767,7 @@ if (error) {
     refreshUpcomingStops: fetchUpcomingStopsFromSupabase,
     getSavedLocations,
     addSavedLocation,
+    updateSavedLocation,
     deleteSavedLocation,
     savedLocationsLoading,
     setTruckVerified,
@@ -3742,7 +3809,7 @@ if (error) {
     deleteAnnouncement, getAnnouncements, getUpcomingStops, addUpcomingStop,
     getNextUpcomingStopForTruck, getTruckActivityStatus, getTruckActivitySummary, isTruckInactive,
     updateUpcomingStop, deleteUpcomingStop, fetchUpcomingStopsFromSupabase,
-    getSavedLocations, addSavedLocation, deleteSavedLocation, savedLocationsLoading,
+    getSavedLocations, addSavedLocation, updateSavedLocation, deleteSavedLocation, savedLocationsLoading,
     setTruckVerified, logout,
     incrementQrScan, getQrScanStats, allTrucksLoading, fetchAllTrucksFromSupabase, isProfileComplete,
     getDaysAgoText, setPendingRedirect, setPendingNotificationRoute, setIsInitialNotificationResponseChecked, setPendingDeepLinkRoute, consumePendingRedirect, getTeamUpdates,

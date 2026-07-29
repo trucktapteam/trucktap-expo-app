@@ -1,12 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Bell, CalendarDays, ChevronDown, Clock, MapPin, Pencil, RefreshCw, Trash2, Zap } from 'lucide-react-native';
+import { Bell, CalendarDays, ChevronDown, Clock, MapPin, Pencil, RefreshCw, Trash2, X, Zap } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { SavedLocation, UpcomingStop, UpcomingStopStatus } from '@/types';
@@ -25,6 +25,8 @@ import {
 const STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
 const REMINDER_SETTINGS_KEY = 'upcomingStopReminderSettings';
 const REMINDER_IDS_KEY = 'upcomingStopReminderIds';
+const RECENT_LOCATIONS_KEY = 'upcomingStopRecentLocations';
+const RECENT_LOCATIONS_LIMIT = 5;
 const DEFAULT_REMINDER_MINUTES = 30;
 const REMINDER_MINUTE_OPTIONS = [15, 30, 60] as const;
 const GO_LIVE_WINDOW_MINUTES = 30;
@@ -56,6 +58,22 @@ const atTime = (hour: number, minute: number) => {
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
   return date;
+};
+
+// 11am-2pm is the default window for a new stop, but if it's already past
+// 11am the moment the form resets, that window lands in the past for a
+// same-day date - which silently trips scheduleReminderForStop's "too soon"
+// guard (no reminder scheduled) for anyone who picks today without touching
+// the time fields. Roll the default forward from the current hour instead.
+const getDefaultStopTimes = () => {
+  const now = new Date();
+  const startHour = now.getHours() >= 11 ? Math.min(now.getHours() + 1, 23) : 11;
+  const endHour = startHour + 3;
+  return {
+    start: atTime(startHour, 0),
+    end: atTime(endHour % 24, 0),
+    endsNextDay: endHour >= 24,
+  };
 };
 
 const combineDateAndTime = (dateValue: Date, timeValue: Date) =>
@@ -129,6 +147,14 @@ type ReminderScheduleResult = {
   ids: ReminderIds;
 };
 
+type RecentLocationEntry = {
+  text: string;
+  latitude?: number;
+  longitude?: number;
+  timezone?: string;
+  usedAt: string;
+};
+
 const normalizeReminderSettings = (settings?: Partial<ReminderSettings> | null): ReminderSettings => ({
   enabled: settings?.enabled !== false,
   minutesBefore: REMINDER_MINUTE_OPTIONS.includes(
@@ -191,30 +217,62 @@ const withTimePeriod = (date: Date, period: TimePeriod) => {
   return nextDate;
 };
 
+const US_STATE_ABBREVIATIONS: Record<string, string> = {
+  Alabama: 'AL', Alaska: 'AK', Arizona: 'AZ', Arkansas: 'AR', California: 'CA',
+  Colorado: 'CO', Connecticut: 'CT', Delaware: 'DE', Florida: 'FL', Georgia: 'GA',
+  Hawaii: 'HI', Idaho: 'ID', Illinois: 'IL', Indiana: 'IN', Iowa: 'IA',
+  Kansas: 'KS', Kentucky: 'KY', Louisiana: 'LA', Maine: 'ME', Maryland: 'MD',
+  Massachusetts: 'MA', Michigan: 'MI', Minnesota: 'MN', Mississippi: 'MS', Missouri: 'MO',
+  Montana: 'MT', Nebraska: 'NE', Nevada: 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+  'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', Ohio: 'OH',
+  Oklahoma: 'OK', Oregon: 'OR', Pennsylvania: 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+  'South Dakota': 'SD', Tennessee: 'TN', Texas: 'TX', Utah: 'UT', Vermont: 'VT',
+  Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV', Wisconsin: 'WI', Wyoming: 'WY',
+  'District of Columbia': 'DC',
+};
+
+const abbreviateRegion = (region: string | null | undefined): string | null => {
+  if (!region) return null;
+  const trimmed = region.trim();
+  if (!trimmed) return null;
+  if (trimmed.length === 2) return trimmed.toUpperCase();
+  return US_STATE_ABBREVIATIONS[trimmed] ?? trimmed;
+};
+
 const formatGeocodedAddress = (address: Location.LocationGeocodedAddress | undefined) => {
   if (!address) return null;
 
+  // address.name is omitted: it's unreliable (often just repeats the street
+  // number) and produces messy, duplicated first lines - street + city/
+  // state/zip is what an owner needs to judge whether the match is right.
   const street = [address.streetNumber, address.street]
     .filter(Boolean)
     .join(' ');
-  const cityLine = [address.city, address.region, address.postalCode]
+  const cityStateZip = [
+    address.city,
+    [abbreviateRegion(address.region), address.postalCode].filter(Boolean).join(' '),
+  ]
     .filter(Boolean)
     .join(', ');
-  return [address.name, street, cityLine]
-    .filter((part, index, values) => part && values.indexOf(part) === index)
-    .join('\n');
+
+  const lines = [street, cityStateZip].filter(Boolean);
+  return lines.length > 0 ? lines.join('\n') : null;
 };
 
-const confirmAutomationLocation = (locationLabel: string, resolvedAddress: string | null) =>
+const confirmAutomationLocation = (
+  locationLabel: string,
+  resolvedAddress: string | null,
+  title: string = 'Confirm automatic LIVE location'
+) =>
   new Promise<boolean>(resolve => {
     Alert.alert(
-      'Confirm automatic LIVE location',
+      title,
       resolvedAddress
-        ? `${locationLabel} was located as:\n\n${resolvedAddress}\n\nUse this location?`
-        : `Use the mapped coordinates found for ${locationLabel}?`,
+        ? `You entered\n${locationLabel}\n\n📍 TruckTap found\n${resolvedAddress}\n\nIs this the correct location?`
+        : `You entered\n${locationLabel}\n\nTruckTap could not find a detailed address for this location, only approximate coordinates.\n\nIs this the correct location?`,
       [
-        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'Use Location', onPress: () => resolve(true) },
+        { text: 'NO, EDIT ADDRESS', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'YES, USE THIS LOCATION', onPress: () => resolve(true) },
       ],
       { cancelable: false }
     );
@@ -229,19 +287,24 @@ export default function UpcomingStopsScreen() {
     updateUpcomingStop,
     deleteUpcomingStop,
     refreshUpcomingStops,
-    upcomingStopsLoading,
     getSavedLocations,
     addSavedLocation,
+    updateSavedLocation,
+    deleteSavedLocation,
     updateTruckDetails,
   } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('UpcomingStopsScreen');
 
   const [dateValue, setDateValue] = useState(() => new Date());
-  const [selectedDates, setSelectedDates] = useState<Date[]>(() => [startOfSelectedDate(new Date())]);
-  const [startTime, setStartTime] = useState(() => atTime(11, 0));
-  const [endTime, setEndTime] = useState(() => atTime(14, 0));
-  const [endsNextDay, setEndsNextDay] = useState(false);
+  // Deliberately empty on load - a new stop must not default to today's date.
+  // dateValue above still needs a valid Date for the native picker widget's
+  // own initial display, but selectedDates (the actually-confirmed dates for
+  // this stop) starts blank so the owner must explicitly pick at least one.
+  const [selectedDates, setSelectedDates] = useState<Date[]>(() => []);
+  const [startTime, setStartTime] = useState(() => getDefaultStopTimes().start);
+  const [endTime, setEndTime] = useState(() => getDefaultStopTimes().end);
+  const [endsNextDay, setEndsNextDay] = useState(() => getDefaultStopTimes().endsNextDay);
   const [locationText, setLocationText] = useState('');
   const [selectedLocationSource, setSelectedLocationSource] = useState<{
     text: string;
@@ -256,6 +319,13 @@ export default function UpcomingStopsScreen() {
     () => truck?.hands_free_live_default_enabled === true
   );
   const [truckDefaultSaving, setTruckDefaultSaving] = useState(false);
+  const [savedLocationModalVisible, setSavedLocationModalVisible] = useState(false);
+  const [editingSavedLocation, setEditingSavedLocation] = useState<SavedLocation | null>(null);
+  const [savedLocationFormLabel, setSavedLocationFormLabel] = useState('');
+  const [savedLocationFormText, setSavedLocationFormText] = useState('');
+  const [savedLocationModalError, setSavedLocationModalError] = useState<string | null>(null);
+  const [savedLocationSaving, setSavedLocationSaving] = useState(false);
+  const [savedLocationDeleting, setSavedLocationDeleting] = useState(false);
   const [editingStopId, setEditingStopId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [busyStopId, setBusyStopId] = useState<string | null>(null);
@@ -268,6 +338,8 @@ export default function UpcomingStopsScreen() {
   );
   const [reminderIds, setReminderIds] = useState<ReminderIds>({});
   const [reminderSettingsLoaded, setReminderSettingsLoaded] = useState(false);
+  const [recentLocations, setRecentLocations] = useState<RecentLocationEntry[]>([]);
+  const [recentLocationsLoaded, setRecentLocationsLoaded] = useState(false);
   const [automationSettings, setAutomationSettings] = useState<HandsFreeLiveOwnerSettings>(
     DEFAULT_AUTOMATION_SETTINGS
   );
@@ -281,6 +353,7 @@ export default function UpcomingStopsScreen() {
   const [confirmationPreferenceSaving, setConfirmationPreferenceSaving] = useState(false);
   const reminderSettingsRef = useRef(reminderSettings);
   const reminderIdsRef = useRef(reminderIds);
+  const recentLocationsRef = useRef(recentLocations);
   const scrollViewRef = useRef<ScrollView>(null);
   const locationInputRef = useRef<TextInput>(null);
 
@@ -294,22 +367,17 @@ export default function UpcomingStopsScreen() {
     [getSavedLocations, truck]
   );
 
+  // Recent Locations are persisted independently (AsyncStorage, see
+  // RECENT_LOCATIONS_KEY below) rather than derived from live stops, so an
+  // address stays in Recent even after the stop that used it is deleted.
+  // recentLocations is already most-recent-first, deduped, and capped at
+  // RECENT_LOCATIONS_LIMIT - this just filters out anything already Saved.
   const recentLocationTexts = useMemo(() => {
     const savedTexts = new Set(savedLocationsForTruck.map(location => location.location_text));
-    const seen = new Set<string>();
-    const recent: string[] = [];
-
-    for (const stop of [...stops].sort((a, b) => Date.parse(b.starts_at) - Date.parse(a.starts_at))) {
-      if (stop.id === editingStopId) continue;
-      const text = stop.location_text.trim();
-      if (!text || seen.has(text) || savedTexts.has(text)) continue;
-      seen.add(text);
-      recent.push(text);
-      if (recent.length >= 5) break;
-    }
-
-    return recent;
-  }, [stops, editingStopId, savedLocationsForTruck]);
+    return recentLocations
+      .filter(entry => !savedTexts.has(entry.text))
+      .map(entry => entry.text);
+  }, [recentLocations, savedLocationsForTruck]);
 
   const refreshAutomationState = React.useCallback(async () => {
     if (!truck) {
@@ -412,6 +480,30 @@ export default function UpcomingStopsScreen() {
     void loadReminderState();
   }, []);
 
+  React.useEffect(() => {
+    const loadRecentLocations = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(RECENT_LOCATIONS_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            const normalized: RecentLocationEntry[] = parsed
+              .filter((entry): entry is RecentLocationEntry => typeof entry?.text === 'string' && entry.text.length > 0)
+              .slice(0, RECENT_LOCATIONS_LIMIT);
+            recentLocationsRef.current = normalized;
+            setRecentLocations(normalized);
+          }
+        }
+      } catch (error) {
+        console.log('[UpcomingStops] Failed to load recent locations:', error);
+      } finally {
+        setRecentLocationsLoaded(true);
+      }
+    };
+
+    void loadRecentLocations();
+  }, []);
+
   const persistReminderSettings = async (settings: ReminderSettings) => {
     const normalizedSettings = normalizeReminderSettings(settings);
     reminderSettingsRef.current = normalizedSettings;
@@ -423,6 +515,91 @@ export default function UpcomingStopsScreen() {
     reminderIdsRef.current = ids;
     await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids));
     setReminderIds(ids);
+  };
+
+  // Merges by text: a call with just `text` (recorded right when a stop is
+  // saved, geocoded or not) preserves any coordinates already known from a
+  // prior call; a later call with `coords` (once geocoding resolves)
+  // enriches the same entry in place. Order-independent, safe either way.
+  const persistRecentLocation = async (
+    text: string,
+    coords?: { latitude: number; longitude: number; timezone: string }
+  ) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const current = recentLocationsRef.current;
+    const existing = current.find(entry => entry.text === trimmed);
+    const nextEntry: RecentLocationEntry = {
+      text: trimmed,
+      latitude: coords?.latitude ?? existing?.latitude,
+      longitude: coords?.longitude ?? existing?.longitude,
+      timezone: coords?.timezone ?? existing?.timezone,
+      usedAt: new Date().toISOString(),
+    };
+    const next = [nextEntry, ...current.filter(entry => entry.text !== trimmed)].slice(
+      0,
+      RECENT_LOCATIONS_LIMIT
+    );
+
+    recentLocationsRef.current = next;
+    setRecentLocations(next);
+    try {
+      await AsyncStorage.setItem(RECENT_LOCATIONS_KEY, JSON.stringify(next));
+    } catch (error) {
+      console.log('[UpcomingStops] Failed to persist recent locations:', error);
+    }
+  };
+
+  // Recent entries are local-only convenience state, not a record of the
+  // stops themselves - deleting one only ever touches recentLocations/
+  // RECENT_LOCATIONS_KEY. Saved Locations, existing stops, and the
+  // reminder/Hands-Free LIVE settings live in entirely separate state and
+  // are never read or written here.
+  const removeRecentLocations = async (predicate: (entry: RecentLocationEntry) => boolean) => {
+    const current = recentLocationsRef.current;
+    const removed = current.filter(predicate);
+    if (removed.length === 0) return;
+
+    const next = current.filter(entry => !predicate(entry));
+    recentLocationsRef.current = next;
+    setRecentLocations(next);
+
+    // A chip's delete button only ever exists for a Recent that's currently
+    // visible, and recentLocationTexts already excludes any text that
+    // matches a Saved Location - so a text match here can only mean the
+    // active selection came from the Recent being removed, never from
+    // Saved. Clear just that selection marker; the typed location text
+    // stays exactly as it was so the form isn't disturbed underneath the
+    // owner.
+    if (selectedLocationSource && removed.some(entry => entry.text === selectedLocationSource.text)) {
+      setSelectedLocationSource(null);
+    }
+
+    try {
+      await AsyncStorage.setItem(RECENT_LOCATIONS_KEY, JSON.stringify(next));
+    } catch (error) {
+      console.log('[UpcomingStops] Failed to persist recent locations:', error);
+    }
+  };
+
+  const handleDeleteRecentLocation = (text: string) => {
+    void removeRecentLocations(entry => entry.text === text);
+  };
+
+  const handleClearAllRecentLocations = () => {
+    Alert.alert(
+      'Clear all recent locations?',
+      'This removes every Recent Location on this device. Saved Locations and existing scheduled stops are not affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear all',
+          style: 'destructive',
+          onPress: () => void removeRecentLocations(() => true),
+        },
+      ]
+    );
   };
 
   const requestLocalNotificationPermission = async () => {
@@ -702,26 +879,24 @@ export default function UpcomingStopsScreen() {
     }
   };
 
-  // Shared by the per-stop list toggle and the create-form's "Hands-Free
-  // LIVE for this stop" switch (Part 3). Uses cached Saved/Recent-location
+  // Pure resolve-and-confirm step, no stopId, no writes - lets callers
+  // decide what to do with the result. Uses cached Saved/Recent-location
   // coordinates directly when they match the current text (no live geocode,
-  // no confirmation dialog); otherwise runs the same foreground, confirmed
-  // geocode flow as before. Returns false only when the owner declines the
+  // no confirmation dialog); otherwise runs the geocode -> reverse-geocode
+  // -> confirm dialog flow. Returns null only when the owner declines the
   // confirmation - everything else either succeeds or throws.
-  const enableAutomationForStop = async (
-    stopId: string,
+  const resolveConfirmedAutomationLocation = async (
     stopLocationText: string,
     cachedSource: { text: string; latitude: number; longitude: number; timezone: string } | null
-  ): Promise<boolean> => {
+  ): Promise<{ latitude: number; longitude: number; timezone: string } | null> => {
+    console.log('[UpcomingStops] resolveConfirmedAutomationLocation reached, cached match =',
+      cachedSource != null && cachedSource.text === stopLocationText);
     if (cachedSource && cachedSource.text === stopLocationText) {
-      await configureUpcomingStopAutomation({
-        stopId,
-        enabled: true,
+      return {
         latitude: cachedSource.latitude,
         longitude: cachedSource.longitude,
         timezone: cachedSource.timezone,
-      });
-      return true;
+      };
     }
 
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -763,17 +938,35 @@ export default function UpcomingStopsScreen() {
       formatGeocodedAddress(reverseMatches[0])
     );
     if (!confirmed) {
+      return null;
+    }
+
+    return { latitude: match.latitude, longitude: match.longitude, timezone };
+  };
+
+  // Thin wrapper around the resolver above, for the per-stop list toggle on
+  // an already-existing stop (handleAutomationToggle): resolves/confirms,
+  // then performs the writes the resolver deliberately doesn't do itself.
+  // Returns false only when the owner declines the confirmation.
+  const enableAutomationForStop = async (
+    stopId: string,
+    stopLocationText: string,
+    cachedSource: { text: string; latitude: number; longitude: number; timezone: string } | null
+  ): Promise<boolean> => {
+    const resolved = await resolveConfirmedAutomationLocation(stopLocationText, cachedSource);
+    if (!resolved) {
       return false;
     }
 
     await configureUpcomingStopAutomation({
       stopId,
       enabled: true,
-      latitude: match.latitude,
-      longitude: match.longitude,
-      timezone,
+      latitude: resolved.latitude,
+      longitude: resolved.longitude,
+      timezone: resolved.timezone,
     });
-    promptSaveLocationIfNew(stopLocationText, match.latitude, match.longitude, timezone);
+    void persistRecentLocation(stopLocationText, resolved);
+    promptSaveLocationIfNew(stopLocationText, resolved.latitude, resolved.longitude, resolved.timezone);
     return true;
   };
 
@@ -786,7 +979,9 @@ export default function UpcomingStopsScreen() {
       if (enabled) {
         const didEnable = await enableAutomationForStop(stop.id, stop.location_text, null);
         if (!didEnable) {
-          setSuccessMessage(`Hands-Free LIVE was not turned on for ${stop.location_text}.`);
+          setErrorMessage(
+            'Hands-Free LIVE was not enabled because the location was not confirmed. Tap the pencil icon on this stop to correct the address.'
+          );
           return;
         }
         setSuccessMessage(`Hands-Free LIVE is ready for ${stop.location_text}.`);
@@ -822,11 +1017,12 @@ export default function UpcomingStopsScreen() {
 
   const resetForm = () => {
     const nextDate = new Date();
+    const defaultTimes = getDefaultStopTimes();
     setDateValue(nextDate);
-    setSelectedDates([startOfSelectedDate(nextDate)]);
-    setStartTime(atTime(11, 0));
-    setEndTime(atTime(14, 0));
-    setEndsNextDay(false);
+    setSelectedDates([]);
+    setStartTime(defaultTimes.start);
+    setEndTime(defaultTimes.end);
+    setEndsNextDay(defaultTimes.endsNextDay);
     setLocationText('');
     setSelectedLocationSource(null);
     setNote('');
@@ -882,6 +1078,8 @@ export default function UpcomingStopsScreen() {
     stopLocationText: string,
     cachedSource: { text: string; latitude: number; longitude: number; timezone: string } | null
   ) => {
+    console.log('[UpcomingStops] applyStopLocationInBackground reached, cached match =',
+      cachedSource != null && cachedSource.text === stopLocationText);
     if (cachedSource && cachedSource.text === stopLocationText) {
       setUpcomingStopLocation({
         stopId,
@@ -893,6 +1091,11 @@ export default function UpcomingStopsScreen() {
         .catch(error => {
           console.log('[UpcomingStops] Failed to persist saved-location coordinates:', error);
         });
+      void persistRecentLocation(stopLocationText, {
+        latitude: cachedSource.latitude,
+        longitude: cachedSource.longitude,
+        timezone: cachedSource.timezone,
+      });
       return;
     }
 
@@ -905,6 +1108,8 @@ export default function UpcomingStopsScreen() {
             Number.isFinite(candidate.longitude)
         );
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+        console.log('[UpcomingStops] Background geocode', match && timezone ? 'success' : 'failure', 'for stop', stopId);
 
         if (!match || !timezone) {
           await setUpcomingStopLocation({ stopId, failed: true });
@@ -919,6 +1124,11 @@ export default function UpcomingStopsScreen() {
           timezone,
         });
         await refreshLocationStatuses();
+        void persistRecentLocation(stopLocationText, {
+          latitude: match.latitude,
+          longitude: match.longitude,
+          timezone,
+        });
         promptSaveLocationIfNew(stopLocationText, match.latitude, match.longitude, timezone);
       } catch (error) {
         console.log('[UpcomingStops] Background geocode failed:', error);
@@ -949,10 +1159,141 @@ export default function UpcomingStopsScreen() {
     setErrorMessage(null);
     setSuccessMessage(null);
     setLocationText(text);
-    // Recent entries don't carry verified coordinates (only Saved
-    // Locations do), so this doesn't skip live geocoding later.
-    setSelectedLocationSource(null);
+    // Recent entries carry cached coordinates once a prior geocode for this
+    // exact text has succeeded (see persistRecentLocation) - reuse them to
+    // skip a redundant re-geocode, same as picking a Saved Location. Falls
+    // back to null (live geocode) for a Recent entry whose geocode never
+    // resolved yet.
+    const cached = recentLocations.find(entry => entry.text === text);
+    setSelectedLocationSource(
+      cached && cached.latitude !== undefined && cached.longitude !== undefined && cached.timezone
+        ? { text, latitude: cached.latitude, longitude: cached.longitude, timezone: cached.timezone }
+        : null
+    );
     locationInputRef.current?.focus();
+  };
+
+  const openEditSavedLocationModal = (location: SavedLocation) => {
+    setEditingSavedLocation(location);
+    setSavedLocationFormLabel(location.label);
+    setSavedLocationFormText(location.location_text);
+    setSavedLocationModalError(null);
+    setSavedLocationModalVisible(true);
+  };
+
+  const closeSavedLocationModal = () => {
+    setSavedLocationModalVisible(false);
+    setEditingSavedLocation(null);
+    setSavedLocationFormLabel('');
+    setSavedLocationFormText('');
+    setSavedLocationModalError(null);
+  };
+
+  const handleUpdateSavedLocation = async () => {
+    if (!editingSavedLocation) return;
+    setSavedLocationModalError(null);
+
+    const nextLabel = savedLocationFormLabel.trim();
+    const nextText = savedLocationFormText.trim();
+
+    if (!nextLabel) {
+      setSavedLocationModalError('A name for this location is required.');
+      return;
+    }
+    if (!nextText) {
+      setSavedLocationModalError('Location is required.');
+      return;
+    }
+
+    setSavedLocationSaving(true);
+    try {
+      const addressChanged = nextText !== editingSavedLocation.location_text;
+
+      if (!addressChanged) {
+        // Label-only rename - the coordinates are still valid, no re-geocode needed.
+        if (nextLabel !== editingSavedLocation.label) {
+          await updateSavedLocation(editingSavedLocation.id, { label: nextLabel });
+        }
+        closeSavedLocationModal();
+        return;
+      }
+
+      // Address text changed - re-geocode and confirm before saving, same
+      // pattern used for Hands-Free LIVE, just with a neutral title since
+      // this has nothing to do with automation.
+      const matches = await Location.geocodeAsync(nextText);
+      const match = matches.find(
+        candidate =>
+          Number.isFinite(candidate.latitude) &&
+          Number.isFinite(candidate.longitude)
+      );
+
+      if (!match) {
+        setSavedLocationModalError(
+          'TruckTap could not locate this address. Try a more complete street address.'
+        );
+        return;
+      }
+
+      const reverseMatches = await Location.reverseGeocodeAsync({
+        latitude: match.latitude,
+        longitude: match.longitude,
+      }).catch(() => []);
+      const confirmed = await confirmAutomationLocation(
+        nextText,
+        formatGeocodedAddress(reverseMatches[0]),
+        'Confirm location'
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      await updateSavedLocation(editingSavedLocation.id, {
+        label: nextLabel,
+        location_text: nextText,
+        latitude: match.latitude,
+        longitude: match.longitude,
+        timezone,
+      });
+      closeSavedLocationModal();
+    } catch (error) {
+      setSavedLocationModalError(
+        error instanceof Error ? error.message : 'Could not update this location.'
+      );
+    } finally {
+      setSavedLocationSaving(false);
+    }
+  };
+
+  const handleDeleteSavedLocation = () => {
+    if (!editingSavedLocation) return;
+    const location = editingSavedLocation;
+
+    Alert.alert(
+      'Delete saved location?',
+      `Remove "${location.label}" from your saved locations? Stops that already used this address are not affected.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setSavedLocationDeleting(true);
+            try {
+              await deleteSavedLocation(location.id);
+              closeSavedLocationModal();
+            } catch (error) {
+              setSavedLocationModalError(
+                error instanceof Error ? error.message : 'Could not delete this location.'
+              );
+            } finally {
+              setSavedLocationDeleting(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const buildDateRange = (selectedDate: Date) => {
@@ -1066,6 +1407,7 @@ export default function UpcomingStopsScreen() {
     setSuccessMessage(null);
     const locationSourceAtSave = selectedLocationSource;
     const handsFreeLiveOnAtSave = !editingStopId && handsFreeLiveOnForNewStop;
+    console.log('[UpcomingStops] handleSave: handsFreeLiveOnAtSave =', handsFreeLiveOnAtSave);
 
     try {
       const trimmedLocation = locationText.trim();
@@ -1105,6 +1447,7 @@ export default function UpcomingStopsScreen() {
             await refreshAutomationState();
           }
           applyStopLocationInBackground(editingStopId, trimmedLocation, locationSourceAtSave);
+          void persistRecentLocation(trimmedLocation);
         }
 
         setSuccessMessage('Stop updated.');
@@ -1112,7 +1455,30 @@ export default function UpcomingStopsScreen() {
         resetForm();
       } else {
         const dateRanges = selectedDates.map(selectedDate => buildDateRange(selectedDate));
+
+        // Resolve and confirm Hands-Free LIVE's location ONCE, up front,
+        // before a single upcoming_stops row is created - not per date, and
+        // not after rows already exist. If the owner declines, nothing has
+        // been created yet: return silently to the still-open, still-filled
+        // form. No stop, no coordinates, no Save-Location prompt, no banner.
+        let confirmedAutomationLocation: { latitude: number; longitude: number; timezone: string } | null = null;
+
+        if (handsFreeLiveOnAtSave) {
+          confirmedAutomationLocation = await resolveConfirmedAutomationLocation(
+            trimmedLocation,
+            locationSourceAtSave
+          );
+
+          if (!confirmedAutomationLocation) {
+            return;
+          }
+        }
+
         const createdStops: UpcomingStop[] = [];
+        // Recorded once for the whole batch - every date in a multi-date
+        // save shares the same location text. Only reached once automation
+        // (if requested) has already been confirmed, or wasn't requested.
+        void persistRecentLocation(trimmedLocation, confirmedAutomationLocation ?? undefined);
 
         for (const { startsAt, endsAt } of dateRanges) {
           const createdStop = await addUpcomingStop({
@@ -1126,25 +1492,14 @@ export default function UpcomingStopsScreen() {
 
           createdStops.push(createdStop);
 
-          if (handsFreeLiveOnAtSave) {
-            try {
-              const didEnable = await enableAutomationForStop(
-                createdStop.id,
-                trimmedLocation,
-                locationSourceAtSave
-              );
-              if (didEnable) {
-                await refreshAutomationState();
-              } else {
-                applyStopLocationInBackground(createdStop.id, trimmedLocation, locationSourceAtSave);
-              }
-            } catch (automationError) {
-              console.log(
-                '[UpcomingStops] Could not enable Hands-Free LIVE for new stop:',
-                automationError
-              );
-              applyStopLocationInBackground(createdStop.id, trimmedLocation, locationSourceAtSave);
-            }
+          if (confirmedAutomationLocation) {
+            await configureUpcomingStopAutomation({
+              stopId: createdStop.id,
+              enabled: true,
+              latitude: confirmedAutomationLocation.latitude,
+              longitude: confirmedAutomationLocation.longitude,
+              timezone: confirmedAutomationLocation.timezone,
+            });
           } else {
             applyStopLocationInBackground(createdStop.id, trimmedLocation, locationSourceAtSave);
           }
@@ -1154,12 +1509,20 @@ export default function UpcomingStopsScreen() {
           }
         }
 
-        if (createdStops.length > 1) {
-          setSuccessMessage(`${createdStops.length} stops scheduled.`);
-        } else {
-          setSuccessMessage('Stop scheduled.');
+        if (confirmedAutomationLocation) {
+          await refreshAutomationState();
+          promptSaveLocationIfNew(
+            trimmedLocation,
+            confirmedAutomationLocation.latitude,
+            confirmedAutomationLocation.longitude,
+            confirmedAutomationLocation.timezone
+          );
         }
 
+        const baseMessage = createdStops.length > 1
+          ? `${createdStops.length} stops scheduled.`
+          : 'Stop scheduled.';
+        setSuccessMessage(baseMessage);
         resetForm();
       }
     } catch (error: any) {
@@ -1230,17 +1593,27 @@ export default function UpcomingStopsScreen() {
     );
   };
 
-  const handleRefresh = async () => {
+  // Sits in the form header next to "Add planned stop" / "Edit planned
+  // stop", so an owner reasonably reads it as "clear this form and start
+  // over" - it must actually do that, not silently refetch server data
+  // behind an icon that looks like a reset button. The server refresh this
+  // button used to perform is still useful (nothing else on this screen
+  // re-polls automation/stop state), so it still runs - just in the
+  // background, after the form has already visibly cleared, not as the
+  // button's primary effect.
+  const handleResetForm = () => {
     setErrorMessage(null);
+    setSuccessMessage(null);
+    setEditingStopId(null);
+    resetForm();
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
 
-    try {
-      await Promise.all([
-        refreshUpcomingStops(),
-        refreshAutomationState(),
-      ]);
-    } catch (error: any) {
+    Promise.all([
+      refreshUpcomingStops(),
+      refreshAutomationState(),
+    ]).catch((error: any) => {
       setErrorMessage(error?.message ?? 'Could not refresh upcoming stops.');
-    }
+    });
   };
 
   const handleGoLiveFromStop = (stop: UpcomingStop) => {
@@ -1374,12 +1747,8 @@ export default function UpcomingStopsScreen() {
                 <CalendarDays size={24} color={Colors.primary} />
                 <Text style={styles.formTitle}>{editingStopId ? 'Edit planned stop' : 'Add planned stop'}</Text>
               </View>
-              <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton} disabled={upcomingStopsLoading}>
-                {upcomingStopsLoading ? (
-                  <ActivityIndicator size="small" color={Colors.primary} />
-                ) : (
-                  <RefreshCw size={20} color={Colors.primary} />
-                )}
+              <TouchableOpacity onPress={handleResetForm} style={styles.refreshButton} activeOpacity={0.75}>
+                <RefreshCw size={20} color={Colors.primary} />
               </TouchableOpacity>
             </View>
 
@@ -1420,7 +1789,9 @@ export default function UpcomingStopsScreen() {
                   ))}
                 </View>
               ) : (
-                <Text style={styles.noSelectedDatesText}>No dates selected</Text>
+                <Text style={styles.noSelectedDatesText}>
+                  No date selected - pick a date above before saving.
+                </Text>
               )}
             </View>
 
@@ -1496,17 +1867,35 @@ export default function UpcomingStopsScreen() {
 
             {recentLocationTexts.length > 0 && (
               <View style={styles.locationChipSection}>
-                <Text style={styles.locationChipSectionLabel}>Recent</Text>
+                <View style={styles.locationChipSectionHeader}>
+                  <Text style={styles.locationChipSectionLabel}>Recent</Text>
+                  <TouchableOpacity
+                    onPress={handleClearAllRecentLocations}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.clearAllRecentsText}>Clear all</Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.locationChipRow}>
                   {recentLocationTexts.map(text => (
-                    <TouchableOpacity
-                      key={text}
-                      style={styles.locationChip}
-                      onPress={() => applyRecentLocationText(text)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={styles.locationChipText} numberOfLines={1}>{text}</Text>
-                    </TouchableOpacity>
+                    <View key={text} style={[styles.locationChip, styles.savedLocationChip]}>
+                      <TouchableOpacity
+                        style={styles.locationChipSelectArea}
+                        onPress={() => applyRecentLocationText(text)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={styles.locationChipText} numberOfLines={1}>{text}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.locationChipEditButton}
+                        onPress={() => handleDeleteRecentLocation(text)}
+                        activeOpacity={0.75}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={13} color={Colors.gray} />
+                      </TouchableOpacity>
+                    </View>
                   ))}
                 </View>
               </View>
@@ -1517,14 +1906,24 @@ export default function UpcomingStopsScreen() {
                 <Text style={styles.locationChipSectionLabel}>Saved</Text>
                 <View style={styles.locationChipRow}>
                   {savedLocationsForTruck.map(location => (
-                    <TouchableOpacity
-                      key={location.id}
-                      style={styles.locationChip}
-                      onPress={() => applyLocationSelection(location)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={styles.locationChipText}>{location.label}</Text>
-                    </TouchableOpacity>
+                    <View key={location.id} style={[styles.locationChip, styles.savedLocationChip]}>
+                      <TouchableOpacity
+                        style={styles.locationChipSelectArea}
+                        onPress={() => applyLocationSelection(location)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={styles.locationChipText} numberOfLines={1}>{location.label}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.locationChipEditButton}
+                        onPress={() => openEditSavedLocationModal(location)}
+                        activeOpacity={0.75}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        disabled={isSaving}
+                      >
+                        <Pencil size={13} color={Colors.gray} />
+                      </TouchableOpacity>
+                    </View>
                   ))}
                 </View>
               </View>
@@ -1540,6 +1939,9 @@ export default function UpcomingStopsScreen() {
               placeholderTextColor={Colors.gray}
               autoCapitalize="words"
             />
+            <Text style={styles.locationHelperText}>
+              For best results, enter the full street address. Business-name searches may return the wrong location.
+            </Text>
 
             <Text style={styles.label}>Note</Text>
             <TextInput
@@ -1577,9 +1979,12 @@ export default function UpcomingStopsScreen() {
             ) : null}
 
             <TouchableOpacity
-              style={[styles.saveButton, (isSaving || !reminderSettingsLoaded) && styles.buttonDisabled]}
+              style={[
+                styles.saveButton,
+                (isSaving || !reminderSettingsLoaded || selectedDates.length === 0) && styles.buttonDisabled,
+              ]}
               onPress={handleSave}
-              disabled={isSaving || !reminderSettingsLoaded}
+              disabled={isSaving || !reminderSettingsLoaded || selectedDates.length === 0}
               activeOpacity={0.75}
             >
               {isSaving ? (
@@ -1635,6 +2040,89 @@ export default function UpcomingStopsScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={savedLocationModalVisible}
+        animationType="slide"
+        transparent={false}
+        presentationStyle="pageSheet"
+        onRequestClose={closeSavedLocationModal}
+      >
+        <SafeAreaView style={styles.savedLocationModalContainer} edges={['top']}>
+          <View style={styles.savedLocationModalHeader}>
+            <Text style={styles.savedLocationModalTitle}>Edit Saved Location</Text>
+            <TouchableOpacity onPress={closeSavedLocationModal} style={styles.savedLocationModalClose}>
+              <X size={22} color={Colors.dark} />
+            </TouchableOpacity>
+          </View>
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.savedLocationModalFlex}
+          >
+            <ScrollView
+              style={styles.savedLocationModalContent}
+              contentContainerStyle={styles.savedLocationModalContentContainer}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.label}>Name</Text>
+              <TextInput
+                style={styles.input}
+                value={savedLocationFormLabel}
+                onChangeText={setSavedLocationFormLabel}
+                placeholder="e.g. Downtown Farmers Market"
+                placeholderTextColor={Colors.gray}
+              />
+
+              <Text style={styles.label}>Location name or address</Text>
+              <TextInput
+                style={styles.input}
+                value={savedLocationFormText}
+                onChangeText={setSavedLocationFormText}
+                placeholder="Full street address"
+                placeholderTextColor={Colors.gray}
+                autoCapitalize="words"
+              />
+
+              {savedLocationModalError ? (
+                <Text style={styles.errorMessage}>{savedLocationModalError}</Text>
+              ) : null}
+
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  (savedLocationSaving || savedLocationDeleting) && styles.buttonDisabled,
+                ]}
+                onPress={handleUpdateSavedLocation}
+                disabled={savedLocationSaving || savedLocationDeleting}
+                activeOpacity={0.75}
+              >
+                {savedLocationSaving ? (
+                  <ActivityIndicator color={Colors.light} />
+                ) : (
+                  <Text style={styles.saveButtonText}>Update Location</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteSavedLocationButton}
+                onPress={handleDeleteSavedLocation}
+                disabled={savedLocationSaving || savedLocationDeleting}
+                activeOpacity={0.75}
+              >
+                {savedLocationDeleting ? (
+                  <ActivityIndicator color={Colors.danger} />
+                ) : (
+                  <>
+                    <Trash2 size={18} color={Colors.danger} />
+                    <Text style={styles.deleteSavedLocationButtonText}>Delete Location</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2006,10 +2494,21 @@ const styles = StyleSheet.create({
   locationChipSection: {
     marginBottom: 10,
   },
+  locationChipSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   locationChipSectionLabel: {
     fontSize: 12,
     fontWeight: '700' as const,
     color: Colors.gray,
+    marginBottom: 6,
+  },
+  clearAllRecentsText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.primary,
     marginBottom: 6,
   },
   locationChipRow: {
@@ -2023,6 +2522,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     maxWidth: 220,
+  },
+  savedLocationChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  locationChipSelectArea: {
+    flexShrink: 1,
+  },
+  locationChipEditButton: {
+    marginLeft: 2,
   },
   locationChipText: {
     fontSize: 13,
@@ -2040,6 +2550,12 @@ const styles = StyleSheet.create({
   },
   noteInput: {
     minHeight: 82,
+  },
+  locationHelperText: {
+    fontSize: 12,
+    color: Colors.gray,
+    marginTop: -8,
+    marginBottom: 14,
   },
   newStopAutomationRow: {
     flexDirection: 'row',
@@ -2161,7 +2677,8 @@ const styles = StyleSheet.create({
   },
   noSelectedDatesText: {
     fontSize: 13,
-    color: Colors.gray,
+    fontWeight: '600' as const,
+    color: Colors.danger,
   },
   periodSegmentedControl: {
     minHeight: 46,
@@ -2279,6 +2796,53 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.65,
+  },
+  savedLocationModalContainer: {
+    flex: 1,
+    backgroundColor: Colors.light,
+  },
+  savedLocationModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.lightGray,
+  },
+  savedLocationModalTitle: {
+    fontSize: 19,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  savedLocationModalClose: {
+    padding: 4,
+  },
+  savedLocationModalFlex: {
+    flex: 1,
+  },
+  savedLocationModalContent: {
+    flex: 1,
+  },
+  savedLocationModalContentContainer: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  deleteSavedLocationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.danger,
+    gap: 8,
+    marginTop: 12,
+  },
+  deleteSavedLocationButtonText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.danger,
   },
   cancelEditButton: {
     alignItems: 'center',
