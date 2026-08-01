@@ -6,11 +6,13 @@ import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Bell, CalendarDays, ChevronDown, Clock, MapPin, Pencil, RefreshCw, Trash2, X, Zap } from 'lucide-react-native';
+import { CalendarDays, ChevronDown, ChevronUp, Clock, MapPin, Pencil, RefreshCw, Trash2, X, Zap } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { SavedLocation, UpcomingStop, UpcomingStopStatus } from '@/types';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import SchedulerSettingsSection from '@/components/SchedulerSettingsSection';
+import SavedLocationPicker from '@/components/SavedLocationPicker';
 import {
   configureUpcomingStopAutomation,
   HandsFreeLiveOwnerSettings,
@@ -33,6 +35,7 @@ const REMINDER_SETTINGS_KEY = 'upcomingStopReminderSettings';
 const REMINDER_IDS_KEY = 'upcomingStopReminderIds';
 const RECENT_LOCATIONS_KEY = 'upcomingStopRecentLocations';
 const RECENT_LOCATIONS_LIMIT = 5;
+const RECENT_LOCATIONS_VISIBLE_LIMIT = 3;
 const DEFAULT_REMINDER_MINUTES = 30;
 const REMINDER_MINUTE_OPTIONS = [15, 30, 60] as const;
 const GO_LIVE_WINDOW_MINUTES = 30;
@@ -353,12 +356,15 @@ export default function UpcomingStopsScreen() {
     timezone: string;
   } | null>(null);
   const [note, setNote] = useState('');
+  const [noteExpanded, setNoteExpanded] = useState(false);
   // Only used when creating a new stop (not editing) - pre-seeded from the
   // truck's Hands-Free LIVE default, fully editable per stop before saving.
   const [handsFreeLiveOnForNewStop, setHandsFreeLiveOnForNewStop] = useState(
     () => truck?.hands_free_live_default_enabled === true
   );
   const [truckDefaultSaving, setTruckDefaultSaving] = useState(false);
+  const [showAllRecentLocations, setShowAllRecentLocations] = useState(false);
+  const [savedLocationPickerVisible, setSavedLocationPickerVisible] = useState(false);
   const [savedLocationModalVisible, setSavedLocationModalVisible] = useState(false);
   const [editingSavedLocation, setEditingSavedLocation] = useState<SavedLocation | null>(null);
   const [savedLocationFormLabel, setSavedLocationFormLabel] = useState('');
@@ -1112,6 +1118,7 @@ export default function UpcomingStopsScreen() {
     setLocationText('');
     setSelectedLocationSource(null);
     setNote('');
+    setNoteExpanded(false);
     setActivePicker(null);
     setHandsFreeLiveOnForNewStop(truck?.hands_free_live_default_enabled === true);
   };
@@ -1270,6 +1277,16 @@ export default function UpcomingStopsScreen() {
     setSavedLocationModalVisible(true);
   };
 
+  const handleSavedLocationPickerSelect = (location: SavedLocation) => {
+    setSavedLocationPickerVisible(false);
+    applyLocationSelection(location);
+  };
+
+  const handleSavedLocationPickerEditRequest = (location: SavedLocation) => {
+    setSavedLocationPickerVisible(false);
+    openEditSavedLocationModal(location);
+  };
+
   const closeSavedLocationModal = () => {
     setSavedLocationModalVisible(false);
     setEditingSavedLocation(null);
@@ -1396,7 +1413,7 @@ export default function UpcomingStopsScreen() {
     }
 
     if (endsAt <= startsAt) {
-      throw new Error('Choose a later end time, or turn on Overnight stop.');
+      throw new Error('Choose a later end time, or turn on Ends next day.');
     }
 
     return { startsAt, endsAt };
@@ -1485,6 +1502,7 @@ export default function UpcomingStopsScreen() {
     setLocationText(stop.location_text);
     setSelectedLocationSource(null);
     setNote(stop.note ?? '');
+    setNoteExpanded(!!stop.note && stop.note.trim().length > 0);
     setActivePicker(null);
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
@@ -1795,108 +1813,6 @@ export default function UpcomingStopsScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.reminderCard}>
-            <View style={styles.reminderHeader}>
-              <View style={styles.reminderTextContainer}>
-                <Text style={styles.reminderTitle}>Remind me before upcoming stops</Text>
-                <Text style={styles.reminderSubtitle}>
-                  Reminder: {reminderSettings.minutesBefore} minutes before
-                </Text>
-              </View>
-              <Switch
-                value={reminderSettings.enabled}
-                onValueChange={handleReminderToggle}
-                disabled={!reminderSettingsLoaded}
-                trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
-                thumbColor={reminderSettings.enabled ? Colors.primary : Colors.gray}
-              />
-            </View>
-            <View style={styles.reminderMinuteRow}>
-              {REMINDER_MINUTE_OPTIONS.map(minutes => (
-                <TouchableOpacity
-                  key={minutes}
-                  style={[
-                    styles.reminderMinuteChip,
-                    reminderSettings.minutesBefore === minutes &&
-                      styles.reminderMinuteChipActive,
-                  ]}
-                  onPress={() => void handleReminderMinutesChange(minutes)}
-                  disabled={!reminderSettingsLoaded}
-                  activeOpacity={0.75}
-                >
-                  <Text
-                    style={[
-                      styles.reminderMinuteText,
-                      reminderSettings.minutesBefore === minutes &&
-                        styles.reminderMinuteTextActive,
-                    ]}
-                  >
-                    {minutes} min
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {automationSettings.supported ? (
-            <View style={styles.automationOverviewCard}>
-              <View style={styles.automationOverviewHeader}>
-                <View style={styles.automationIcon}>
-                  <Zap size={20} color={Colors.primary} />
-                </View>
-                <View style={styles.reminderTextContainer}>
-                  <Text style={styles.reminderTitle}>Hands-Free LIVE</Text>
-                  <Text style={styles.reminderSubtitle}>
-                    {automationSettings.systemEnabled
-                      ? `Starts within a ${automationSettings.startGraceMinutes}-minute grace period and stops ${automationSettings.endGraceMinutes} minutes after the scheduled end.`
-                      : 'Scheduled automation is temporarily paused by TruckTap.'}
-                  </Text>
-                </View>
-                {automationLoading ? (
-                  <ActivityIndicator size="small" color={Colors.primary} />
-                ) : null}
-              </View>
-              <View style={styles.confirmationRow}>
-                <Bell size={18} color={Colors.primary} />
-                <View style={styles.reminderTextContainer}>
-                  <Text style={styles.confirmationTitle}>Confirmation notifications</Text>
-                  <Text style={styles.confirmationSubtitle}>
-                    Get a push after automatic Go LIVE and Stop Serving.
-                  </Text>
-                </View>
-                <Switch
-                  value={automationSettings.confirmationNotificationsEnabled}
-                  onValueChange={value => void handleConfirmationPreferenceChange(value)}
-                  disabled={confirmationPreferenceSaving}
-                  trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
-                  thumbColor={
-                    automationSettings.confirmationNotificationsEnabled
-                      ? Colors.primary
-                      : Colors.gray
-                  }
-                />
-              </View>
-              <View style={styles.confirmationRow}>
-                <Zap size={18} color={Colors.primary} />
-                <View style={styles.reminderTextContainer}>
-                  <Text style={styles.confirmationTitle}>Default for new stops</Text>
-                  <Text style={styles.confirmationSubtitle}>
-                    {automationSettings.systemEnabled
-                      ? 'Turn on Hands-Free LIVE for new stops by default. Each stop can still be switched off individually.'
-                      : 'Scheduled automation is temporarily paused, so this default cannot be changed right now.'}
-                  </Text>
-                </View>
-                <Switch
-                  value={truck.hands_free_live_default_enabled === true}
-                  onValueChange={value => void handleTruckDefaultChange(value)}
-                  disabled={truckDefaultSaving || !automationSettings.systemEnabled}
-                  trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
-                  thumbColor={truck.hands_free_live_default_enabled ? Colors.primary : Colors.gray}
-                />
-              </View>
-            </View>
-          ) : null}
-
           <View style={styles.formCard}>
             <View style={styles.formHeader}>
               <View style={styles.formTitleRow}>
@@ -1915,41 +1831,27 @@ export default function UpcomingStopsScreen() {
               onPress={() => setActivePicker(activePicker === 'date' ? null : 'date')}
             />
 
-            <View style={styles.selectedDatesCard}>
-              <View style={styles.selectedDatesHeader}>
-                <View>
-                  <Text style={styles.selectedDatesTitle}>Selected Dates</Text>
-                  <Text style={styles.selectedDatesSubtitle}>
-                    {editingStopId ? 'Tap the date above to change it.' : 'Tap a date above to add it.'}
-                  </Text>
-                  {!editingStopId ? (
-                    <Text style={styles.selectedDatesHelper}>
-                      Select multiple dates to create stops with the same location and hours.
-                    </Text>
-                  ) : null}
-                </View>
+            {selectedDates.length > 0 ? (
+              <View style={styles.selectedDateList}>
+                {selectedDates.map(selectedDate => (
+                  <View key={getDateKey(selectedDate)} style={styles.selectedDateChip}>
+                    <Text style={styles.selectedDateText}>{formatSelectedDate(selectedDate)}</Text>
+                    <TouchableOpacity
+                      style={styles.removeDateButton}
+                      onPress={() => handleRemoveSelectedDate(selectedDate)}
+                      activeOpacity={0.75}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${formatSelectedDate(selectedDate)}`}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.removeDateButtonText}>x</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
               </View>
-              {selectedDates.length > 0 ? (
-                <View style={styles.selectedDateList}>
-                  {selectedDates.map(selectedDate => (
-                    <View key={getDateKey(selectedDate)} style={styles.selectedDateChip}>
-                      <Text style={styles.selectedDateText}>{formatSelectedDate(selectedDate)}</Text>
-                      <TouchableOpacity
-                        style={styles.removeDateButton}
-                        onPress={() => handleRemoveSelectedDate(selectedDate)}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={styles.removeDateButtonText}>x</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.noSelectedDatesText}>
-                  No date selected - pick a date above before saving.
-                </Text>
-              )}
-            </View>
+            ) : (
+              <Text style={styles.noSelectedDatesText}>Pick at least one date.</Text>
+            )}
 
             <View style={styles.timeRow}>
               <View style={styles.timeInputGroup}>
@@ -1978,29 +1880,37 @@ export default function UpcomingStopsScreen() {
               </View>
             </View>
 
-            <View style={styles.timeSummary}>
-              <View style={styles.timeSummaryItem}>
-                <Text style={styles.timeSummaryLabel}>Start</Text>
-                <Text style={styles.timeSummaryValue}>{formatTimeButton(startTime)}</Text>
-              </View>
-              <View style={styles.timeSummaryDivider} />
-              <View style={styles.timeSummaryItem}>
-                <Text style={styles.timeSummaryLabel}>
-                  {endsNextDay ? 'End (next day)' : 'End'}
-                </Text>
-                <Text style={styles.timeSummaryValue}>{formatTimeButton(endTime)}</Text>
+            <View style={styles.durationOvernightRow}>
+              <Text
+                style={[
+                  styles.durationCompactText,
+                  invalidSameDayTimeRange && styles.durationSummaryInvalid,
+                ]}
+              >
+                {stopDurationLabel
+                  ? `Duration: ${stopDurationLabel}`
+                  : 'End time must be later than start time.'}
+              </Text>
+              <View style={styles.overnightCompactToggle}>
+                <Text style={styles.overnightCompactLabel}>Ends next day</Text>
+                <Switch
+                  value={endsNextDay}
+                  onValueChange={setEndsNextDay}
+                  trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
+                  thumbColor={endsNextDay ? Colors.primary : Colors.gray}
+                />
               </View>
             </View>
-            <Text
-              style={[
-                styles.durationSummary,
-                invalidSameDayTimeRange && styles.durationSummaryInvalid,
-              ]}
-            >
-              {stopDurationLabel
-                ? `Duration: ${stopDurationLabel}`
-                : 'End time must be later than start time.'}
-            </Text>
+
+            {invalidSameDayTimeRange ? (
+              <Text style={styles.overnightValidation}>
+                Choose a later end time, or turn on Ends next day.
+              </Text>
+            ) : (
+              <Text style={styles.overnightSecondaryText}>
+                {endsNextDay ? 'Ends the following day.' : 'Ends the same day.'}
+              </Text>
+            )}
 
             {activePicker && (
               <View style={styles.pickerContainer}>
@@ -2022,31 +1932,6 @@ export default function UpcomingStopsScreen() {
               </View>
             )}
 
-            <View style={[styles.overnightControl, endsNextDay && styles.overnightControlOn]}>
-              <View style={styles.overnightTextGroup}>
-                <Text style={[styles.overnightTitle, endsNextDay && styles.overnightTitleOn]}>
-                  Overnight stop
-                </Text>
-                <Text style={[styles.overnightDetail, endsNextDay && styles.overnightDetailOn]}>
-                  {endsNextDay
-                    ? 'End is on the following day.'
-                    : 'Start and end are on the same day.'}
-                </Text>
-              </View>
-              <Switch
-                value={endsNextDay}
-                onValueChange={setEndsNextDay}
-                trackColor={{ false: Colors.lightGray, true: `${Colors.light}88` }}
-                thumbColor={endsNextDay ? Colors.light : Colors.gray}
-              />
-            </View>
-
-            {invalidSameDayTimeRange ? (
-              <Text style={styles.overnightValidation}>
-                Choose a later end time, or turn on Overnight stop.
-              </Text>
-            ) : null}
-
             {recentLocationTexts.length > 0 && (
               <View style={styles.locationChipSection}>
                 <View style={styles.locationChipSectionHeader}>
@@ -2060,7 +1945,10 @@ export default function UpcomingStopsScreen() {
                   </TouchableOpacity>
                 </View>
                 <View style={styles.locationChipRow}>
-                  {recentLocationTexts.map(text => (
+                  {(showAllRecentLocations
+                    ? recentLocationTexts
+                    : recentLocationTexts.slice(0, RECENT_LOCATIONS_VISIBLE_LIMIT)
+                  ).map(text => (
                     <View key={text} style={[styles.locationChip, styles.savedLocationChip]}>
                       <TouchableOpacity
                         style={styles.locationChipSelectArea}
@@ -2080,34 +1968,46 @@ export default function UpcomingStopsScreen() {
                     </View>
                   ))}
                 </View>
+                {recentLocationTexts.length > RECENT_LOCATIONS_VISIBLE_LIMIT ? (
+                  <TouchableOpacity
+                    onPress={() => setShowAllRecentLocations(current => !current)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.75}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      showAllRecentLocations
+                        ? 'Show fewer recent locations'
+                        : `Show all ${recentLocationTexts.length} recent locations`
+                    }
+                    accessibilityState={{ expanded: showAllRecentLocations }}
+                  >
+                    <Text style={styles.showAllRecentsText}>
+                      {showAllRecentLocations
+                        ? 'Show less'
+                        : `Show all (${recentLocationTexts.length - RECENT_LOCATIONS_VISIBLE_LIMIT} more)`}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             )}
 
             {savedLocationsForTruck.length > 0 && (
               <View style={styles.locationChipSection}>
-                <Text style={styles.locationChipSectionLabel}>Saved</Text>
-                <View style={styles.locationChipRow}>
-                  {savedLocationsForTruck.map(location => (
-                    <View key={location.id} style={[styles.locationChip, styles.savedLocationChip]}>
-                      <TouchableOpacity
-                        style={styles.locationChipSelectArea}
-                        onPress={() => applyLocationSelection(location)}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={styles.locationChipText} numberOfLines={1}>{location.label}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.locationChipEditButton}
-                        onPress={() => openEditSavedLocationModal(location)}
-                        activeOpacity={0.75}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        disabled={isSaving}
-                      >
-                        <Pencil size={13} color={Colors.gray} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
+                <TouchableOpacity
+                  style={styles.savedLocationsTrigger}
+                  onPress={() => setSavedLocationPickerVisible(true)}
+                  activeOpacity={0.75}
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose a saved location"
+                >
+                  <Text style={styles.savedLocationsTriggerText}>
+                    Choose Saved Location{' '}
+                    <Text style={styles.savedLocationsTriggerCount}>
+                      ({savedLocationsForTruck.length})
+                    </Text>
+                  </Text>
+                  <ChevronDown size={18} color={Colors.primary} />
+                </TouchableOpacity>
               </View>
             )}
 
@@ -2125,16 +2025,44 @@ export default function UpcomingStopsScreen() {
               For best results, enter the full street address. Business-name searches may return the wrong location.
             </Text>
 
-            <Text style={styles.label}>Note</Text>
-            <TextInput
-              style={[styles.input, styles.noteInput]}
-              value={note}
-              onChangeText={setNote}
-              placeholder="Optional note"
-              placeholderTextColor={Colors.gray}
-              multiline
-              textAlignVertical="top"
-            />
+            {noteExpanded ? (
+              <>
+                <View style={styles.noteHeaderRow}>
+                  <Text style={styles.label}>Note</Text>
+                  {note.trim().length === 0 ? (
+                    <TouchableOpacity
+                      onPress={() => setNoteExpanded(false)}
+                      activeOpacity={0.75}
+                      accessibilityRole="button"
+                      accessibilityLabel="Remove note"
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.removeNoteText}>Remove note</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                <TextInput
+                  style={[styles.input, styles.noteInput]}
+                  value={note}
+                  onChangeText={setNote}
+                  placeholder="Optional note"
+                  placeholderTextColor={Colors.gray}
+                  multiline
+                  textAlignVertical="top"
+                />
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.addNoteButton}
+                onPress={() => setNoteExpanded(true)}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel="Add note"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.addNoteButtonText}>+ Add note</Text>
+              </TouchableOpacity>
+            )}
 
             {!editingStopId && automationSettings.supported && automationSettings.systemEnabled ? (
               <View style={styles.newStopAutomationRow}>
@@ -2198,6 +2126,20 @@ export default function UpcomingStopsScreen() {
             ) : null}
           </View>
 
+          <SchedulerSettingsSection
+            reminderSettings={reminderSettings}
+            reminderSettingsLoaded={reminderSettingsLoaded}
+            onReminderToggle={handleReminderToggle}
+            onReminderMinutesChange={minutes => void handleReminderMinutesChange(minutes)}
+            automationSettings={automationSettings}
+            automationLoading={automationLoading}
+            confirmationPreferenceSaving={confirmationPreferenceSaving}
+            onConfirmationPreferenceChange={value => void handleConfirmationPreferenceChange(value)}
+            truck={truck}
+            truckDefaultSaving={truckDefaultSaving}
+            onTruckDefaultChange={value => void handleTruckDefaultChange(value)}
+          />
+
           <View style={styles.listHeader}>
             <Text style={styles.listTitle}>Your Stops</Text>
             <Text style={styles.listCount}>{stops.length}</Text>
@@ -2232,6 +2174,14 @@ export default function UpcomingStopsScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <SavedLocationPicker
+        visible={savedLocationPickerVisible}
+        onClose={() => setSavedLocationPickerVisible(false)}
+        locations={savedLocationsForTruck}
+        onSelect={handleSavedLocationPickerSelect}
+        onEditRequest={handleSavedLocationPickerEditRequest}
+      />
 
       <Modal
         visible={savedLocationModalVisible}
@@ -2396,6 +2346,7 @@ function StopCard({
   onGoLive,
   onAutomationToggle,
 }: StopCardProps) {
+  const [expanded, setExpanded] = useState(false);
   const statusColor = getStatusColor(stop.status);
   const ended = Date.parse(stop.ends_at) <= nowMs;
   const showGoLiveAction = canStopGoLive(stop, nowMs);
@@ -2404,6 +2355,43 @@ function StopCard({
     automationSystemEnabled &&
     stop.status === 'scheduled' &&
     Date.parse(stop.starts_at) > nowMs;
+  // Maps the same signals the full automation panel already uses (plus the
+  // backend-provided statusCode when a stop has one) onto the 5 compact chip
+  // states - a presentational bucketing only, not a change to when
+  // automation actually is enabled/eligible/paused.
+  const automationLiveNow =
+    automationStatus?.statusCode === 'automatically_live' ||
+    automationStatus?.statusCode === 'manual_session_active';
+  const automationBadgeState: 'on' | 'ready' | 'off' | 'paused' | 'unavailable' = !automationSupported
+    ? 'unavailable'
+    : automationEnabled
+      ? (automationLiveNow ? 'on' : 'ready')
+      : !automationSystemEnabled
+        ? 'paused'
+        : canEnableAutomation
+          ? 'off'
+          : 'unavailable';
+  const automationBadgeLabel = {
+    on: 'HFL On',
+    ready: 'HFL Ready',
+    off: 'HFL Off',
+    paused: 'HFL Paused',
+    unavailable: 'HFL Unavailable',
+  }[automationBadgeState];
+  const automationBadgeColor = {
+    on: Colors.success,
+    ready: Colors.primary,
+    off: Colors.gray,
+    paused: Colors.warning,
+    unavailable: Colors.gray,
+  }[automationBadgeState];
+  const automationBadgeBackgroundStyle = {
+    on: styles.automationBadgeOn,
+    ready: styles.automationBadgeReady,
+    off: styles.automationBadgeOff,
+    paused: styles.automationBadgePaused,
+    unavailable: styles.automationBadgeOff,
+  }[automationBadgeState];
 
   return (
     <View style={styles.stopCard}>
@@ -2439,63 +2427,15 @@ function StopCard({
         </View>
       </View>
 
-      <Text style={styles.controlClarifyingCaption}>
-        {reminderOn && automationEnabled
-          ? "We'll send a phone alert, but Hands-Free LIVE already handles this stop automatically - the alert is just a backup."
-          : "We'll send a phone alert - you still tap Go Live yourself."}
-      </Text>
-
       <Text style={styles.stopTime}>{formatDateTime(stop.starts_at)} - {formatDateTime(stop.ends_at)}</Text>
-      <Text style={styles.stopLocation}>{stop.location_text}</Text>
-      {locationVerificationFailed ? (
-        <Text style={styles.locationVerificationCaption}>
-          Location couldn't be verified — edit to try again
-        </Text>
-      ) : null}
-      {stop.note ? <Text style={styles.stopNote}>{stop.note}</Text> : null}
+      <Text style={styles.stopLocation} numberOfLines={1}>{stop.location_text}</Text>
 
-      {automationSupported ? (
-        <View style={styles.stopAutomationPanel}>
-          <View style={styles.stopAutomationHeader}>
-            <View style={styles.stopAutomationTitleRow}>
-              <Zap
-                size={17}
-                color={automationEnabled ? Colors.primary : Colors.gray}
-              />
-              <Text style={styles.stopAutomationTitle}>Hands-Free LIVE</Text>
-            </View>
-            <Switch
-              value={automationEnabled}
-              onValueChange={enabled => onAutomationToggle(stop, enabled)}
-              disabled={busy || (!automationEnabled && !canEnableAutomation)}
-              trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
-              thumbColor={automationEnabled ? Colors.primary : Colors.gray}
-            />
-          </View>
-          <Text style={styles.controlClarifyingCaption}>
-            TruckTap goes live and off for you automatically - no action needed.
-          </Text>
-          <Text
-            style={[
-              styles.automationStatusLabel,
-              automationEnabled && styles.automationStatusLabelActive,
-            ]}
-          >
-            {automationStatus?.statusLabel ??
-              (canEnableAutomation ? 'Off' : 'Unavailable for this stop')}
-          </Text>
-          <Text style={styles.automationStatusDetail}>
-            {automationStatus?.statusDetail ??
-              (
-                canEnableAutomation
-                  ? 'Turn it on to use this stop location automatically.'
-                  : ended
-                    ? 'This stop has already ended.'
-                    : 'Hands-Free LIVE requires a future scheduled stop.'
-              )}
-          </Text>
-        </View>
-      ) : null}
+      <View style={[styles.automationBadge, automationBadgeBackgroundStyle]}>
+        <Zap size={11} color={automationBadgeColor} />
+        <Text style={[styles.automationBadgeText, { color: automationBadgeColor }]}>
+          {automationBadgeLabel}
+        </Text>
+      </View>
 
       {showGoLiveAction ? (
         <View style={styles.goLivePanel}>
@@ -2513,21 +2453,102 @@ function StopCard({
         </View>
       ) : null}
 
-      <View style={styles.statusRow}>
-        {STATUSES.map(status => (
-          <TouchableOpacity
-            key={status}
-            style={[styles.statusChip, stop.status === status && styles.statusChipActive]}
-            onPress={() => onStatusChange(stop, status)}
-            disabled={busy || stop.status === status}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.statusChipText, stop.status === status && styles.statusChipTextActive]}>
-              {statusLabels[status]}
+      <TouchableOpacity
+        style={styles.detailsToggle}
+        onPress={() => setExpanded(current => !current)}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityLabel={
+          expanded
+            ? `Hide details for stop at ${stop.location_text}`
+            : `Show details for stop at ${stop.location_text}`
+        }
+        accessibilityState={{ expanded }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Text style={styles.detailsToggleText}>Details</Text>
+        {expanded ? (
+          <ChevronUp size={16} color={Colors.primary} />
+        ) : (
+          <ChevronDown size={16} color={Colors.primary} />
+        )}
+      </TouchableOpacity>
+
+      {expanded ? (
+        <>
+          <Text style={styles.controlClarifyingCaption}>
+            {reminderOn && automationEnabled
+              ? "We'll send a phone alert, but Hands-Free LIVE already handles this stop automatically - the alert is just a backup."
+              : "We'll send a phone alert - you still tap Go Live yourself."}
+          </Text>
+
+          {locationVerificationFailed ? (
+            <Text style={styles.locationVerificationCaption}>
+              Location couldn't be verified \u2014 edit to try again
             </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+          ) : null}
+          {stop.note ? <Text style={styles.stopNote}>{stop.note}</Text> : null}
+
+          {automationSupported ? (
+            <View style={styles.stopAutomationPanel}>
+              <View style={styles.stopAutomationHeader}>
+                <View style={styles.stopAutomationTitleRow}>
+                  <Zap
+                    size={17}
+                    color={automationEnabled ? Colors.primary : Colors.gray}
+                  />
+                  <Text style={styles.stopAutomationTitle}>Hands-Free LIVE</Text>
+                </View>
+                <Switch
+                  value={automationEnabled}
+                  onValueChange={enabled => onAutomationToggle(stop, enabled)}
+                  disabled={busy || (!automationEnabled && !canEnableAutomation)}
+                  trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
+                  thumbColor={automationEnabled ? Colors.primary : Colors.gray}
+                />
+              </View>
+              <Text style={styles.controlClarifyingCaption}>
+                TruckTap goes live and off for you automatically - no action needed.
+              </Text>
+              <Text
+                style={[
+                  styles.automationStatusLabel,
+                  automationEnabled && styles.automationStatusLabelActive,
+                ]}
+              >
+                {automationStatus?.statusLabel ??
+                  (canEnableAutomation ? 'Off' : 'Unavailable for this stop')}
+              </Text>
+              <Text style={styles.automationStatusDetail}>
+                {automationStatus?.statusDetail ??
+                  (
+                    canEnableAutomation
+                      ? 'Turn it on to use this stop location automatically.'
+                      : ended
+                        ? 'This stop has already ended.'
+                        : 'Hands-Free LIVE requires a future scheduled stop.'
+                  )}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.statusRow}>
+            {STATUSES.map(status => (
+              <TouchableOpacity
+                key={status}
+                style={[styles.statusChip, stop.status === status && styles.statusChipActive]}
+                onPress={() => onStatusChange(stop, status)}
+                disabled={busy || stop.status === status}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.statusChipText, stop.status === status && styles.statusChipTextActive]}>
+                  {statusLabels[status]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -2553,104 +2574,11 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
   },
-  reminderCard: {
-    backgroundColor: Colors.light,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}18`,
-  },
-  reminderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  reminderTextContainer: {
-    flex: 1,
-  },
-  reminderTitle: {
-    fontSize: 16,
-    fontWeight: '800' as const,
-    color: Colors.dark,
-    marginBottom: 4,
-  },
-  reminderSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: Colors.gray,
-  },
-  reminderMinuteRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 14,
-  },
-  reminderMinuteChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: Colors.lightGray,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  reminderMinuteChipActive: {
-    borderColor: Colors.primary,
-    backgroundColor: `${Colors.primary}12`,
-  },
-  reminderMinuteText: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: Colors.gray,
-  },
-  reminderMinuteTextActive: {
-    color: Colors.primary,
-  },
-  automationOverviewCard: {
-    backgroundColor: Colors.light,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}24`,
-  },
-  automationOverviewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  automationIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: `${Colors.primary}12`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.lightGray,
-    marginTop: 14,
-    paddingTop: 14,
-  },
-  confirmationTitle: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: Colors.dark,
-  },
-  confirmationSubtitle: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: Colors.gray,
-    marginTop: 2,
-  },
   formCard: {
     backgroundColor: Colors.light,
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
+    padding: 14,
+    marginBottom: 14,
     shadowColor: Colors.dark,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -2662,7 +2590,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginBottom: 18,
+    marginBottom: 12,
   },
   formTitleRow: {
     flex: 1,
@@ -2681,10 +2609,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700' as const,
     color: Colors.gray,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   locationChipSection: {
-    marginBottom: 10,
+    marginBottom: 8,
   },
   locationChipSectionHeader: {
     flexDirection: 'row',
@@ -2702,6 +2630,32 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.primary,
     marginBottom: 6,
+  },
+  showAllRecentsText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.primary,
+    marginTop: 6,
+  },
+  savedLocationsTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  savedLocationsTriggerText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  savedLocationsTriggerCount: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+    color: Colors.gray,
   },
   locationChipRow: {
     flexDirection: 'row',
@@ -2738,16 +2692,37 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     fontSize: 15,
     color: Colors.dark,
-    marginBottom: 14,
+    marginBottom: 10,
   },
   noteInput: {
     minHeight: 82,
   },
+  noteHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  removeNoteText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.danger,
+    marginBottom: 8,
+  },
+  addNoteButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  addNoteButtonText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
   locationHelperText: {
     fontSize: 12,
     color: Colors.gray,
-    marginTop: -8,
-    marginBottom: 14,
+    marginTop: -5,
+    marginBottom: 8,
   },
   newStopAutomationRow: {
     flexDirection: 'row',
@@ -2758,7 +2733,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginBottom: 14,
+    marginBottom: 10,
   },
   newStopAutomationTextGroup: {
     flex: 1,
@@ -2801,76 +2776,45 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.dark,
   },
-  selectedDatesCard: {
-    backgroundColor: `${Colors.primary}08`,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}18`,
-    padding: 12,
-    marginBottom: 16,
-  },
-  selectedDatesHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  selectedDatesTitle: {
-    fontSize: 13,
-    fontWeight: '800' as const,
-    color: Colors.dark,
-  },
-  selectedDatesSubtitle: {
-    fontSize: 12,
-    color: Colors.gray,
-    marginTop: 3,
-  },
-  selectedDatesHelper: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: Colors.gray,
-    marginTop: 5,
-  },
   selectedDateList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
+    marginBottom: 10,
   },
   selectedDateChip: {
-    minHeight: 34,
+    minHeight: 30,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     borderRadius: 999,
-    backgroundColor: Colors.light,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}25`,
-    paddingLeft: 12,
+    backgroundColor: Colors.lightGray,
+    paddingLeft: 10,
     paddingRight: 6,
-    paddingVertical: 5,
+    paddingVertical: 4,
   },
   selectedDateText: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: Colors.dark,
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.gray,
   },
   removeDateButton: {
-    width: 22,
-    height: 22,
+    width: 20,
+    height: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 11,
-    backgroundColor: Colors.lightGray,
   },
   removeDateButtonText: {
     color: Colors.gray,
     fontSize: 13,
-    fontWeight: '900' as const,
+    fontWeight: '700' as const,
     lineHeight: 16,
   },
   noSelectedDatesText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: Colors.danger,
+    fontSize: 12,
+    fontWeight: '500' as const,
+    color: Colors.gray,
+    marginBottom: 10,
   },
   periodSegmentedControl: {
     minHeight: 46,
@@ -2902,42 +2846,10 @@ const styles = StyleSheet.create({
     color: Colors.light,
     fontWeight: '900' as const,
   },
-  timeSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: `${Colors.primary}10`,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}30`,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 16,
-  },
-  timeSummaryItem: {
-    flex: 1,
-  },
-  timeSummaryLabel: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-    color: Colors.gray,
-    textTransform: 'uppercase' as const,
-    marginBottom: 3,
-  },
-  timeSummaryValue: {
-    fontSize: 17,
-    fontWeight: '900' as const,
-    color: Colors.dark,
-  },
-  timeSummaryDivider: {
-    width: 1,
-    alignSelf: 'stretch',
-    backgroundColor: `${Colors.primary}30`,
-    marginHorizontal: 14,
-  },
   pickerContainer: {
     backgroundColor: Colors.lightGray,
     borderRadius: 12,
-    marginBottom: 16,
+    marginBottom: 10,
     overflow: 'hidden',
   },
   pickerDoneButton: {
@@ -2950,59 +2862,44 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800' as const,
   },
-  durationSummary: {
-    fontSize: 13,
-    fontWeight: '800' as const,
-    color: Colors.dark,
-    marginTop: -8,
-    marginBottom: 14,
-  },
   durationSummaryInvalid: {
     color: Colors.danger,
   },
-  overnightControl: {
+  durationOvernightRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}35`,
-    backgroundColor: Colors.light,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 8,
+    gap: 12,
+    marginBottom: 4,
   },
-  overnightControlOn: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  overnightTextGroup: {
-    flex: 1,
-  },
-  overnightTitle: {
-    fontSize: 15,
-    fontWeight: '900' as const,
-    color: Colors.dark,
-    marginBottom: 3,
-  },
-  overnightTitleOn: {
-    color: Colors.light,
-  },
-  overnightDetail: {
+  durationCompactText: {
     fontSize: 13,
-    lineHeight: 18,
-    color: Colors.gray,
+    fontWeight: '800' as const,
+    color: Colors.dark,
+    flexShrink: 1,
   },
-  overnightDetailOn: {
-    color: `${Colors.light}DD`,
+  overnightCompactToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  overnightCompactLabel: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  overnightSecondaryText: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: Colors.gray,
+    marginBottom: 8,
   },
   overnightValidation: {
     color: Colors.danger,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700' as const,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   saveButton: {
     alignItems: 'center',
@@ -3133,8 +3030,8 @@ const styles = StyleSheet.create({
   stopCard: {
     backgroundColor: Colors.light,
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    padding: 14,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: `${Colors.primary}18`,
   },
@@ -3142,7 +3039,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   statusBadge: {
     borderRadius: 999,
@@ -3193,13 +3090,39 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700' as const,
     color: Colors.dark,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   stopLocation: {
     fontSize: 15,
     lineHeight: 21,
     color: Colors.dark,
+    marginBottom: 4,
+  },
+  automationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     marginBottom: 6,
+  },
+  automationBadgeOn: {
+    backgroundColor: `${Colors.success}18`,
+  },
+  automationBadgeReady: {
+    backgroundColor: `${Colors.primary}18`,
+  },
+  automationBadgeOff: {
+    backgroundColor: `${Colors.gray}18`,
+  },
+  automationBadgePaused: {
+    backgroundColor: `${Colors.warning}18`,
+  },
+  automationBadgeText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
   },
   locationVerificationCaption: {
     fontSize: 12,
@@ -3261,10 +3184,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: `${Colors.primary}22`,
     backgroundColor: `${Colors.primary}08`,
-    padding: 12,
-    marginTop: 8,
-    marginBottom: 12,
-    gap: 10,
+    padding: 10,
+    marginTop: 6,
+    marginBottom: 8,
+    gap: 8,
   },
   goLiveReadyText: {
     fontSize: 13,
@@ -3292,6 +3215,19 @@ const styles = StyleSheet.create({
   },
   liveNowButtonText: {
     color: Colors.success,
+  },
+  detailsToggle: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    marginTop: 4,
+  },
+  detailsToggleText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.primary,
   },
   statusRow: {
     flexDirection: 'row',
