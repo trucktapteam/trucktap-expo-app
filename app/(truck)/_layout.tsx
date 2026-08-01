@@ -16,7 +16,11 @@ export default function TruckLayout() {
   const segments = useSegments();
   const { ownerAccess, loading: releasePolicyLoading } = useReleasePolicy();
 
-  const loading = isLoading || isOwnerLoading || releasePolicyLoading || (isAuthenticated && !currentUser);
+  const loading =
+    isLoading ||
+    releasePolicyLoading ||
+    (isAuthenticated && !currentUser) ||
+    (isOwnerLoading && !isOwner);
 
   useTruckLifecycleLogger('TruckLayout');
 

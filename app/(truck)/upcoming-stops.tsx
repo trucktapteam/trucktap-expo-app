@@ -21,6 +21,12 @@ import {
   UpcomingStopAutomationStatus,
   UpcomingStopLocationStatus,
 } from '@/lib/handsFreeLive';
+import { getDestinationLocation } from '@/lib/locationTimezone';
+import { getUpcomingStopReminderIds } from '@/lib/upcomingStopReminders';
+import {
+  formatStopDuration,
+  getStopDurationMinutes,
+} from '@/lib/upcomingStopTime';
 
 const STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
 const REMINDER_SETTINGS_KEY = 'upcomingStopReminderSettings';
@@ -67,12 +73,16 @@ const atTime = (hour: number, minute: number) => {
 // the time fields. Roll the default forward from the current hour instead.
 const getDefaultStopTimes = () => {
   const now = new Date();
-  const startHour = now.getHours() >= 11 ? Math.min(now.getHours() + 1, 23) : 11;
+  const startHour =
+    now.getHours() >= 20
+      ? 11
+      : now.getHours() >= 11
+        ? now.getHours() + 1
+        : 11;
   const endHour = startHour + 3;
   return {
     start: atTime(startHour, 0),
-    end: atTime(endHour % 24, 0),
-    endsNextDay: endHour >= 24,
+    end: atTime(endHour, 0),
   };
 };
 
@@ -154,6 +164,19 @@ type RecentLocationEntry = {
   timezone?: string;
   usedAt: string;
 };
+
+// 'confirmed' - geocoded, reverse-geocoded, and the owner confirmed the
+// match (or it came from a trusted cached source, skipping the dialog).
+// 'declined' - the owner explicitly backed out (either "NO, EDIT ADDRESS"
+// on a real match, or "EDIT LOCATION" when nothing geocoded at all) -
+// callers must create nothing and leave the form untouched.
+// 'unverified' - geocoding found no match and the owner chose to schedule
+// anyway; callers proceed with location_text only, null coordinates, and
+// Hands-Free LIVE unavailable for that stop.
+type StopLocationResolution =
+  | { status: 'confirmed'; latitude: number; longitude: number; timezone: string }
+  | { status: 'declined' }
+  | { status: 'unverified' };
 
 const normalizeReminderSettings = (settings?: Partial<ReminderSettings> | null): ReminderSettings => ({
   enabled: settings?.enabled !== false,
@@ -278,6 +301,23 @@ const confirmAutomationLocation = (
     );
   });
 
+// Shown when geocodeAsync finds no match at all, so there's nothing to
+// confirm - the owner can go fix the text, or accept a stop with an
+// unverified location (no coordinates, no Hands-Free LIVE) rather than
+// being blocked outright.
+const confirmUnverifiableLocation = (locationLabel: string) =>
+  new Promise<'edit' | 'unverified'>(resolve => {
+    Alert.alert(
+      'Could not verify location',
+      `TruckTap could not verify "${locationLabel}". You can edit the address, or schedule this stop without a verified location - Hands-Free LIVE won't be available for it.`,
+      [
+        { text: 'EDIT LOCATION', style: 'cancel', onPress: () => resolve('edit') },
+        { text: 'SCHEDULE WITHOUT VERIFIED LOCATION', onPress: () => resolve('unverified') },
+      ],
+      { cancelable: false }
+    );
+  });
+
 export default function UpcomingStopsScreen() {
   const router = useRouter();
   const {
@@ -304,7 +344,7 @@ export default function UpcomingStopsScreen() {
   const [selectedDates, setSelectedDates] = useState<Date[]>(() => []);
   const [startTime, setStartTime] = useState(() => getDefaultStopTimes().start);
   const [endTime, setEndTime] = useState(() => getDefaultStopTimes().end);
-  const [endsNextDay, setEndsNextDay] = useState(() => getDefaultStopTimes().endsNextDay);
+  const [endsNextDay, setEndsNextDay] = useState(false);
   const [locationText, setLocationText] = useState('');
   const [selectedLocationSource, setSelectedLocationSource] = useState<{
     text: string;
@@ -337,6 +377,7 @@ export default function UpcomingStopsScreen() {
     normalizeReminderSettings()
   );
   const [reminderIds, setReminderIds] = useState<ReminderIds>({});
+  const [scheduledReminderIds, setScheduledReminderIds] = useState<ReminderIds>({});
   const [reminderSettingsLoaded, setReminderSettingsLoaded] = useState(false);
   const [recentLocations, setRecentLocations] = useState<RecentLocationEntry[]>([]);
   const [recentLocationsLoaded, setRecentLocationsLoaded] = useState(false);
@@ -450,9 +491,15 @@ export default function UpcomingStopsScreen() {
   React.useEffect(() => {
     const loadReminderState = async () => {
       try {
-        const [storedSettings, storedIds] = await Promise.all([
+        const [storedSettings, storedIds, scheduledNotifications] = await Promise.all([
           AsyncStorage.getItem(REMINDER_SETTINGS_KEY),
           AsyncStorage.getItem(REMINDER_IDS_KEY),
+          Platform.OS === 'web'
+            ? Promise.resolve(null)
+            : Notifications.getAllScheduledNotificationsAsync().catch(error => {
+                console.log('[UpcomingStops] Failed to inspect scheduled reminders:', error);
+                return null;
+              }),
         ]);
 
         if (storedSettings) {
@@ -462,14 +509,24 @@ export default function UpcomingStopsScreen() {
           setReminderSettings(nextSettings);
         }
 
+        let parsedIds: ReminderIds = {};
         if (storedIds) {
-          const parsedIds = JSON.parse(storedIds);
-          if (parsedIds && typeof parsedIds === 'object') {
-            reminderIdsRef.current = parsedIds;
-            setReminderIds(parsedIds);
+          const storedReminderIds = JSON.parse(storedIds);
+          if (storedReminderIds && typeof storedReminderIds === 'object') {
+            parsedIds = storedReminderIds;
           }
         }
 
+        const actualIds = scheduledNotifications
+          ? getUpcomingStopReminderIds(scheduledNotifications)
+          : parsedIds;
+        reminderIdsRef.current = actualIds;
+        setReminderIds(actualIds);
+        setScheduledReminderIds(actualIds);
+
+        if (scheduledNotifications) {
+          await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(actualIds));
+        }
       } catch (error) {
         console.log('[UpcomingStops] Failed to load reminder settings:', error);
       } finally {
@@ -513,8 +570,8 @@ export default function UpcomingStopsScreen() {
 
   const persistReminderIds = async (ids: ReminderIds) => {
     reminderIdsRef.current = ids;
-    await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids));
     setReminderIds(ids);
+    await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids));
   };
 
   // Merges by text: a call with just `text` (recorded right when a stop is
@@ -677,6 +734,11 @@ export default function UpcomingStopsScreen() {
 
     const nextIds = { ...ids };
     delete nextIds[stopId];
+    setScheduledReminderIds(current => {
+      const nextScheduledIds = { ...current };
+      delete nextScheduledIds[stopId];
+      return nextScheduledIds;
+    });
     await persistReminderIds(nextIds);
     return nextIds;
   };
@@ -735,6 +797,10 @@ export default function UpcomingStopsScreen() {
       },
       trigger,
     });
+    setScheduledReminderIds(current => ({
+      ...current,
+      [stop.id]: notificationId,
+    }));
 
     const nextIds = {
       ...idsWithoutOldReminder,
@@ -748,12 +814,12 @@ export default function UpcomingStopsScreen() {
   };
 
   const hasActiveReminder = (stop: UpcomingStop) => {
-    const storedNotificationId = reminderIds[stop.id];
+    const scheduledNotificationId = scheduledReminderIds[stop.id];
     const reminderAt = getUpcomingStopReminderTime(stop, reminderSettings.minutesBefore);
     const now = new Date();
     const reminderOn = !!(
       reminderSettings.enabled &&
-      storedNotificationId &&
+      scheduledNotificationId &&
       !REMINDER_CANCEL_STATUSES.includes(stop.status) &&
       reminderAt &&
       reminderAt.getTime() > now.getTime()
@@ -882,26 +948,29 @@ export default function UpcomingStopsScreen() {
   // Pure resolve-and-confirm step, no stopId, no writes - lets callers
   // decide what to do with the result. Uses cached Saved/Recent-location
   // coordinates directly when they match the current text (no live geocode,
-  // no confirmation dialog); otherwise runs the geocode -> reverse-geocode
-  // -> confirm dialog flow. Returns null only when the owner declines the
-  // confirmation - everything else either succeeds or throws.
-  const resolveConfirmedAutomationLocation = async (
+  // no confirmation dialog - a Saved Location's coordinates are trusted);
+  // otherwise runs the geocode -> reverse-geocode -> confirm dialog flow.
+  // Deliberately independent of Hands-Free LIVE / automation availability -
+  // this is the location-confirmation step for a stop, full stop, and is
+  // used for every new stop regardless of whether automation is requested
+  // or even possible right now.
+  //
+  // When geocoding finds no match at all, the default (allowUnverified
+  // false) is to throw - used by the automation per-stop toggle, where
+  // there's no "stop" to fall back to creating. handleSave passes
+  // allowUnverified true so a brand-new, unverifiable address offers a
+  // choice instead of blocking stop creation outright.
+  const resolveConfirmedStopLocation = async (
     stopLocationText: string,
-    cachedSource: { text: string; latitude: number; longitude: number; timezone: string } | null
-  ): Promise<{ latitude: number; longitude: number; timezone: string } | null> => {
-    console.log('[UpcomingStops] resolveConfirmedAutomationLocation reached, cached match =',
-      cachedSource != null && cachedSource.text === stopLocationText);
+    cachedSource: { text: string; latitude: number; longitude: number; timezone: string } | null,
+    options?: { confirmTitle?: string; allowUnverified?: boolean }
+  ): Promise<StopLocationResolution> => {
     if (cachedSource && cachedSource.text === stopLocationText) {
-      return {
-        latitude: cachedSource.latitude,
-        longitude: cachedSource.longitude,
-        timezone: cachedSource.timezone,
-      };
-    }
-
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (!timezone) {
-      throw new Error('Your device timezone is unavailable. Check date and time settings.');
+      const destination = getDestinationLocation(
+        cachedSource.latitude,
+        cachedSource.longitude
+      );
+      return { status: 'confirmed', ...destination };
     }
 
     if (Platform.OS !== 'web') {
@@ -924,49 +993,66 @@ export default function UpcomingStopsScreen() {
     );
 
     if (!match) {
-      throw new Error(
-        'TruckTap could not locate this stop. Use a complete street address before turning on Hands-Free LIVE.'
-      );
+      if (!options?.allowUnverified) {
+        throw new Error(
+          'TruckTap could not locate this stop. Use a complete street address.'
+        );
+      }
+      const choice = await confirmUnverifiableLocation(stopLocationText);
+      return { status: choice === 'unverified' ? 'unverified' : 'declined' };
     }
 
     const reverseMatches = await Location.reverseGeocodeAsync({
       latitude: match.latitude,
       longitude: match.longitude,
     }).catch(() => []);
+    const destination = getDestinationLocation(
+      match.latitude,
+      match.longitude,
+      reverseMatches[0]?.timezone
+    );
     const confirmed = await confirmAutomationLocation(
       stopLocationText,
-      formatGeocodedAddress(reverseMatches[0])
+      formatGeocodedAddress(reverseMatches[0]),
+      options?.confirmTitle ?? 'Confirm stop location'
     );
     if (!confirmed) {
-      return null;
+      return { status: 'declined' };
     }
 
-    return { latitude: match.latitude, longitude: match.longitude, timezone };
+    return { status: 'confirmed', ...destination };
   };
 
   // Thin wrapper around the resolver above, for the per-stop list toggle on
-  // an already-existing stop (handleAutomationToggle): resolves/confirms,
-  // then performs the writes the resolver deliberately doesn't do itself.
-  // Returns false only when the owner declines the confirmation.
+  // an already-existing stop (handleAutomationToggle): resolves/confirms
+  // with automation-specific dialog wording, then performs the writes the
+  // resolver deliberately doesn't do itself. Returns false unless the
+  // location was confirmed - an existing stop has nothing equivalent to
+  // "schedule without verified location" to fall back to, so a no-match
+  // still throws (allowUnverified defaults to false).
   const enableAutomationForStop = async (
     stopId: string,
     stopLocationText: string,
     cachedSource: { text: string; latitude: number; longitude: number; timezone: string } | null
   ): Promise<boolean> => {
-    const resolved = await resolveConfirmedAutomationLocation(stopLocationText, cachedSource);
-    if (!resolved) {
+    const resolution = await resolveConfirmedStopLocation(
+      stopLocationText,
+      cachedSource,
+      { confirmTitle: 'Confirm automatic LIVE location' }
+    );
+    if (resolution.status !== 'confirmed') {
       return false;
     }
 
     await configureUpcomingStopAutomation({
       stopId,
       enabled: true,
-      latitude: resolved.latitude,
-      longitude: resolved.longitude,
-      timezone: resolved.timezone,
+      latitude: resolution.latitude,
+      longitude: resolution.longitude,
+      timezone: resolution.timezone,
     });
-    void persistRecentLocation(stopLocationText, resolved);
-    promptSaveLocationIfNew(stopLocationText, resolved.latitude, resolved.longitude, resolved.timezone);
+    void persistRecentLocation(stopLocationText, resolution);
+    promptSaveLocationIfNew(stopLocationText, resolution.latitude, resolution.longitude, resolution.timezone);
     return true;
   };
 
@@ -1022,7 +1108,7 @@ export default function UpcomingStopsScreen() {
     setSelectedDates([]);
     setStartTime(defaultTimes.start);
     setEndTime(defaultTimes.end);
-    setEndsNextDay(defaultTimes.endsNextDay);
+    setEndsNextDay(false);
     setLocationText('');
     setSelectedLocationSource(null);
     setNote('');
@@ -1078,24 +1164,28 @@ export default function UpcomingStopsScreen() {
     stopLocationText: string,
     cachedSource: { text: string; latitude: number; longitude: number; timezone: string } | null
   ) => {
-    console.log('[UpcomingStops] applyStopLocationInBackground reached, cached match =',
-      cachedSource != null && cachedSource.text === stopLocationText);
     if (cachedSource && cachedSource.text === stopLocationText) {
+      const destination = getDestinationLocation(
+        cachedSource.latitude,
+        cachedSource.longitude
+      );
       setUpcomingStopLocation({
         stopId,
-        latitude: cachedSource.latitude,
-        longitude: cachedSource.longitude,
-        timezone: cachedSource.timezone,
+        ...destination,
       })
-        .then(() => refreshLocationStatuses())
+        .then(async () => {
+          await refreshLocationStatuses();
+          promptSaveLocationIfNew(
+            stopLocationText,
+            destination.latitude,
+            destination.longitude,
+            destination.timezone
+          );
+        })
         .catch(error => {
           console.log('[UpcomingStops] Failed to persist saved-location coordinates:', error);
         });
-      void persistRecentLocation(stopLocationText, {
-        latitude: cachedSource.latitude,
-        longitude: cachedSource.longitude,
-        timezone: cachedSource.timezone,
-      });
+      void persistRecentLocation(stopLocationText, destination);
       return;
     }
 
@@ -1107,11 +1197,11 @@ export default function UpcomingStopsScreen() {
             Number.isFinite(candidate.latitude) &&
             Number.isFinite(candidate.longitude)
         );
-        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const destination = match
+          ? getDestinationLocation(match.latitude, match.longitude)
+          : null;
 
-        console.log('[UpcomingStops] Background geocode', match && timezone ? 'success' : 'failure', 'for stop', stopId);
-
-        if (!match || !timezone) {
+        if (!destination) {
           await setUpcomingStopLocation({ stopId, failed: true });
           await refreshLocationStatuses();
           return;
@@ -1119,17 +1209,16 @@ export default function UpcomingStopsScreen() {
 
         await setUpcomingStopLocation({
           stopId,
-          latitude: match.latitude,
-          longitude: match.longitude,
-          timezone,
+          ...destination,
         });
         await refreshLocationStatuses();
-        void persistRecentLocation(stopLocationText, {
-          latitude: match.latitude,
-          longitude: match.longitude,
-          timezone,
-        });
-        promptSaveLocationIfNew(stopLocationText, match.latitude, match.longitude, timezone);
+        void persistRecentLocation(stopLocationText, destination);
+        promptSaveLocationIfNew(
+          stopLocationText,
+          destination.latitude,
+          destination.longitude,
+          destination.timezone
+        );
       } catch (error) {
         console.log('[UpcomingStops] Background geocode failed:', error);
         try {
@@ -1248,13 +1337,15 @@ export default function UpcomingStopsScreen() {
         return;
       }
 
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const destination = getDestinationLocation(
+        match.latitude,
+        match.longitude,
+        reverseMatches[0]?.timezone
+      );
       await updateSavedLocation(editingSavedLocation.id, {
         label: nextLabel,
         location_text: nextText,
-        latitude: match.latitude,
-        longitude: match.longitude,
-        timezone,
+        ...destination,
       });
       closeSavedLocationModal();
     } catch (error) {
@@ -1305,7 +1396,7 @@ export default function UpcomingStopsScreen() {
     }
 
     if (endsAt <= startsAt) {
-      throw new Error('End time must be after start time. Turn on "Ends next day" for overnight stops.');
+      throw new Error('Choose a later end time, or turn on Overnight stop.');
     }
 
     return { startsAt, endsAt };
@@ -1373,6 +1464,9 @@ export default function UpcomingStopsScreen() {
     dateValue;
 
   const pickerMode = activePicker === 'date' ? 'date' : 'time';
+  const stopDurationMinutes = getStopDurationMinutes(startTime, endTime, endsNextDay);
+  const stopDurationLabel = formatStopDuration(stopDurationMinutes);
+  const invalidSameDayTimeRange = !endsNextDay && stopDurationMinutes === null;
 
   const handleEditStop = (stop: UpcomingStop) => {
     setErrorMessage(null);
@@ -1406,8 +1500,17 @@ export default function UpcomingStopsScreen() {
     setErrorMessage(null);
     setSuccessMessage(null);
     const locationSourceAtSave = selectedLocationSource;
-    const handsFreeLiveOnAtSave = !editingStopId && handsFreeLiveOnForNewStop;
-    console.log('[UpcomingStops] handleSave: handsFreeLiveOnAtSave =', handsFreeLiveOnAtSave);
+    const handsFreeLiveRequestedAtSave = !editingStopId && handsFreeLiveOnForNewStop;
+    // Mirrors the same "system_enabled" check the configure_upcoming_stop_
+    // live_automation RPC enforces server-side (see the migration) - if the
+    // owner's truck-level default or per-stop switch is on but the feature
+    // is globally paused, the RPC would reject the request. Checking this
+    // up front means we simply never attempt it, instead of attempting and
+    // having a "Hands-Free LIVE is temporarily unavailable" throw abort an
+    // otherwise-successful stop creation.
+    const handsFreeLiveSystemAvailable = automationSettings.supported && automationSettings.systemEnabled;
+    const handsFreeLiveOnAtSave = handsFreeLiveRequestedAtSave && handsFreeLiveSystemAvailable;
+    const handsFreeLivePausedAtSave = handsFreeLiveRequestedAtSave && !handsFreeLiveSystemAvailable;
 
     try {
       const trimmedLocation = locationText.trim();
@@ -1456,29 +1559,37 @@ export default function UpcomingStopsScreen() {
       } else {
         const dateRanges = selectedDates.map(selectedDate => buildDateRange(selectedDate));
 
-        // Resolve and confirm Hands-Free LIVE's location ONCE, up front,
-        // before a single upcoming_stops row is created - not per date, and
-        // not after rows already exist. If the owner declines, nothing has
-        // been created yet: return silently to the still-open, still-filled
-        // form. No stop, no coordinates, no Save-Location prompt, no banner.
-        let confirmedAutomationLocation: { latitude: number; longitude: number; timezone: string } | null = null;
+        // Resolve and confirm this stop's location ONCE, up front, before a
+        // single upcoming_stops row is created - not per date, and not
+        // after rows already exist. This runs for every new stop
+        // regardless of Hands-Free LIVE: location confirmation is not an
+        // automation feature and must not be skipped just because
+        // automation is off, paused, or unsupported. "declined" means
+        // nothing has been created yet: return silently to the still-open,
+        // still-filled form. No stop, no coordinates, no Save-Location
+        // prompt, no banner. "unverified" means the owner chose to
+        // schedule anyway despite an address that didn't geocode to
+        // anything - the stop still gets created, just without
+        // coordinates or Hands-Free LIVE.
+        const resolution = await resolveConfirmedStopLocation(
+          trimmedLocation,
+          locationSourceAtSave,
+          { allowUnverified: true }
+        );
 
-        if (handsFreeLiveOnAtSave) {
-          confirmedAutomationLocation = await resolveConfirmedAutomationLocation(
-            trimmedLocation,
-            locationSourceAtSave
-          );
-
-          if (!confirmedAutomationLocation) {
-            return;
-          }
+        if (resolution.status === 'declined') {
+          return;
         }
+
+        const resolvedLocation = resolution.status === 'confirmed' ? resolution : null;
 
         const createdStops: UpcomingStop[] = [];
         // Recorded once for the whole batch - every date in a multi-date
-        // save shares the same location text. Only reached once automation
-        // (if requested) has already been confirmed, or wasn't requested.
-        void persistRecentLocation(trimmedLocation, confirmedAutomationLocation ?? undefined);
+        // save shares the same location text. Only reached once the
+        // location step above has settled. An unverified address still
+        // gets remembered as Recent (just without coordinates), matching
+        // how a Recent entry that's never resolved already behaves.
+        void persistRecentLocation(trimmedLocation, resolvedLocation ?? undefined);
 
         for (const { startsAt, endsAt } of dateRanges) {
           const createdStop = await addUpcomingStop({
@@ -1492,38 +1603,82 @@ export default function UpcomingStopsScreen() {
 
           createdStops.push(createdStop);
 
-          if (confirmedAutomationLocation) {
-            await configureUpcomingStopAutomation({
-              stopId: createdStop.id,
-              enabled: true,
-              latitude: confirmedAutomationLocation.latitude,
-              longitude: confirmedAutomationLocation.longitude,
-              timezone: confirmedAutomationLocation.timezone,
-            });
-          } else {
-            applyStopLocationInBackground(createdStop.id, trimmedLocation, locationSourceAtSave);
+          // The stop row already exists at this point, so from here down
+          // every step is a noncritical enhancement: a failure in any of
+          // them must not abort the loop, the save-location prompt, the
+          // success message, or resetForm - otherwise the owner is left
+          // looking at a "failed" save (and a still-filled form inviting a
+          // duplicate resubmit) for a stop that was actually created fine.
+          try {
+            if (resolvedLocation) {
+              await setUpcomingStopLocation({
+                stopId: createdStop.id,
+                ...resolvedLocation,
+              });
+            } else {
+              // Unverified: leave lat/lng/timezone null and mark it failed
+              // so the stop card shows the existing "Location couldn't be
+              // verified" caption, same as a background geocode failure.
+              await setUpcomingStopLocation({ stopId: createdStop.id, failed: true });
+            }
+            await refreshLocationStatuses();
+          } catch (locationError) {
+            console.log('[UpcomingStops] Failed to persist stop coordinates:', locationError);
           }
 
           if (currentSettings.enabled) {
-            await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
+            try {
+              await scheduleReminderForStop(createdStop, reminderIdsRef.current, currentSettings);
+            } catch (reminderError) {
+              console.log('[UpcomingStops] Failed to schedule reminder for new stop:', reminderError);
+            }
+          }
+
+          // Hands-Free LIVE is a separate, optional decision layered on top
+          // of the already-confirmed location - not attempted at all while
+          // the system is paused/disabled (see handsFreeLiveSystemAvailable
+          // above), even if the truck-level default/per-stop switch is on,
+          // and not attempted for an unverified location (no coordinates
+          // to enable it with).
+          if (handsFreeLiveOnAtSave && resolvedLocation) {
+            try {
+              await configureUpcomingStopAutomation({
+                stopId: createdStop.id,
+                enabled: true,
+                latitude: resolvedLocation.latitude,
+                longitude: resolvedLocation.longitude,
+                timezone: resolvedLocation.timezone,
+              });
+            } catch (automationError) {
+              console.log('[UpcomingStops] Could not enable Hands-Free LIVE for new stop:', automationError);
+            }
           }
         }
 
-        if (confirmedAutomationLocation) {
+        if (handsFreeLiveOnAtSave && resolvedLocation) {
           await refreshAutomationState();
+        }
+
+        // Nothing to offer saving for an unverified location - there are
+        // no coordinates to save.
+        if (resolvedLocation) {
           promptSaveLocationIfNew(
             trimmedLocation,
-            confirmedAutomationLocation.latitude,
-            confirmedAutomationLocation.longitude,
-            confirmedAutomationLocation.timezone
+            resolvedLocation.latitude,
+            resolvedLocation.longitude,
+            resolvedLocation.timezone
           );
         }
 
         const baseMessage = createdStops.length > 1
           ? `${createdStops.length} stops scheduled.`
           : 'Stop scheduled.';
-        setSuccessMessage(baseMessage);
+        const pausedNotice = handsFreeLivePausedAtSave
+          ? ' Hands-Free LIVE was not turned on because the feature is temporarily paused.'
+          : '';
+        setSuccessMessage(`${baseMessage}${pausedNotice}`);
         resetForm();
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
       }
     } catch (error: any) {
       setErrorMessage(error?.message ?? 'Could not save upcoming stop.');
@@ -1726,14 +1881,15 @@ export default function UpcomingStopsScreen() {
                 <View style={styles.reminderTextContainer}>
                   <Text style={styles.confirmationTitle}>Default for new stops</Text>
                   <Text style={styles.confirmationSubtitle}>
-                    Turn on Hands-Free LIVE for new stops by default. Each stop can still be
-                    switched off individually.
+                    {automationSettings.systemEnabled
+                      ? 'Turn on Hands-Free LIVE for new stops by default. Each stop can still be switched off individually.'
+                      : 'Scheduled automation is temporarily paused, so this default cannot be changed right now.'}
                   </Text>
                 </View>
                 <Switch
                   value={truck.hands_free_live_default_enabled === true}
                   onValueChange={value => void handleTruckDefaultChange(value)}
-                  disabled={truckDefaultSaving}
+                  disabled={truckDefaultSaving || !automationSettings.systemEnabled}
                   trackColor={{ false: Colors.lightGray, true: `${Colors.primary}55` }}
                   thumbColor={truck.hands_free_live_default_enabled ? Colors.primary : Colors.gray}
                 />
@@ -1829,10 +1985,22 @@ export default function UpcomingStopsScreen() {
               </View>
               <View style={styles.timeSummaryDivider} />
               <View style={styles.timeSummaryItem}>
-                <Text style={styles.timeSummaryLabel}>End</Text>
+                <Text style={styles.timeSummaryLabel}>
+                  {endsNextDay ? 'End (next day)' : 'End'}
+                </Text>
                 <Text style={styles.timeSummaryValue}>{formatTimeButton(endTime)}</Text>
               </View>
             </View>
+            <Text
+              style={[
+                styles.durationSummary,
+                invalidSameDayTimeRange && styles.durationSummaryInvalid,
+              ]}
+            >
+              {stopDurationLabel
+                ? `Duration: ${stopDurationLabel}`
+                : 'End time must be later than start time.'}
+            </Text>
 
             {activePicker && (
               <View style={styles.pickerContainer}>
@@ -1854,16 +2022,30 @@ export default function UpcomingStopsScreen() {
               </View>
             )}
 
-            <TouchableOpacity
-              style={[styles.nextDayToggle, endsNextDay && styles.nextDayToggleOn]}
-              onPress={() => setEndsNextDay(value => !value)}
-              activeOpacity={0.75}
-            >
-              <Clock size={18} color={endsNextDay ? Colors.light : Colors.primary} />
-              <Text style={[styles.nextDayText, endsNextDay && styles.nextDayTextOn]}>
-                Ends next day
+            <View style={[styles.overnightControl, endsNextDay && styles.overnightControlOn]}>
+              <View style={styles.overnightTextGroup}>
+                <Text style={[styles.overnightTitle, endsNextDay && styles.overnightTitleOn]}>
+                  Overnight stop
+                </Text>
+                <Text style={[styles.overnightDetail, endsNextDay && styles.overnightDetailOn]}>
+                  {endsNextDay
+                    ? 'End is on the following day.'
+                    : 'Start and end are on the same day.'}
+                </Text>
+              </View>
+              <Switch
+                value={endsNextDay}
+                onValueChange={setEndsNextDay}
+                trackColor={{ false: Colors.lightGray, true: `${Colors.light}88` }}
+                thumbColor={endsNextDay ? Colors.light : Colors.gray}
+              />
+            </View>
+
+            {invalidSameDayTimeRange ? (
+              <Text style={styles.overnightValidation}>
+                Choose a later end time, or turn on Overnight stop.
               </Text>
-            </TouchableOpacity>
+            ) : null}
 
             {recentLocationTexts.length > 0 && (
               <View style={styles.locationChipSection}>
@@ -1981,10 +2163,20 @@ export default function UpcomingStopsScreen() {
             <TouchableOpacity
               style={[
                 styles.saveButton,
-                (isSaving || !reminderSettingsLoaded || selectedDates.length === 0) && styles.buttonDisabled,
+                (
+                  isSaving ||
+                  !reminderSettingsLoaded ||
+                  selectedDates.length === 0 ||
+                  invalidSameDayTimeRange
+                ) && styles.buttonDisabled,
               ]}
               onPress={handleSave}
-              disabled={isSaving || !reminderSettingsLoaded || selectedDates.length === 0}
+              disabled={
+                isSaving ||
+                !reminderSettingsLoaded ||
+                selectedDates.length === 0 ||
+                invalidSameDayTimeRange
+              }
               activeOpacity={0.75}
             >
               {isSaving ? (
@@ -2758,29 +2950,59 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800' as const,
   },
-  nextDayToggle: {
+  durationSummary: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.dark,
+    marginTop: -8,
+    marginBottom: 14,
+  },
+  durationSummaryInvalid: {
+    color: Colors.danger,
+  },
+  overnightControl: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 8,
-    borderRadius: 999,
+    justifyContent: 'space-between',
+    gap: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: `${Colors.primary}35`,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 16,
+    backgroundColor: Colors.light,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
   },
-  nextDayToggleOn: {
+  overnightControlOn: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
-  nextDayText: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: Colors.primary,
+  overnightTextGroup: {
+    flex: 1,
   },
-  nextDayTextOn: {
+  overnightTitle: {
+    fontSize: 15,
+    fontWeight: '900' as const,
+    color: Colors.dark,
+    marginBottom: 3,
+  },
+  overnightTitleOn: {
     color: Colors.light,
+  },
+  overnightDetail: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.gray,
+  },
+  overnightDetailOn: {
+    color: `${Colors.light}DD`,
+  },
+  overnightValidation: {
+    color: Colors.danger,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700' as const,
+    marginBottom: 16,
   },
   saveButton: {
     alignItems: 'center',

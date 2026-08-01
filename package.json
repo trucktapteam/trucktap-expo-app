@@ -10,7 +10,7 @@
     "verify-pages-artifact": "node scripts/verify-pages-artifact.mjs",
     "check-credential-literals": "node scripts/check-credential-literals.mjs",
     "lint": "expo lint",
-    "test:node": "node --test lib/handsFreeLive.test.mjs lib/liveLocationCompatibility.test.mjs lib/releasePolicyCore.test.mjs lib/sightingLocation.test.mjs lib/truckPublicReady.test.mjs scripts/check-credential-literals.test.mjs supabase/functions/account-delete-boundary.test.mjs supabase/functions/credential-logging.test.mjs supabase/functions/notify-hands-free-live-transition/index.node.test.mjs supabase/functions/notification-auth-boundaries.test.mjs",
+    "test:node": "node --test lib/handsFreeLive.test.mjs lib/liveLocationCompatibility.test.mjs lib/locationTimezone.test.mjs lib/releasePolicyCore.test.mjs lib/sightingLocation.test.mjs lib/truckPublicReady.test.mjs lib/upcomingStopReminders.test.mjs lib/upcomingStopTime.test.mjs scripts/check-credential-literals.test.mjs supabase/functions/account-delete-boundary.test.mjs supabase/functions/credential-logging.test.mjs supabase/functions/notify-hands-free-live-transition/index.node.test.mjs supabase/functions/notification-auth-boundaries.test.mjs",
     "typecheck": "tsc --noEmit",
     "android": "expo run:android",
     "ios": "expo run:ios"
@@ -19,6 +19,7 @@
     "@expo/vector-icons": "^15.0.3",
     "@hono/trpc-server": "^0.4.1",
     "@nkzw/create-context-hook": "^1.1.0",
+    "@photostructure/tz-lookup": "^11.5.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/slider": "5.0.1",
