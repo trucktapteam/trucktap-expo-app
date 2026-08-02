@@ -2627,7 +2627,7 @@ function StopCard({
 
           {locationVerificationFailed ? (
             <Text style={styles.locationVerificationCaption}>
-              Location couldn&apos;t be verified \u2014 edit to try again
+              Location couldn&apos;t be verified — edit to try again
             </Text>
           ) : null}
           {stop.event_image_url ? (
