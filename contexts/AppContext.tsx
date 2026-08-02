@@ -2,7 +2,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import { AppState as RNAppState } from 'react-native';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, FoodTruck, Review, ReviewReply, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType, UpcomingStop, UpcomingStopStatus, SavedLocation } from '@/types';
+import { User, FoodTruck, Review, ReviewReply, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType, UpcomingStop, SavedLocation } from '@/types';
 import { teamUpdates } from '@/mocks/data';
 import { DEBUG } from '@/constants/debug';
 import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
@@ -20,6 +20,12 @@ import {
 } from '@/lib/liveLocationCompatibility';
 import { emitOwnerReleaseRestriction, emitClientRestriction } from '@/lib/releasePolicy';
 import { fetchPrivateProfile } from '@/lib/privateProfile';
+import {
+  mapUpcomingStopRow,
+  normalizeUpcomingStopStatus,
+  UPCOMING_STOP_PUBLIC_COLUMNS,
+} from '@/lib/upcomingStopData';
+import { removeUpcomingStopImage } from '@/lib/upcomingStopImages';
 
 const parseJsonArray = (val: any): any[] => {
   if (Array.isArray(val)) return val;
@@ -226,29 +232,8 @@ const mapOwnerMessageRow = (row: any, readAt?: string | null): OwnerMessage => (
   read_at: readAt ?? null,
 });
 
-const UPCOMING_STOP_STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
 const INACTIVITY_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 const ACTIVE_ON_TRUCKTAP_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
-
-const normalizeUpcomingStopStatus = (status: unknown): UpcomingStopStatus =>
-  UPCOMING_STOP_STATUSES.includes(status as UpcomingStopStatus)
-    ? status as UpcomingStopStatus
-    : 'scheduled';
-
-const mapUpcomingStopRow = (row: any): UpcomingStop => ({
-  id: row.id?.toString?.() ?? '',
-  truck_id: row.truck_id?.toString?.() ?? '',
-  starts_at: row.starts_at ?? new Date().toISOString(),
-  ends_at: row.ends_at ?? new Date().toISOString(),
-  location_text: row.location_text ?? '',
-  note: row.note ?? null,
-  status: normalizeUpcomingStopStatus(row.status),
-  created_at: row.created_at ?? undefined,
-  updated_at: row.updated_at ?? undefined,
-});
-
-const UPCOMING_STOP_PUBLIC_COLUMNS =
-  'id, truck_id, starts_at, ends_at, location_text, note, status, created_at, updated_at';
 
 const mapSavedLocationRow = (row: any): SavedLocation => ({
   id: row.id?.toString?.() ?? '',
@@ -3125,6 +3110,7 @@ if (error) {
       location_text: locationText,
       note: stop.note?.trim() || null,
       status: normalizeUpcomingStopStatus(stop.status),
+      event_image_url: stop.event_image_url?.trim() || null,
     };
 
     if (!isSupabaseConfigured) {
@@ -3159,13 +3145,24 @@ if (error) {
     stopId: string,
     updates: Partial<Omit<UpcomingStop, 'id' | 'truck_id' | 'created_at' | 'updated_at'>>
   ): Promise<UpcomingStop> => {
-    const existing = upcomingStops.find(stop => stop.id === stopId);
-
-    if (!existing) {
-      throw new Error('Upcoming stop not found');
-    }
     if (!isAuthenticated || !authUser) {
       throw new Error('Not authenticated');
+    }
+
+    let existing = upcomingStops.find(stop => stop.id === stopId);
+    // A create-then-attach flow can call this before React has rendered the
+    // newly appended stop into this callback's state closure. Re-read that
+    // exact row, then apply the same ownership validation below.
+    if (!existing && isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('upcoming_stops')
+        .select(UPCOMING_STOP_PUBLIC_COLUMNS)
+        .eq('id', stopId)
+        .single();
+      if (!error && data) existing = mapUpcomingStopRow(data);
+    }
+    if (!existing) {
+      throw new Error('Upcoming stop not found');
     }
     if (!userOwnsTruck(existing.truck_id)) {
       throw new Error(`User does not own truck ${existing.truck_id}`);
@@ -3193,6 +3190,9 @@ if (error) {
     }
     if (updates.note !== undefined) payload.note = updates.note?.trim() || null;
     if (updates.status !== undefined) payload.status = normalizeUpcomingStopStatus(updates.status);
+    if (updates.event_image_url !== undefined) {
+      payload.event_image_url = updates.event_image_url?.trim() || null;
+    }
 
     if (!isSupabaseConfigured) {
       const updated: UpcomingStop = {
@@ -3203,6 +3203,9 @@ if (error) {
         location_text: payload.location_text ?? existing.location_text,
         note: Object.prototype.hasOwnProperty.call(payload, 'note') ? payload.note : existing.note,
         status: payload.status ?? existing.status,
+        event_image_url: Object.prototype.hasOwnProperty.call(payload, 'event_image_url')
+          ? payload.event_image_url
+          : existing.event_image_url,
       };
       setUpcomingStops(prev => prev.map(stop => stop.id === stopId ? updated : stop));
       return updated;
@@ -3223,6 +3226,16 @@ if (error) {
 
     const updated = mapUpcomingStopRow(data);
     setUpcomingStops(prev => prev.map(stop => stop.id === stopId ? updated : stop));
+
+    if (
+      updates.event_image_url !== undefined &&
+      existing.event_image_url &&
+      existing.event_image_url !== updated.event_image_url
+    ) {
+      void removeUpcomingStopImage(existing.event_image_url).catch(cleanupError => {
+        console.log('[AppContext] Could not clean up replaced upcoming stop image:', cleanupError);
+      });
+    }
     return updated;
   }, [authUser, isAuthenticated, upcomingStops, userOwnsTruck]);
 
@@ -3253,6 +3266,12 @@ if (error) {
     }
 
     setUpcomingStops(prev => prev.filter(stop => stop.id !== stopId));
+
+    if (isSupabaseConfigured && existing.event_image_url) {
+      void removeUpcomingStopImage(existing.event_image_url).catch(cleanupError => {
+        console.log('[AppContext] Could not clean up deleted upcoming stop image:', cleanupError);
+      });
+    }
   }, [authUser, isAuthenticated, upcomingStops, userOwnsTruck]);
 
   const addSavedLocation = useCallback(async (

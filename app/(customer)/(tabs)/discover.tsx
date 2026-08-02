@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { AppState as RNAppState, View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Platform, Alert, Modal, RefreshControl, Animated, Linking } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useRouter } from 'expo-router';
-import { Search, MapPin, Clock, Navigation, CheckCircle, Maximize2, Minimize2, AlertCircle, XCircle, Radar, Compass, ArrowLeft, Star } from 'lucide-react-native';
+import { Search, MapPin, Clock, Navigation, CheckCircle, ImageIcon, Maximize2, Minimize2, AlertCircle, X, XCircle, Radar, Compass, ArrowLeft, Star } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useFilteredTrucks, useApp } from '@/contexts/AppContext';
 import { Image } from 'expo-image';
@@ -114,6 +114,7 @@ export default function CustomerHomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [sightings, setSightings] = useState<Sighting[]>([]);
   const [selectedSighting, setSelectedSighting] = useState<Sighting | null>(null);
+  const [selectedEventFlyerUrl, setSelectedEventFlyerUrl] = useState<string | null>(null);
   const [isEditingSighting, setIsEditingSighting] = useState(false);
   const [editingSightingTitle, setEditingSightingTitle] = useState('');
   const [editingSightingNotes, setEditingSightingNotes] = useState('');
@@ -1133,6 +1134,20 @@ export default function CustomerHomeScreen() {
                                 📍 {nextStopLocation}
                               </Text>
                             )}
+                            {nextStop.event_image_url ? (
+                              <TouchableOpacity
+                                style={styles.eventFlyerLink}
+                                onPress={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedEventFlyerUrl(nextStop.event_image_url ?? null);
+                                }}
+                                accessibilityRole="button"
+                                accessibilityLabel={`View event flyer for ${truck.name}`}
+                              >
+                                <ImageIcon size={13} color={colors.primary} />
+                                <Text style={styles.eventFlyerLinkText}>View Event Flyer</Text>
+                              </TouchableOpacity>
+                            ) : null}
                           </>
                         ) : profileSnippet ? (
                           <Text
@@ -1156,6 +1171,31 @@ export default function CustomerHomeScreen() {
           </ScrollView>
         )}
       </View>
+
+      <Modal
+        visible={selectedEventFlyerUrl !== null}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={() => setSelectedEventFlyerUrl(null)}
+      >
+        <View style={styles.eventFlyerModal}>
+          <TouchableOpacity
+            style={styles.eventFlyerModalClose}
+            onPress={() => setSelectedEventFlyerUrl(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Close event flyer"
+          >
+            <X size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          {selectedEventFlyerUrl ? (
+            <Image
+              source={{ uri: selectedEventFlyerUrl }}
+              style={styles.eventFlyerModalImage}
+              contentFit="contain"
+            />
+          ) : null}
+        </View>
+      </Modal>
 
       <Modal
         visible={selectedSighting !== null}
@@ -1750,6 +1790,40 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontWeight: '600' as const,
     lineHeight: 18,
     color: colors.text,
+  },
+  eventFlyerLink: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 3,
+  },
+  eventFlyerLinkText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: colors.primary,
+  },
+  eventFlyerModal: {
+    flex: 1,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eventFlyerModalClose: {
+    position: 'absolute',
+    top: 52,
+    right: 20,
+    zIndex: 2,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eventFlyerModalImage: {
+    width: '100%',
+    height: '100%',
   },
   profileSnippetText: {
     fontWeight: '500' as const,

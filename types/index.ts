@@ -146,6 +146,7 @@ export type UpcomingStop = {
   location_text: string;
   note?: string | null;
   status: UpcomingStopStatus;
+  event_image_url?: string | null;
   created_at?: string;
   updated_at?: string;
 };

@@ -4,9 +4,11 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { CalendarDays, ChevronDown, ChevronUp, Clock, MapPin, Pencil, RefreshCw, Trash2, X, Zap } from 'lucide-react-native';
+import { CalendarDays, ChevronDown, ChevronUp, Clock, ImageIcon, MapPin, Pencil, RefreshCw, Trash2, X, Zap } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { SavedLocation, UpcomingStop, UpcomingStopStatus } from '@/types';
@@ -29,6 +31,11 @@ import {
   formatStopDuration,
   getStopDurationMinutes,
 } from '@/lib/upcomingStopTime';
+import {
+  removeUpcomingStopImage,
+  uploadUpcomingStopImage,
+  validateUpcomingStopImageAsset,
+} from '@/lib/upcomingStopImages';
 
 const STATUSES: UpcomingStopStatus[] = ['scheduled', 'delayed', 'cancelled', 'sold_out', 'completed'];
 const REMINDER_SETTINGS_KEY = 'upcomingStopReminderSettings';
@@ -335,6 +342,8 @@ export default function UpcomingStopsScreen() {
     updateSavedLocation,
     deleteSavedLocation,
     updateTruckDetails,
+    beginImagePickerSession,
+    endImagePickerSession,
   } = useApp();
   const truck = getUserTruck();
   useTruckLifecycleLogger('UpcomingStopsScreen');
@@ -357,6 +366,9 @@ export default function UpcomingStopsScreen() {
   } | null>(null);
   const [note, setNote] = useState('');
   const [noteExpanded, setNoteExpanded] = useState(false);
+  const [eventFlyerPreview, setEventFlyerPreview] = useState<string | null>(null);
+  const [eventFlyerAsset, setEventFlyerAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [eventFlyerChanged, setEventFlyerChanged] = useState(false);
   // Only used when creating a new stop (not editing) - pre-seeded from the
   // truck's Hands-Free LIVE default, fully editable per stop before saving.
   const [handsFreeLiveOnForNewStop, setHandsFreeLiveOnForNewStop] = useState(
@@ -1119,6 +1131,9 @@ export default function UpcomingStopsScreen() {
     setSelectedLocationSource(null);
     setNote('');
     setNoteExpanded(false);
+    setEventFlyerPreview(null);
+    setEventFlyerAsset(null);
+    setEventFlyerChanged(false);
     setActivePicker(null);
     setHandsFreeLiveOnForNewStop(truck?.hands_free_live_default_enabled === true);
   };
@@ -1503,6 +1518,9 @@ export default function UpcomingStopsScreen() {
     setSelectedLocationSource(null);
     setNote(stop.note ?? '');
     setNoteExpanded(!!stop.note && stop.note.trim().length > 0);
+    setEventFlyerPreview(stop.event_image_url ?? null);
+    setEventFlyerAsset(null);
+    setEventFlyerChanged(false);
     setActivePicker(null);
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
@@ -1512,6 +1530,43 @@ export default function UpcomingStopsScreen() {
     setErrorMessage(null);
     setSuccessMessage(null);
     resetForm();
+  };
+
+  const handlePickEventFlyer = async () => {
+    setErrorMessage(null);
+    const pickerSession = 'UpcomingStops:EventFlyer';
+    beginImagePickerSession(pickerSession);
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        throw new Error('Photo library access is required to choose an event flyer.');
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.85,
+        selectionLimit: 1,
+      });
+      const asset = result.canceled ? null : result.assets?.[0] ?? null;
+      if (!asset) return;
+
+      validateUpcomingStopImageAsset(asset);
+      setEventFlyerAsset(asset);
+      setEventFlyerPreview(asset.uri);
+      setEventFlyerChanged(true);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not select event flyer.');
+    } finally {
+      endImagePickerSession(pickerSession);
+    }
+  };
+
+  const handleRemoveEventFlyer = () => {
+    setEventFlyerAsset(null);
+    setEventFlyerPreview(null);
+    setEventFlyerChanged(true);
   };
 
   const handleSave = async () => {
@@ -1529,6 +1584,7 @@ export default function UpcomingStopsScreen() {
     const handsFreeLiveSystemAvailable = automationSettings.supported && automationSettings.systemEnabled;
     const handsFreeLiveOnAtSave = handsFreeLiveRequestedAtSave && handsFreeLiveSystemAvailable;
     const handsFreeLivePausedAtSave = handsFreeLiveRequestedAtSave && !handsFreeLiveSystemAvailable;
+    let pendingUploadedEventImageUrl: string | null = null;
 
     try {
       const trimmedLocation = locationText.trim();
@@ -1548,13 +1604,30 @@ export default function UpcomingStopsScreen() {
       if (editingStopId) {
         const previousStop = stops.find(stop => stop.id === editingStopId);
         const { startsAt, endsAt } = buildDateRange(selectedDates[0]);
+        let eventImageUpdates: Pick<UpcomingStop, 'event_image_url'> | undefined;
+
+        if (eventFlyerChanged) {
+          if (eventFlyerAsset) {
+            pendingUploadedEventImageUrl = await uploadUpcomingStopImage({
+              uri: eventFlyerAsset.uri,
+              truckId: truck.id,
+              stopId: editingStopId,
+              mimeType: eventFlyerAsset.mimeType,
+            });
+            eventImageUpdates = { event_image_url: pendingUploadedEventImageUrl };
+          } else {
+            eventImageUpdates = { event_image_url: null };
+          }
+        }
 
         const updatedStop = await updateUpcomingStop(editingStopId, {
           starts_at: startsAt.toISOString(),
           ends_at: endsAt.toISOString(),
           location_text: trimmedLocation,
           note: note.trim() || null,
+          ...eventImageUpdates,
         });
+        pendingUploadedEventImageUrl = null;
 
         if (currentSettings.enabled) {
           await scheduleReminderForStop(updatedStop, reminderIdsRef.current, currentSettings);
@@ -1602,6 +1675,7 @@ export default function UpcomingStopsScreen() {
         const resolvedLocation = resolution.status === 'confirmed' ? resolution : null;
 
         const createdStops: UpcomingStop[] = [];
+        let flyerUploadFailures = 0;
         // Recorded once for the whole batch - every date in a multi-date
         // save shares the same location text. Only reached once the
         // location step above has settled. An unverified address still
@@ -1620,6 +1694,25 @@ export default function UpcomingStopsScreen() {
           });
 
           createdStops.push(createdStop);
+
+          if (eventFlyerAsset) {
+            let uploadedUrl: string | null = null;
+            try {
+              uploadedUrl = await uploadUpcomingStopImage({
+                uri: eventFlyerAsset.uri,
+                truckId: truck.id,
+                stopId: createdStop.id,
+                mimeType: eventFlyerAsset.mimeType,
+              });
+              await updateUpcomingStop(createdStop.id, { event_image_url: uploadedUrl });
+            } catch (flyerError) {
+              flyerUploadFailures += 1;
+              console.log('[UpcomingStops] Could not attach event flyer:', flyerError);
+              if (uploadedUrl) {
+                void removeUpcomingStopImage(uploadedUrl).catch(() => undefined);
+              }
+            }
+          }
 
           // The stop row already exists at this point, so from here down
           // every step is a noncritical enhancement: a failure in any of
@@ -1694,11 +1787,17 @@ export default function UpcomingStopsScreen() {
         const pausedNotice = handsFreeLivePausedAtSave
           ? ' Hands-Free LIVE was not turned on because the feature is temporarily paused.'
           : '';
-        setSuccessMessage(`${baseMessage}${pausedNotice}`);
+        const flyerNotice = flyerUploadFailures > 0
+          ? ` ${flyerUploadFailures === 1 ? 'The event flyer could not be attached' : `Event flyers could not be attached to ${flyerUploadFailures} stops`}; edit ${flyerUploadFailures === 1 ? 'the stop' : 'those stops'} to try again.`
+          : '';
+        setSuccessMessage(`${baseMessage}${pausedNotice}${flyerNotice}`);
         resetForm();
         scrollViewRef.current?.scrollTo({ y: 0, animated: true });
       }
     } catch (error: any) {
+      if (pendingUploadedEventImageUrl) {
+        void removeUpcomingStopImage(pendingUploadedEventImageUrl).catch(() => undefined);
+      }
       setErrorMessage(error?.message ?? 'Could not save upcoming stop.');
     } finally {
       setIsSaving(false);
@@ -2061,6 +2160,40 @@ export default function UpcomingStopsScreen() {
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={styles.addNoteButtonText}>+ Add note</Text>
+              </TouchableOpacity>
+            )}
+
+            {eventFlyerPreview ? (
+              <View style={styles.eventFlyerEditor}>
+                <Image
+                  source={{ uri: eventFlyerPreview }}
+                  style={styles.eventFlyerPreview}
+                  contentFit="contain"
+                />
+                <View style={styles.eventFlyerActions}>
+                  <TouchableOpacity onPress={handlePickEventFlyer} activeOpacity={0.75}>
+                    <Text style={styles.eventFlyerActionText}>Replace</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleRemoveEventFlyer} activeOpacity={0.75}>
+                    <Text style={[styles.eventFlyerActionText, styles.eventFlyerRemoveText]}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+                {!editingStopId && selectedDates.length > 1 ? (
+                  <Text style={styles.eventFlyerHelperText}>
+                    This flyer will be attached separately to all {selectedDates.length} selected dates.
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.addEventFlyerButton}
+                onPress={handlePickEventFlyer}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel="Add event flyer"
+              >
+                <ImageIcon size={16} color={Colors.primary} />
+                <Text style={styles.addNoteButtonText}>+ Add event flyer</Text>
               </TouchableOpacity>
             )}
 
@@ -2430,6 +2563,13 @@ function StopCard({
       <Text style={styles.stopTime}>{formatDateTime(stop.starts_at)} - {formatDateTime(stop.ends_at)}</Text>
       <Text style={styles.stopLocation} numberOfLines={1}>{stop.location_text}</Text>
 
+      {stop.event_image_url ? (
+        <View style={styles.flyerIndicator}>
+          <ImageIcon size={12} color={Colors.primary} />
+          <Text style={styles.flyerIndicatorText}>Event flyer</Text>
+        </View>
+      ) : null}
+
       <View style={[styles.automationBadge, automationBadgeBackgroundStyle]}>
         <Zap size={11} color={automationBadgeColor} />
         <Text style={[styles.automationBadgeText, { color: automationBadgeColor }]}>
@@ -2486,6 +2626,13 @@ function StopCard({
             <Text style={styles.locationVerificationCaption}>
               Location couldn't be verified \u2014 edit to try again
             </Text>
+          ) : null}
+          {stop.event_image_url ? (
+            <Image
+              source={{ uri: stop.event_image_url }}
+              style={styles.stopFlyerPreview}
+              contentFit="contain"
+            />
           ) : null}
           {stop.note ? <Text style={styles.stopNote}>{stop.note}</Text> : null}
 
@@ -2717,6 +2864,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700' as const,
     color: Colors.primary,
+  },
+  addEventFlyerButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  eventFlyerEditor: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+  },
+  eventFlyerPreview: {
+    width: '100%',
+    height: 150,
+    backgroundColor: Colors.lightGray,
+    borderRadius: 8,
+  },
+  eventFlyerActions: {
+    flexDirection: 'row',
+    gap: 18,
+    marginTop: 9,
+  },
+  eventFlyerActionText: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+  },
+  eventFlyerRemoveText: {
+    color: Colors.danger,
+  },
+  eventFlyerHelperText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: Colors.gray,
+    marginTop: 8,
   },
   locationHelperText: {
     fontSize: 12,
@@ -3097,6 +3284,29 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     color: Colors.dark,
     marginBottom: 4,
+  },
+  flyerIndicator: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    backgroundColor: `${Colors.primary}12`,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    marginBottom: 6,
+  },
+  flyerIndicatorText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+  },
+  stopFlyerPreview: {
+    width: '100%',
+    height: 260,
+    borderRadius: 10,
+    backgroundColor: Colors.lightGray,
+    marginBottom: 12,
   },
   automationBadge: {
     flexDirection: 'row',

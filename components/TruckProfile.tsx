@@ -2,7 +2,7 @@ import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, TextInput, Modal, Alert, Platform, Animated, Share, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { CalendarDays, MapPin, Clock, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Globe, Users, ShieldCheck } from 'lucide-react-native';
+import { CalendarDays, MapPin, Clock, ImageIcon, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Globe, Users, ShieldCheck } from 'lucide-react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { getSocialBrandIcon } from '@/lib/socialLinkIcons';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -202,6 +202,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const [reviewRating, setReviewRating] = useState<number>(5);
   const [reviewComment, setReviewComment] = useState<string>('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedEventFlyer, setSelectedEventFlyer] = useState<string | null>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState<boolean>(false);
   const [authAction, setAuthAction] = useState<string>('');
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
@@ -1078,6 +1079,13 @@ console.log('[FORMAT DATE]', dateInput);
         onPhotoView={() => incrementPhotoView(truck.id)}
       />
 
+      <FullscreenImageViewer
+        visible={selectedEventFlyer !== null}
+        image={selectedEventFlyer}
+        onClose={() => setSelectedEventFlyer(null)}
+        accessibilityLabel="Event flyer"
+      />
+
       <Modal
         visible={!!selectedUpcomingStop}
         animationType="slide"
@@ -1128,6 +1136,29 @@ console.log('[FORMAT DATE]', dateInput);
                     </Text>
                   </View>
                 </View>
+
+                {selectedUpcomingStop.event_image_url ? (
+                  <TouchableOpacity
+                    style={styles.stopDetailFlyerButton}
+                    onPress={() => {
+                      setSelectedEventFlyer(selectedUpcomingStop.event_image_url ?? null);
+                      setSelectedUpcomingStop(null);
+                    }}
+                    activeOpacity={0.82}
+                    accessibilityRole="button"
+                    accessibilityLabel="View event flyer full screen"
+                  >
+                    <Image
+                      source={{ uri: selectedUpcomingStop.event_image_url }}
+                      style={styles.stopDetailFlyerImage}
+                      contentFit="contain"
+                    />
+                    <View style={styles.stopDetailFlyerLabelRow}>
+                      <ImageIcon size={16} color={colors.primary} />
+                      <Text style={styles.stopDetailFlyerLabel}>View Event Flyer</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
 
                 {getUpcomingStopDescription(selectedUpcomingStop) ? (
                   <Text style={styles.stopDetailDescription}>
@@ -1825,6 +1856,30 @@ emptyReviewText: {
     color: colors.secondaryText,
     lineHeight: 22,
     marginBottom: 20,
+  },
+  stopDetailFlyerButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  stopDetailFlyerImage: {
+    width: '100%',
+    height: 300,
+    backgroundColor: colors.secondaryBackground,
+  },
+  stopDetailFlyerLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 11,
+  },
+  stopDetailFlyerLabel: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: colors.primary,
   },
   stopDetailNavigateButton: {
     flexDirection: 'row',
