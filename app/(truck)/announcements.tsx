@@ -110,7 +110,7 @@ export default function AnnouncementsScreen() {
             textAlignVertical="top"
           />
           <Text style={styles.helperText}>
-            Visible for 7 days. Use announcements for specials, delays, sold-out items, or quick updates.
+            Customers who have favorited your truck can see these updates and receive announcement notifications. Announcements stay visible for 7 days.
           </Text>
            
           <View style={styles.postFooter}>
@@ -139,7 +139,7 @@ export default function AnnouncementsScreen() {
             <Megaphone size={64} color={Colors.lightGray} />
             <Text style={styles.emptyTitle}>No announcements yet</Text>
             <Text style={styles.emptySubtitle}>
-              Share updates about menu changes, location, hours, or special promotions
+              Keep customers who have favorited your truck informed about specials, delays, sold-out items, or other timely updates.
             </Text>
           </View>
         ) : (

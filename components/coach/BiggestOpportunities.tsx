@@ -1,18 +1,12 @@
 import React from 'react';
-import { StyleSheet, Text, TextStyle, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { TruckOpportunity, TruckOpportunityAction, TruckOpportunityPriority } from '@/lib/truckOpportunities';
+import { TruckOpportunity, TruckOpportunityAction } from '@/lib/truckOpportunities';
 
 export type BiggestOpportunitiesProps = {
   opportunities: TruckOpportunity[];
   onAction: (action: TruckOpportunityAction) => void;
-};
-
-const priorityLabels: Record<TruckOpportunityPriority, string> = {
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
 };
 
 const actionLabels: Partial<Record<TruckOpportunityAction, string>> = {
@@ -27,12 +21,6 @@ const actionLabels: Partial<Record<TruckOpportunityAction, string>> = {
   profile: 'Edit profile',
 };
 
-const priorityPillStyle: Record<TruckOpportunityPriority, [ViewStyle, TextStyle]> = {
-  high: [{ backgroundColor: `${Colors.error}14` }, { color: Colors.error }],
-  medium: [{ backgroundColor: `${Colors.warning}18` }, { color: Colors.warning }],
-  low: [{ backgroundColor: `${Colors.primary}12` }, { color: Colors.primary }],
-};
-
 export default function BiggestOpportunities({ opportunities, onAction }: BiggestOpportunitiesProps) {
   return (
     <View style={styles.card}>
@@ -45,19 +33,10 @@ export default function BiggestOpportunities({ opportunities, onAction }: Bigges
         <View style={styles.list}>
           {opportunities.map(opportunity => {
             const actionLabel = actionLabels[opportunity.action];
-            const [pillStyle, pillTextStyle] = priorityPillStyle[opportunity.priority];
-
             return (
               <View key={opportunity.id} style={styles.item}>
                 <View style={styles.itemContent}>
-                  <View style={styles.itemTitleRow}>
-                    <Text style={styles.itemTitle}>{opportunity.title}</Text>
-                    <View style={[styles.priorityPill, pillStyle]}>
-                      <Text style={[styles.priorityText, pillTextStyle]}>
-                        {priorityLabels[opportunity.priority]}
-                      </Text>
-                    </View>
-                  </View>
+                  <Text style={styles.itemTitle}>{opportunity.title}</Text>
                   <Text style={styles.itemDescription}>{opportunity.description}</Text>
                 </View>
                 {actionLabel ? (
@@ -122,14 +101,7 @@ const styles = StyleSheet.create({
   itemContent: {
     gap: 5,
   },
-  itemTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
   itemTitle: {
-    flex: 1,
     fontSize: 15,
     fontWeight: '700' as const,
     color: Colors.dark,
@@ -138,15 +110,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: Colors.gray,
-  },
-  priorityPill: {
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  priorityText: {
-    fontSize: 11,
-    fontWeight: '800' as const,
   },
   actionButton: {
     alignSelf: 'flex-start',

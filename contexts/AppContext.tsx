@@ -853,7 +853,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
                 name: item.name ?? '',
                 description: item.description ?? '',
                 price: typeof item.price === 'number' ? item.price : 0,
-                category: item.category,
                 image: item.image,
                 available: item.available !== false,
               });
@@ -3562,7 +3561,7 @@ if (error) {
 
   const createOwnerMessage = useCallback(async (message: { title: string; body: string; type: OwnerMessageType }) => {
     if (!isAuthenticated || !authUser || userProfile?.role !== 'admin') {
-      throw new Error('Only admins can send owner messages.');
+      throw new Error('Only admins can send TruckTap Partner Network messages.');
     }
 
     const title = message.title.trim();

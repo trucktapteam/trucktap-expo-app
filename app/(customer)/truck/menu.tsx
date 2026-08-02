@@ -98,7 +98,7 @@ export default function FullMenuScreen() {
       activeOpacity={0.7}
     >
       {item.image ? (
-        <Image source={{ uri: item.image }} style={styles.menuItemImage} contentFit="cover" />
+        <Image source={{ uri: item.image }} style={styles.menuItemImage} contentFit="contain" />
       ) : (
         <View style={styles.menuItemImagePlaceholder}>
           <Utensils size={40} color={colors.secondaryText} />
@@ -267,6 +267,7 @@ function createStyles(colors: any) {
     menuItemImage: {
       width: 120,
       height: 120,
+      backgroundColor: colors.secondaryBackground,
     },
     menuItemImagePlaceholder: {
       width: 120,

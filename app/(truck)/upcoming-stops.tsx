@@ -26,7 +26,11 @@ import {
   UpcomingStopLocationStatus,
 } from '@/lib/handsFreeLive';
 import { getDestinationLocation } from '@/lib/locationTimezone';
-import { getUpcomingStopReminderIds } from '@/lib/upcomingStopReminders';
+import {
+  getUpcomingStopReminderIds,
+  getUpcomingStopReminderTime,
+  hasUpcomingStopStarted,
+} from '@/lib/upcomingStopReminders';
 import {
   formatStopDuration,
   getStopDurationMinutes,
@@ -125,13 +129,6 @@ const formatTimeButton = (date: Date) =>
     hour: 'numeric',
     minute: '2-digit',
   });
-
-const getUpcomingStopReminderTime = (stop: UpcomingStop, minutesBefore: number) => {
-  const startsAtTime = Date.parse(stop.starts_at);
-  if (!Number.isFinite(startsAtTime)) return null;
-
-  return new Date(startsAtTime - minutesBefore * 60 * 1000);
-};
 
 const getReminderNotificationTrigger = (fireAt: Date, now = new Date()) => {
   if (Platform.OS === 'android') {
@@ -767,7 +764,7 @@ export default function UpcomingStopsScreen() {
     settings: ReminderSettings = reminderSettingsRef.current,
     overrideReminderAt?: Date
   ): Promise<ReminderScheduleResult> => {
-    const reminderAt = overrideReminderAt ?? getUpcomingStopReminderTime(stop, settings.minutesBefore);
+    const reminderAt = overrideReminderAt ?? getUpcomingStopReminderTime(stop.starts_at, settings.minutesBefore);
     const now = new Date();
 
     const idsWithoutOldReminder = await cancelReminderForStop(stop.id, ids);
@@ -833,7 +830,7 @@ export default function UpcomingStopsScreen() {
 
   const hasActiveReminder = (stop: UpcomingStop) => {
     const scheduledNotificationId = scheduledReminderIds[stop.id];
-    const reminderAt = getUpcomingStopReminderTime(stop, reminderSettings.minutesBefore);
+    const reminderAt = getUpcomingStopReminderTime(stop.starts_at, reminderSettings.minutesBefore);
     const now = new Date();
     const reminderOn = !!(
       reminderSettings.enabled &&
@@ -866,6 +863,10 @@ export default function UpcomingStopsScreen() {
       let nextIds = reminderIdsRef.current;
       for (const stop of stops) {
         if (REMINDER_CANCEL_STATUSES.includes(stop.status)) {
+          nextIds = await cancelReminderForStop(stop.id, nextIds);
+          continue;
+        }
+        if (hasUpcomingStopStarted(stop.starts_at)) {
           nextIds = await cancelReminderForStop(stop.id, nextIds);
           continue;
         }
@@ -904,6 +905,8 @@ export default function UpcomingStopsScreen() {
       let nextIds = reminderIdsRef.current;
       for (const stop of stops) {
         if (REMINDER_CANCEL_STATUSES.includes(stop.status)) {
+          nextIds = await cancelReminderForStop(stop.id, nextIds);
+        } else if (hasUpcomingStopStarted(stop.starts_at)) {
           nextIds = await cancelReminderForStop(stop.id, nextIds);
         } else {
           const scheduleResult = await scheduleReminderForStop(

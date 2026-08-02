@@ -19,11 +19,14 @@ export function coordinateTruckDashboardRecommendations(
 ): TruckDashboardRecommendations {
   const mission = missionOverride ?? getTodaysMission(commandCenter, opportunities, truckId);
 
-  const displayOpportunities = (
+  const eligibleOpportunities = (
     mission.kind === 'opportunity' && mission.sourceOpportunityId
       ? opportunities.filter(opportunity => opportunity.id !== mission.sourceOpportunityId)
-      : opportunities
-  ).slice(0, BIGGEST_OPPORTUNITIES_LIMIT);
+      : [...opportunities]
+  );
+  const displayOpportunities = eligibleOpportunities
+    .sort((a, b) => Number(b.action === 'goLive') - Number(a.action === 'goLive'))
+    .slice(0, BIGGEST_OPPORTUNITIES_LIMIT);
 
   return { mission, opportunities: displayOpportunities };
 }

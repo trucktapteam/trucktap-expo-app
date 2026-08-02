@@ -180,7 +180,7 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
       icon: 'radio',
       title: 'Go LIVE Regularly',
       description: 'Nearby customers are only notified while you’re LIVE - the more often, the more chances to be found.',
-      why: 'Going LIVE is what puts your truck on the map for customers searching right now. Truck owners who go LIVE consistently build trust and habit - customers learn to check TruckTap first because it usually pays off.',
+      why: 'Going LIVE is what puts your truck on the map for customers searching right now. TruckTap Partners who go LIVE consistently build trust and habit - customers learn to check TruckTap first because it usually pays off.',
       action: 'goLive',
     });
   }
@@ -253,7 +253,7 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
       recommendationPriority: 'medium',
       icon: 'message-square-reply',
       title: 'Reply to Reviews',
-      description: 'Customers appreciate hearing back from owners.',
+      description: 'Customers appreciate hearing back from you.',
       why: 'A short, genuine reply shows both that reviewer and everyone reading later that feedback actually reaches you.',
       action: 'reviews',
     });

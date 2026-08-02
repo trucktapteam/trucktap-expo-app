@@ -155,11 +155,11 @@ export default function CustomerLoginScreen() {
   />
 </View>
            <Text style={styles.title}>
-  {isSignUp ? 'Create Account' : 'Welcome Back'}
+  {isSignUp ? 'Join the TruckTap Network' : 'Welcome Back'}
 </Text>
            <Text style={styles.subtitle}>
   {isSignUp
-    ? 'Create your account to review trucks and save favorites.'
+    ? 'Create your account to review trucks, save favorites, and connect across the TruckTap Network.'
     : 'Find amazing food trucks near you!'}
 </Text>
           </View>
@@ -272,10 +272,10 @@ export default function CustomerLoginScreen() {
              <Text style={styles.loginButtonText}>
   {isSubmitting
     ? isSignUp
-      ? 'Creating Account...'
+      ? 'Joining the Network...'
       : 'Signing in...'
     : isSignUp
-      ? 'Create Account'
+      ? 'Join the Network'
       : 'Sign in with Email'}
 </Text>
             </TouchableOpacity>

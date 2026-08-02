@@ -356,7 +356,7 @@ function RootLayoutNav() {
       <Stack.Screen name="role-select" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding-location" options={{ headerShown: false }} />
       <Stack.Screen name="truck-setup" options={{ title: 'Create Truck' }} />
-      <Stack.Screen name="truck-login" options={{ title: 'Truck Owner Login' }} />
+      <Stack.Screen name="truck-login" options={{ title: 'TruckTap Partner Login' }} />
       <Stack.Screen name="admin-truck-picker" options={{ title: 'Choose a Truck' }} />
       <Stack.Screen name="admin-live-activity" options={{ title: 'LIVE Activity' }} />
       <Stack.Screen name="customer-login" options={{ headerShown: false, presentation: 'transparentModal' }} />

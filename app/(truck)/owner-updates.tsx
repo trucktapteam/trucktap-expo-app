@@ -58,7 +58,7 @@ export default function OwnerUpdatesScreen() {
       await createOwnerMessage({ title, body, type });
       resetComposer();
       setShowComposer(false);
-      Alert.alert('Message sent', 'Truck owners will see this in Message Center.');
+      Alert.alert('Message sent', 'TruckTap Partners will see this in Message Center.');
     } catch (error: any) {
       Alert.alert('Could not send', error?.message || 'Please try again.');
     } finally {
@@ -120,7 +120,7 @@ export default function OwnerUpdatesScreen() {
                   style={[styles.input, styles.bodyInput]}
                   value={body}
                   onChangeText={setBody}
-                  placeholder="Write the message for truck owners..."
+                  placeholder="Write a message for the TruckTap Partner Network..."
                   placeholderTextColor={colors.secondaryText}
                   multiline
                   textAlignVertical="top"
@@ -136,7 +136,7 @@ export default function OwnerUpdatesScreen() {
                   ) : (
                     <>
                       <Send size={17} color={colors.background} />
-                      <Text style={styles.sendButtonText}>Send to All Truck Owners</Text>
+                      <Text style={styles.sendButtonText}>Send to All Partners</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -154,7 +154,7 @@ export default function OwnerUpdatesScreen() {
             <Bell size={56} color={colors.secondaryText} />
             <Text style={styles.emptyTitle}>No messages yet</Text>
             <Text style={styles.emptySubtitle}>
-              TruckTap messages, maintenance notices, and important owner updates will appear here.
+              TruckTap messages, maintenance notices, and important TruckTap Partner Network updates will appear here.
             </Text>
           </View>
         )}

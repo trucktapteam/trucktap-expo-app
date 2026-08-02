@@ -18,7 +18,7 @@ export default function ModeSwitchToggle({ mode, onPress, compact = false }: Mod
       onPress={onPress}
       activeOpacity={0.82}
       accessibilityRole="button"
-      accessibilityLabel={isCustomerMode ? 'Open owner dashboard' : 'Open customer view'}
+      accessibilityLabel={isCustomerMode ? 'Open Partner dashboard' : 'Open customer view'}
     >
       <View style={[styles.track, compact && styles.trackCompact]}>
         <View style={[styles.side, styles.ownerSide]}>
@@ -32,7 +32,7 @@ export default function ModeSwitchToggle({ mode, onPress, compact = false }: Mod
             ]}
             numberOfLines={1}
           >
-            {compact ? 'Owner' : 'Owner'}
+            Partner
           </Text>
         </View>
 

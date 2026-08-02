@@ -5,6 +5,24 @@ type ScheduledNotificationLike = {
   };
 };
 
+export const getUpcomingStopReminderTime = (
+  startsAt: string,
+  minutesBefore: number
+) => {
+  const startsAtTime = Date.parse(startsAt);
+  if (!Number.isFinite(startsAtTime)) return null;
+
+  return new Date(startsAtTime - minutesBefore * 60 * 1000);
+};
+
+export const hasUpcomingStopStarted = (
+  startsAt: string,
+  nowMs = Date.now()
+) => {
+  const startsAtTime = Date.parse(startsAt);
+  return Number.isFinite(startsAtTime) && startsAtTime <= nowMs;
+};
+
 export const getUpcomingStopReminderIds = (
   notifications: ScheduledNotificationLike[]
 ) => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight } from 'lucide-react-native';
+import { MapPin, Utensils, Pencil, Settings, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckMenu, useTruckRating } from '@/contexts/AppContext';
 import * as Clipboard from 'expo-clipboard';
@@ -24,7 +24,10 @@ import { getLocalCalendarDateKey } from '@/lib/truckDailyMission';
 import { resolveStoredDailyTruckMission } from '@/lib/truckDailyMissionStorage';
 import { getTruckBusinessSnapshot } from '@/lib/truckBusinessSnapshot';
 import { getRecurringTruckWin, getTruckWins } from '@/lib/truckWins';
-import CoachSection from '@/components/coach/CoachSection';
+import BiggestOpportunities from '@/components/coach/BiggestOpportunities';
+import TodaysMission from '@/components/coach/TodaysMission';
+import BusinessSnapshot from '@/components/coach/BusinessSnapshot';
+import Wins from '@/components/coach/Wins';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -1115,11 +1118,8 @@ export default function TruckDashboard() {
         </View>
 
         {commandCenter && dashboardRecommendations && (
-          <CoachSection
-            mission={dashboardRecommendations.mission}
+          <BiggestOpportunities
             opportunities={dashboardRecommendations.opportunities}
-            snapshotTiles={snapshotTiles}
-            wins={wins}
             onAction={handleOpportunityAction}
           />
         )}
@@ -1154,66 +1154,27 @@ export default function TruckDashboard() {
           </View>
           <View style={styles.announcementTextWrap}>
             <Text style={styles.announcementTitle}>Announcements</Text>
-            <Text style={styles.announcementSubtitle}>Share a 7-day update with customers</Text>
+            <Text style={styles.announcementSubtitle}>Update customers who have favorited your truck</Text>
           </View>
           <ChevronRight size={18} color={Colors.gray} />
         </TouchableOpacity>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Customer Feedback</Text>
-        </View>
-
-        <StatsRow
-          stats={{
-            reviewsCount: rating.count,
-            rating: rating.average || 0,
-          }}
-          onReviewsPress={() => router.push('/(truck)/reviews' as any)}
-        />
-
-        {qrStats.totalScans > 0 && (
-          <View style={styles.qrStatsCard}>
-            <View style={styles.qrStatsHeader}>
-              <ScanLine size={20} color={Colors.primary} />
-              <Text style={styles.qrStatsTitle}>QR Engagement</Text>
-            </View>
-            <View style={styles.qrStatsRow}>
-              <View style={styles.qrStatItem}>
-                <Text style={styles.qrStatNumber}>{qrStats.totalScans}</Text>
-                <Text style={styles.qrStatLabel}>Total Scans</Text>
-              </View>
-              {qrStats.lastScanned ? (
-                <View style={styles.qrStatItem}>
-                  <Text style={styles.qrStatNumber}>{formatLastScanned(qrStats.lastScanned)}</Text>
-                  <Text style={styles.qrStatLabel}>Last Scanned</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
+        {commandCenter && dashboardRecommendations && (
+          <TodaysMission
+            mission={dashboardRecommendations.mission}
+            onAction={handleOpportunityAction}
+          />
         )}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Owner Tools</Text>
+          <Text style={styles.sectionTitle}>Partner Tools</Text>
         </View>
 
         <View style={styles.gridContainer}>
-          <DashboardCard 
-            icon={MapPin}
-            label="Location"
-            onPress={() => router.push('/(truck)/update-location' as any)}
-          />
           <DashboardCard 
             icon={Utensils}
             label="Menu Editor"
             onPress={() => router.push('/(truck)/menu-editor' as any)}
-          />
-        </View>
-
-        <View style={styles.gridContainer}>
-          <DashboardCard
-            icon={Clock}
-            label="Operating Hours"
-            onPress={() => router.push('/(truck)/operating-hours' as any)}
           />
           <View style={styles.cardWithBadge}>
             <DashboardCard 
@@ -1253,28 +1214,6 @@ export default function TruckDashboard() {
           />
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Customer-Facing Profile</Text>
-        </View>
-
-        <TouchableOpacity 
-          style={styles.previewCard}
-          onPress={() => router.push(`/truck/${truck.id}?preview=true` as any)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.previewIconContainer}>
-            <Eye size={24} color={Colors.primary} />
-          </View>
-          <View style={styles.previewContent}>
-            <Text style={styles.previewTitle}>Preview Your Profile</Text>
-            <Text style={styles.previewSubtitle}>This is what customers see when they scan your QR code</Text>
-          </View>
-        </TouchableOpacity>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Growth Tools</Text>
-        </View>
-
         <View style={styles.shareMainCard}>
           <View style={styles.shareMainHeader}>
             <View style={styles.shareMainIconContainer}>
@@ -1296,7 +1235,7 @@ export default function TruckDashboard() {
             <View style={styles.shareDisabledHelper}>
               <AlertCircle size={16} color={Colors.warning} />
               <Text style={styles.shareDisabledHelperText}>
-                Add menu items, photos, and operating hours to improve your public profile, but you can still share your truck right now.
+                Add menu items and photos to improve your public profile, but you can still share your truck right now.
               </Text>
             </View>
           )}
@@ -1358,6 +1297,64 @@ export default function TruckDashboard() {
             </View>
           </View>
         </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Customer Preview</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.previewCard}
+          onPress={() => router.push(`/truck/${truck.id}?preview=true` as any)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.previewIconContainer}>
+            <Eye size={24} color={Colors.primary} />
+          </View>
+          <View style={styles.previewContent}>
+            <Text style={styles.previewTitle}>Preview Your Profile</Text>
+            <Text style={styles.previewSubtitle}>This is what customers see when they scan your QR code</Text>
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Customer Feedback</Text>
+        </View>
+
+        <StatsRow
+          stats={{
+            reviewsCount: rating.count,
+            rating: rating.average || 0,
+          }}
+          onReviewsPress={() => router.push('/(truck)/reviews' as any)}
+        />
+
+        {qrStats.totalScans > 0 && (
+          <View style={styles.qrStatsCard}>
+            <View style={styles.qrStatsHeader}>
+              <ScanLine size={20} color={Colors.primary} />
+              <Text style={styles.qrStatsTitle}>QR Engagement</Text>
+            </View>
+            <View style={styles.qrStatsRow}>
+              <View style={styles.qrStatItem}>
+                <Text style={styles.qrStatNumber}>{qrStats.totalScans}</Text>
+                <Text style={styles.qrStatLabel}>Total Scans</Text>
+              </View>
+              {qrStats.lastScanned ? (
+                <View style={styles.qrStatItem}>
+                  <Text style={styles.qrStatNumber}>{formatLastScanned(qrStats.lastScanned)}</Text>
+                  <Text style={styles.qrStatLabel}>Last Scanned</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        )}
+
+        {commandCenter && dashboardRecommendations && (
+          <>
+            <BusinessSnapshot tiles={snapshotTiles} />
+            <Wins wins={wins} />
+          </>
+        )}
       </ScrollView>
 
       {toastVisible && (

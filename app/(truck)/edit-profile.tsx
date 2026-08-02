@@ -39,7 +39,6 @@ const CUISINES = [
   'Italian',
   'Mediterranean',
   'Mexican',
-  'Other',
   'Seafood',
   'Snow Cones',
   'Soul Food',
@@ -125,9 +124,9 @@ export default function EditProfile() {
     hydratedTruckIdRef.current = truck.id;
     setName(truck.name || '');
     const savedCuisine = truck.cuisine_type || '';
-    const isPredefinedCuisine = CUISINES.includes(savedCuisine);
+    const isPredefinedCuisine = !savedCuisine || CUISINES.includes(savedCuisine);
     setCuisineType(savedCuisine);
-    setIsCustomCuisine(!isPredefinedCuisine);
+    setIsCustomCuisine(Boolean(savedCuisine) && !isPredefinedCuisine);
     setCustomCuisine(isPredefinedCuisine ? '' : savedCuisine);
     setPhone(truck.phone || '');
     setBio(truck.bio || '');
@@ -215,12 +214,6 @@ export default function EditProfile() {
       newErrors.name = 'Truck name is required';
     }
 
-    if (!cuisineType.trim()) {
-      newErrors.cuisineType = isCustomCuisine
-        ? 'What do you serve'
-        : 'Cuisine type is required';
-    }
-
     const phoneDigits = phone.replace(/\D/g, '');
     if (phone.trim() && phoneDigits.length > 0 && phoneDigits.length < 10) {
       newErrors.phone = 'Please enter a valid 10-digit phone number';
@@ -249,7 +242,7 @@ export default function EditProfile() {
     }
     
     return Object.keys(newErrors).length === 0;
-  }, [name, cuisineType, isCustomCuisine, phone, website, facebookUrl, instagramUrl, tiktokUrl]);
+  }, [name, phone, website, facebookUrl, instagramUrl, tiktokUrl]);
 
   const toggleTrustBadge = useCallback((badgeId: string) => {
     setTrustBadges(prev =>
@@ -590,9 +583,7 @@ export default function EditProfile() {
               <Text style={styles.sectionTitle}>Basic Info</Text>
               <View style={styles.card}>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>
-                    Truck Name <Text style={styles.required}>*</Text>
-                  </Text>
+                  <Text style={styles.label}>Truck Name</Text>
                   <TextInput
                     style={[styles.input, errors.name && styles.inputError]}
                     value={name}
@@ -609,9 +600,7 @@ export default function EditProfile() {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>
-                    Cuisine Type <Text style={styles.required}>*</Text>
-                  </Text>
+                  <Text style={styles.label}>Cuisine Type (Optional)</Text>
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -637,9 +626,6 @@ export default function EditProfile() {
                               setIsCustomCuisine(false);
                               setCuisineType(cuisine);
                             }
-                            if (errors.cuisineType) {
-                              setErrors((prev) => ({ ...prev, cuisineType: '' }));
-                            }
                           }}
                         >
                           <Text
@@ -656,22 +642,16 @@ export default function EditProfile() {
                   </ScrollView>
                   {isCustomCuisine ? (
                     <TextInput
-                      style={[styles.input, errors.cuisineType && styles.inputError]}
+                      style={styles.input}
                       value={customCuisine}
                       onChangeText={(text) => {
                         setCustomCuisine(text);
                         setCuisineType(text);
-                        if (errors.cuisineType && text.trim()) {
-                          setErrors((prev) => ({ ...prev, cuisineType: '' }));
-                        }
                       }}
                       placeholder="What do you serve"
                       placeholderTextColor={Colors.gray}
                       autoCapitalize="words"
                     />
-                  ) : null}
-                  {errors.cuisineType ? (
-                    <Text style={styles.errorText}>{errors.cuisineType}</Text>
                   ) : null}
                 </View>
               </View>
@@ -1104,9 +1084,6 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.dark,
     marginBottom: 8,
-  },
-  required: {
-    color: Colors.error,
   },
   input: {
     backgroundColor: Colors.lightGray,

@@ -279,11 +279,11 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
 
   const handleOwnerAction = useCallback((action: string) => {
     if (!isAuthenticated || !authUser) {
-      Alert.alert('Owner Access Required', 'You must be logged in as the truck owner to perform this action.');
+      Alert.alert('Partner Access Required', 'You must be logged in as this truck\'s TruckTap Partner to perform this action.');
       return;
     }
     if (!isOwnerOfTruck) {
-      Alert.alert('Owner Access Required', 'Only the truck owner can perform this action.');
+      Alert.alert('Partner Access Required', 'Only this truck\'s TruckTap Partner can perform this action.');
       return;
     }
     switch (action) {
@@ -902,7 +902,7 @@ console.log('[FORMAT DATE]', dateInput);
                       activeOpacity={0.7}
                     >
                       {item.image ? (
-                        <Image source={{ uri: item.image }} style={styles.menuItemImage} contentFit="cover" />
+                        <Image source={{ uri: item.image }} style={styles.menuItemImage} contentFit="contain" />
                       ) : (
                         <View style={styles.menuItemImagePlaceholder}>
                           <Utensils size={32} color={colors.secondaryText} />
