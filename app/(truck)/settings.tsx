@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform, Switch } from 'react-native';
-import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, ArrowLeft, Archive, ArchiveRestore } from 'lucide-react-native';
+import { User, LogOut, Bell, MapPin, MessageSquare, Mail, Trash2, ChevronRight, AlertCircle, ArrowLeft, Archive, ArchiveRestore, Plus } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useApp } from '@/contexts/AppContext';
@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { fetchPrivateProfile } from '@/lib/privateProfile';
 import { emitClientRestriction } from '@/lib/releasePolicy';
+import { getArchivedPartnerTrucks } from '@/lib/activeTruck';
 
 type OwnerNotificationPreferences = {
   favorites: boolean;
@@ -33,6 +34,7 @@ export default function TruckSettings() {
     logout,
     setCurrentUser,
     getUserTruck,
+    getOwnedTrucks,
     updateTruckDetails,
     goOffline,
     foodTrucks,
@@ -55,6 +57,15 @@ export default function TruckSettings() {
 
   const ownerTruck = getUserTruck();
   const isAdmin = currentUser?.role === 'admin';
+  // Independent of truck/eligibility state on purpose -- must stay reachable
+  // for a Partner whose only truck is archived, without requiring restore.
+  const isPartner = currentUser?.role === 'truck';
+  // Admins keep their existing single-truck archive/restore path (below, tied
+  // to whichever truck the admin picker has selected) -- this list is
+  // Partner-only, on purpose, per requirement 4 (preserve admin behavior).
+  const archivedTrucks = isPartner && authUser
+    ? getArchivedPartnerTrucks(getOwnedTrucks(), authUser.id)
+    : [];
   const selectedAdminTruck = foodTrucks.find(t => t.id === selectedAdminTruckId) ?? null;
   const selectedAdminTruckIsOwned =
     isAdmin && !!selectedAdminTruck && !!currentUser?.id && selectedAdminTruck.owner_id === currentUser.id;
@@ -274,6 +285,14 @@ setCurrentUser(customerUser);
     }
   };
 
+  const handleAddAnotherTruck = () => {
+    router.push('/truck-setup' as any);
+  };
+
+  const handleViewArchivedTrucks = () => {
+    router.push('/(truck)/archived-trucks' as any);
+  };
+
   const handleReportBug = () => {
     const email = 'trucktapteam@gmail.com';
     const subject = 'Bug Report - TruckTap';
@@ -399,6 +418,31 @@ setCurrentUser(customerUser);
               <Archive size={20} color={colors.error} />
               <Text style={[styles.dangerButtonText, { color: colors.error }]}>Archive Truck</Text>
               <ChevronRight size={20} color={colors.error} style={styles.chevron} />
+            </TouchableOpacity>
+          )}
+
+          {isPartner && (
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+              onPress={handleAddAnotherTruck}
+            >
+              <Plus size={20} color={colors.primary} />
+              <Text style={[styles.actionButtonText, { color: colors.primary }]}>Add Another Truck</Text>
+              <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
+            </TouchableOpacity>
+          )}
+
+          {isPartner && archivedTrucks.length > 0 && (
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+              onPress={handleViewArchivedTrucks}
+            >
+              <Archive size={20} color={colors.secondaryText} />
+              <View style={styles.actionButtonTextWrap}>
+                <Text style={[styles.actionButtonText, { color: colors.text }]}>Archived Trucks</Text>
+                <Text style={[styles.actionButtonSubtitle, { color: colors.secondaryText }]}>View or restore archived trucks.</Text>
+              </View>
+              <ChevronRight size={20} color={colors.secondaryText} style={styles.chevron} />
             </TouchableOpacity>
           )}
         </View>
@@ -646,6 +690,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '500' as const,
+  },
+  actionButtonTextWrap: {
+    flex: 1,
+  },
+  actionButtonSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
   },
   chevron: {
     opacity: 0.5,

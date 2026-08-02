@@ -15,7 +15,7 @@ type CreatedTruckRow = { id: string; name: string; owner_id: string };
 
 export default function TruckSetupScreen() {
   const router = useRouter();
-  const { completeOnboarding, currentUser, refreshOwnedTrucks, setCurrentUser } = useApp();
+  const { completeOnboarding, currentUser, refreshOwnedTrucks, setCurrentUser, switchActiveTruck } = useApp();
   const { colors } = useTheme();
   const { isAuthenticated, user: authUser, isLoading: authLoading } = useAuth();
   const [truckName, setTruckName] = useState('');
@@ -114,6 +114,10 @@ export default function TruckSetupScreen() {
         router.replace('/(truck)/(tabs)/dashboard' as any);
         return;
       }
+
+      // New trucks have historically opened immediately in setup. Persist
+      // that shared active selection before the truck-scoped wizard mounts.
+      await switchActiveTruck(data.id.toString());
 
       setCurrentUser({
         id: authUser.id,

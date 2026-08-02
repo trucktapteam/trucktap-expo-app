@@ -20,14 +20,14 @@ import { isTruckVisibilitySetupComplete } from '@/lib/truckVisibilitySetup';
 
 export default function TruckLoginScreen() {
   const router = useRouter();
-  const { getOwnedTrucks, setCurrentUser, completeOnboarding, isOwnerLoading, setPendingRedirect, currentUser } = useApp();
+  const { getOwnedTrucks, eligibleOwnedTrucks, setCurrentUser, switchActiveTruck, completeOnboarding, isOwnerLoading, setPendingRedirect, currentUser } = useApp();
   const { isAuthenticated, isLoading: authLoading, user: authUser } = useAuth();
   const { colors } = useTheme();
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
   const loading = authLoading || isOwnerLoading || (isAuthenticated && !currentUser);
-  const ownedTrucks: FoodTruck[] = getOwnedTrucks();
   const isAdmin = currentUser?.role === 'admin';
+  const ownedTrucks: FoodTruck[] = isAdmin ? getOwnedTrucks() : eligibleOwnedTrucks;
 
   useEffect(() => {
     if (loading) return;
@@ -45,12 +45,16 @@ export default function TruckLoginScreen() {
   useEffect(() => {
     if (!loading && isAuthenticated && authUser && !isAdmin && ownedTrucks.length === 1) {
       if (DEBUG) console.log('[TruckLogin] Auto-selecting truck:', ownedTrucks[0].id);
-      selectTruck(ownedTrucks[0]);
+      void selectTruck(ownedTrucks[0]);
     }
   }, [isAuthenticated, authUser, isAdmin, loading, ownedTrucks.length]);
 
-  const selectTruck = (truck: FoodTruck) => {
+  const selectTruck = async (truck: FoodTruck) => {
     if (!authUser) return;
+
+    if (!isAdmin) {
+      await switchActiveTruck(truck.id);
+    }
 
     setCurrentUser({
       ...(currentUser || {
@@ -182,7 +186,7 @@ export default function TruckLoginScreen() {
               <TouchableOpacity
                 key={truck.id}
                 style={[styles.truckCard, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
-                onPress={() => selectTruck(truck)}
+                onPress={() => void selectTruck(truck)}
               >
                 <Image source={{ uri: truck.logo }} style={styles.truckLogo} />
                 <View style={styles.truckInfo}>

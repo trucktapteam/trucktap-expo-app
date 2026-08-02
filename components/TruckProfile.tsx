@@ -2,9 +2,7 @@ import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, TextInput, Modal, Alert, Platform, Animated, Share, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { CalendarDays, MapPin, Clock, ImageIcon, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Globe, Users, ShieldCheck } from 'lucide-react-native';
-import { FontAwesome5 } from '@expo/vector-icons';
-import { getSocialBrandIcon } from '@/lib/socialLinkIcons';
+import { CalendarDays, MapPin, Clock, ImageIcon, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Users, ShieldCheck } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -76,27 +74,6 @@ const formatStopTime = (iso: string) =>
     minute: '2-digit',
   });
 
-const normalizeExternalProfileUrl = (value?: string | null) => {
-  const trimmed = value?.trim() ?? '';
-  if (!trimmed) return '';
-
-  const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  try {
-    const url = new URL(normalized);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? normalized : '';
-  } catch {
-    return '';
-  }
-};
-
-const getProfileLinkLabel = (url: string) => {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return 'Open profile link';
-  }
-};
-
 const trustBadgeLabels: Record<string, string> = {
   veteran_owned: 'Veteran Owned',
   family_owned: 'Family Owned',
@@ -131,7 +108,7 @@ interface TruckProfileProps {
 
 export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProps) {
   const router = useRouter();
-  const { foodTrucks, currentUser, toggleFavorite, addReview, isTruckOpenNow, incrementView, incrementNavigation, incrementMenuView, incrementPhotoView, getAnnouncements, getUpcomingStops, isProfileComplete, getTruckActivityStatus, menuItems, formatOperatingHours, allTrucksLoading, isOwnerLoading } = useApp();
+  const { foodTrucks, currentUser, toggleFavorite, addReview, isTruckOpenNow, incrementView, incrementNavigation, incrementMenuView, incrementPhotoView, getAnnouncements, getUpcomingStops, isProfileComplete, getTruckActivityStatus, menuItems, allTrucksLoading, isOwnerLoading } = useApp();
   const { colors } = useTheme();
   const { isAuthenticated, user: authUser, isLoading: authLoading } = useAuth();
   
@@ -350,15 +327,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
 
   const hasValidPhone = !!truck.phone && truck.phone.length === 10;
   const isClosedCustomerView = mode === 'customer' && !truckOpenNow;
-  const customerLocationText = isClosedCustomerView
-    ? 'Not currently serving'
-    : truck.location.address || 'Serving location not set';
-  const socialLinks = [
-    { key: 'website', label: 'Website', url: normalizeExternalProfileUrl(truck.website) },
-    { key: 'facebook', label: 'Facebook', url: normalizeExternalProfileUrl(truck.facebook_url) },
-    { key: 'instagram', label: 'Instagram', url: normalizeExternalProfileUrl(truck.instagram_url) },
-    { key: 'tiktok', label: 'TikTok', url: normalizeExternalProfileUrl(truck.tiktok_url) },
-  ].filter(link => link.url);
+  const truckBio = truck.bio?.trim() ?? '';
   const trustBadges = (truck.trust_badges ?? []).filter(badge => !!trustBadgeLabels[badge]);
 
   const handleNavigate = () => {
@@ -421,15 +390,6 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
     Linking.openURL(phoneUrl).catch((err) => {
       console.error('Failed to open phone:', err);
       Alert.alert('Error', 'Unable to make call');
-    });
-  };
-
-  const handleOpenExternalProfileLink = (url: string) => {
-    if (!url) return;
-
-    Linking.openURL(url).catch((err) => {
-      console.error('Failed to open profile link:', err);
-      Alert.alert('Error', 'Unable to open this link');
     });
   };
 
@@ -550,7 +510,6 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
 
   const formatTimestamp = (dateInput?: string | Date) => {
   if (!dateInput) return 'Just now';
-console.log('[FORMAT DATE]', dateInput);
   const date =
     typeof dateInput === 'string'
       ? new Date(dateInput)
@@ -789,42 +748,11 @@ console.log('[FORMAT DATE]', dateInput);
             )}
           </View>
 
-          <TruckSectionCard title="About">
-            <View style={styles.aboutContent}>
-              <View style={styles.infoRow}>
-                <MapPin size={20} color={colors.secondaryText} />
-                <Text style={styles.infoText}>{customerLocationText}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Clock size={20} color={colors.secondaryText} />
-                <Text style={styles.infoText}>{formatOperatingHours(truck.id)}</Text>
-              </View>
-              {socialLinks.map(link => {
-                const brandIcon = getSocialBrandIcon(link.key);
-                return (
-                  <TouchableOpacity
-                    key={link.key}
-                    style={styles.infoRow}
-                    onPress={() => handleOpenExternalProfileLink(link.url)}
-                    activeOpacity={0.7}
-                    accessibilityRole="link"
-                    accessibilityLabel={`${link.label}: ${getProfileLinkLabel(link.url)}`}
-                  >
-                    {brandIcon ? (
-                      <FontAwesome5 name={brandIcon.name} brand size={20} color={brandIcon.color} />
-                    ) : (
-                      <Globe size={20} color={colors.primary} />
-                    )}
-                    <Text style={[styles.infoText, styles.profileLinkText]} numberOfLines={1}>
-                      {getProfileLinkLabel(link.url)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-              <View style={styles.bioDivider} />
-              <ExpandableText text={truck.bio} numberOfLines={3} style={styles.bioText} />
-            </View>
-          </TruckSectionCard>
+          {truckBio ? (
+            <TruckSectionCard title="About">
+              <ExpandableText text={truckBio} numberOfLines={3} style={styles.bioText} />
+            </TruckSectionCard>
+          ) : null}
 
           <TruckSectionCard>
             <View style={styles.sectionHeaderRow}>
@@ -1623,30 +1551,6 @@ emptyReviewText: {
     fontSize: 16,
     color: colors.secondaryText,
     lineHeight: 24,
-  },
-  bioDivider: {
-    height: 1,
-    backgroundColor: colors.secondaryBackground,
-    marginVertical: 16,
-  },
-  aboutContent: {
-    paddingTop: 4,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 12,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 15,
-    color: colors.secondaryText,
-    lineHeight: 20,
-  },
-  profileLinkText: {
-    color: colors.primary,
-    fontWeight: '700' as const,
   },
   menuScrollContent: {
     paddingHorizontal: 16,

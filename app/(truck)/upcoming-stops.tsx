@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { CalendarDays, ChevronDown, ChevronUp, Clock, ImageIcon, MapPin, Pencil, RefreshCw, Trash2, X, Zap } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import { getTruckScopedStorageKey } from '@/lib/activeTruck';
 import { SavedLocation, UpcomingStop, UpcomingStopStatus } from '@/types';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import SchedulerSettingsSection from '@/components/SchedulerSettingsSection';
@@ -329,6 +330,7 @@ export default function UpcomingStopsScreen() {
   const router = useRouter();
   const {
     getUserTruck,
+    currentUser,
     getUpcomingStops,
     addUpcomingStop,
     updateUpcomingStop,
@@ -343,6 +345,15 @@ export default function UpcomingStopsScreen() {
     endImagePickerSession,
   } = useApp();
   const truck = getUserTruck();
+  const reminderSettingsKey = currentUser?.id && truck?.id
+    ? getTruckScopedStorageKey(REMINDER_SETTINGS_KEY, currentUser.id, truck.id)
+    : null;
+  const reminderIdsKey = currentUser?.id && truck?.id
+    ? getTruckScopedStorageKey(REMINDER_IDS_KEY, currentUser.id, truck.id)
+    : null;
+  const recentLocationsKey = currentUser?.id && truck?.id
+    ? getTruckScopedStorageKey(RECENT_LOCATIONS_KEY, currentUser.id, truck.id)
+    : null;
   useTruckLifecycleLogger('UpcomingStopsScreen');
 
   const [dateValue, setDateValue] = useState(() => new Date());
@@ -505,10 +516,15 @@ export default function UpcomingStopsScreen() {
 
   React.useEffect(() => {
     const loadReminderState = async () => {
+      if (!reminderSettingsKey || !reminderIdsKey || !truck) return;
+      setReminderSettingsLoaded(false);
+      setReminderSettings(normalizeReminderSettings());
+      setReminderIds({});
+      setScheduledReminderIds({});
       try {
         const [storedSettings, storedIds, scheduledNotifications] = await Promise.all([
-          AsyncStorage.getItem(REMINDER_SETTINGS_KEY),
-          AsyncStorage.getItem(REMINDER_IDS_KEY),
+          AsyncStorage.getItem(reminderSettingsKey),
+          AsyncStorage.getItem(reminderIdsKey),
           Platform.OS === 'web'
             ? Promise.resolve(null)
             : Notifications.getAllScheduledNotificationsAsync().catch(error => {
@@ -532,15 +548,19 @@ export default function UpcomingStopsScreen() {
           }
         }
 
+        const truckStopIds = new Set(getUpcomingStops(truck.id).map(stop => stop.id));
         const actualIds = scheduledNotifications
-          ? getUpcomingStopReminderIds(scheduledNotifications)
+          ? Object.fromEntries(
+              Object.entries(getUpcomingStopReminderIds(scheduledNotifications))
+                .filter(([stopId]) => truckStopIds.has(stopId))
+            )
           : parsedIds;
         reminderIdsRef.current = actualIds;
         setReminderIds(actualIds);
         setScheduledReminderIds(actualIds);
 
         if (scheduledNotifications) {
-          await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(actualIds));
+          await AsyncStorage.setItem(reminderIdsKey, JSON.stringify(actualIds));
         }
       } catch (error) {
         console.log('[UpcomingStops] Failed to load reminder settings:', error);
@@ -550,12 +570,16 @@ export default function UpcomingStopsScreen() {
     };
 
     void loadReminderState();
-  }, []);
+  }, [getUpcomingStops, reminderIdsKey, reminderSettingsKey, truck]);
 
   React.useEffect(() => {
     const loadRecentLocations = async () => {
+      if (!recentLocationsKey) return;
+      setRecentLocationsLoaded(false);
+      recentLocationsRef.current = [];
+      setRecentLocations([]);
       try {
-        const stored = await AsyncStorage.getItem(RECENT_LOCATIONS_KEY);
+        const stored = await AsyncStorage.getItem(recentLocationsKey);
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed)) {
@@ -574,19 +598,21 @@ export default function UpcomingStopsScreen() {
     };
 
     void loadRecentLocations();
-  }, []);
+  }, [recentLocationsKey]);
 
   const persistReminderSettings = async (settings: ReminderSettings) => {
+    if (!reminderSettingsKey) return;
     const normalizedSettings = normalizeReminderSettings(settings);
     reminderSettingsRef.current = normalizedSettings;
-    await AsyncStorage.setItem(REMINDER_SETTINGS_KEY, JSON.stringify(normalizedSettings));
+    await AsyncStorage.setItem(reminderSettingsKey, JSON.stringify(normalizedSettings));
     setReminderSettings(normalizedSettings);
   };
 
   const persistReminderIds = async (ids: ReminderIds) => {
+    if (!reminderIdsKey) return;
     reminderIdsRef.current = ids;
     setReminderIds(ids);
-    await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(ids));
+    await AsyncStorage.setItem(reminderIdsKey, JSON.stringify(ids));
   };
 
   // Merges by text: a call with just `text` (recorded right when a stop is
@@ -617,7 +643,9 @@ export default function UpcomingStopsScreen() {
     recentLocationsRef.current = next;
     setRecentLocations(next);
     try {
-      await AsyncStorage.setItem(RECENT_LOCATIONS_KEY, JSON.stringify(next));
+      if (recentLocationsKey) {
+        await AsyncStorage.setItem(recentLocationsKey, JSON.stringify(next));
+      }
     } catch (error) {
       console.log('[UpcomingStops] Failed to persist recent locations:', error);
     }
@@ -649,7 +677,9 @@ export default function UpcomingStopsScreen() {
     }
 
     try {
-      await AsyncStorage.setItem(RECENT_LOCATIONS_KEY, JSON.stringify(next));
+      if (recentLocationsKey) {
+        await AsyncStorage.setItem(recentLocationsKey, JSON.stringify(next));
+      }
     } catch (error) {
       console.log('[UpcomingStops] Failed to persist recent locations:', error);
     }

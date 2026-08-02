@@ -76,7 +76,6 @@ export default function AdminTruckPickerScreen() {
     const targetRoute = '/truck-setup';
     if (__DEV__) {
       console.log('[AdminTruckPicker] Create a Truck pressed:', { currentPathname: pathname, targetRoute });
-      Alert.alert('Debug navigation', `Navigating to ${targetRoute}`);
     }
 
     try {

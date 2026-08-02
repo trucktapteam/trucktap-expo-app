@@ -1,7 +1,7 @@
 {
   "name": "expo-app",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "scripts": {
     "start": "bunx rork start -p cabbpmix6vr8nvkf3uuqm --tunnel",
     "start-web": "bunx rork start -p cabbpmix6vr8nvkf3uuqm --web --tunnel",
@@ -10,7 +10,7 @@
     "verify-pages-artifact": "node scripts/verify-pages-artifact.mjs",
     "check-credential-literals": "node scripts/check-credential-literals.mjs",
     "lint": "expo lint",
-    "test:node": "node --test lib/handsFreeLive.test.mjs lib/liveLocationCompatibility.test.mjs lib/locationTimezone.test.mjs lib/releasePolicyCore.test.mjs lib/sightingLocation.test.mjs lib/truckBusinessSnapshot.test.mjs lib/truckMission.test.mjs lib/truckOpportunities.test.mjs lib/truckPublicReady.test.mjs lib/truckWins.test.mjs lib/upcomingStopImages.test.mjs lib/upcomingStopReminders.test.mjs lib/upcomingStopTime.test.mjs scripts/check-credential-literals.test.mjs supabase/functions/account-delete-boundary.test.mjs supabase/functions/credential-logging.test.mjs supabase/functions/notify-hands-free-live-transition/index.node.test.mjs supabase/functions/notification-auth-boundaries.test.mjs",
+    "test:node": "node --test lib/activeTruck.test.mjs lib/handsFreeLive.test.mjs lib/liveLocationCompatibility.test.mjs lib/locationTimezone.test.mjs lib/releasePolicyCore.test.mjs lib/sightingLocation.test.mjs lib/truckBusinessSnapshot.test.mjs lib/truckMission.test.mjs lib/truckOpportunities.test.mjs lib/truckPublicReady.test.mjs lib/truckWins.test.mjs lib/upcomingStopImages.test.mjs lib/upcomingStopReminders.test.mjs lib/upcomingStopTime.test.mjs scripts/check-credential-literals.test.mjs supabase/functions/account-delete-boundary.test.mjs supabase/functions/credential-logging.test.mjs supabase/functions/notify-hands-free-live-transition/index.node.test.mjs supabase/functions/notification-auth-boundaries.test.mjs",
     "typecheck": "tsc --noEmit",
     "android": "expo run:android",
     "ios": "expo run:ios"

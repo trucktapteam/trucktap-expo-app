@@ -26,9 +26,11 @@ const isExpoGo =
   Constants.executionEnvironment === 'storeClient' ||
   Constants.appOwnership === 'expo';
 
-console.log('[Notifications] executionEnvironment:', Constants.executionEnvironment);
-console.log('[Notifications] appOwnership:', Constants.appOwnership);
-console.log('[Notifications] isExpoGo:', isExpoGo);
+if (__DEV__) {
+  console.log('[Notifications] executionEnvironment:', Constants.executionEnvironment);
+  console.log('[Notifications] appOwnership:', Constants.appOwnership);
+  console.log('[Notifications] isExpoGo:', isExpoGo);
+}
 
 type NotificationPreferences = {
   favoritesOpen: boolean;

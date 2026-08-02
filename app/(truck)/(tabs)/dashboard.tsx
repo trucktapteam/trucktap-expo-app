@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated, Modal, Pressable, Image, ActivityIndicator } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { MapPin, Utensils, Pencil, Settings, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight } from 'lucide-react-native';
+import { MapPin, Utensils, Pencil, Settings, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight, X, Plus } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckMenu, useTruckRating } from '@/contexts/AppContext';
 import * as Clipboard from 'expo-clipboard';
 import HeaderCard from '@/components/HeaderCard';
 import StatsRow from '@/components/StatsRow';
-import DashboardCard from '@/components/DashboardCard';
 import Toast from '@/components/Toast';
 import { DEBUG } from '@/constants/debug';
 import { getTruckShareUrl } from '@/lib/truckShare';
@@ -24,6 +23,7 @@ import { getLocalCalendarDateKey } from '@/lib/truckDailyMission';
 import { resolveStoredDailyTruckMission } from '@/lib/truckDailyMissionStorage';
 import { getTruckBusinessSnapshot } from '@/lib/truckBusinessSnapshot';
 import { getRecurringTruckWin, getTruckWins } from '@/lib/truckWins';
+import { shouldShowPartnerTruckSelector } from '@/lib/activeTruck';
 import BiggestOpportunities from '@/components/coach/BiggestOpportunities';
 import TodaysMission from '@/components/coach/TodaysMission';
 import BusinessSnapshot from '@/components/coach/BusinessSnapshot';
@@ -114,6 +114,9 @@ export default function TruckDashboard() {
     announcements,
     upcomingStops,
     reviews,
+    eligibleOwnedTrucks,
+    activeTruckId,
+    switchActiveTruck,
   } = useApp();
   const ownerTruck = getUserTruck();
   const isAdmin = currentUser?.role === 'admin';
@@ -136,6 +139,8 @@ export default function TruckDashboard() {
   } | null>(null);
   const [coachProgressCelebration, setCoachProgressCelebration] = useState<TruckCoachMilestoneCelebration | null>(null);
   const [showWelcomeSetupPrompt, setShowWelcomeSetupPrompt] = useState(!hasShownOwnerSetupPromptThisSession);
+  const [truckSwitcherVisible, setTruckSwitcherVisible] = useState(false);
+  const [switchingTruckId, setSwitchingTruckId] = useState<string | null>(null);
   
   const bannerOpacity = useRef(new Animated.Value(0)).current;
   const bannerTranslateY = useRef(new Animated.Value(-5)).current;
@@ -152,6 +157,35 @@ export default function TruckDashboard() {
 
   const hoursSet = truck ? hasHoursSet(truck.id) : false;
   const hasUnread = hasUnreadOwnerUpdates();
+  const canSwitchPartnerTruck = !isAdmin && shouldShowPartnerTruckSelector(eligibleOwnedTrucks);
+
+  const handleSwitchTruck = async (truckId: string) => {
+    if (truckId === activeTruckId) {
+      setTruckSwitcherVisible(false);
+      return;
+    }
+
+    setSwitchingTruckId(truckId);
+    try {
+      await switchActiveTruck(truckId);
+      setTruckSwitcherVisible(false);
+      setStatusToast({ visible: true, message: 'Truck switched.', type: 'success' });
+    } catch (error: any) {
+      setStatusToast({
+        visible: true,
+        message: error?.message ?? 'Could not switch trucks. Please try again.',
+        type: 'error',
+      });
+    } finally {
+      setSwitchingTruckId(null);
+    }
+  };
+
+  const handleAddAnotherTruckFromSwitcher = () => {
+    if (switchingTruckId) return;
+    setTruckSwitcherVisible(false);
+    router.push('/truck-setup' as any);
+  };
 
   useEffect(() => {
     if (truck) {
@@ -454,6 +488,8 @@ export default function TruckDashboard() {
       };
     }
 
+    setCoachProgressCelebration(null);
+
     getTruckCoachProgressCelebration({
       truck,
       commandCenter,
@@ -582,7 +618,6 @@ export default function TruckDashboard() {
     if (__DEV__) {
       console.log('Admin switching truck');
       console.log('[TruckDashboard] Choose a Truck pressed:', { currentPathname: pathname, targetRoute });
-      Alert.alert('Debug navigation', `Navigating to ${targetRoute}`);
     }
 
     try {
@@ -620,7 +655,6 @@ export default function TruckDashboard() {
     const targetRoute = '/truck-setup';
     if (__DEV__) {
       console.log('[TruckDashboard] Create a Truck pressed:', { currentPathname: pathname, targetRoute });
-      Alert.alert('Debug navigation', `Navigating to ${targetRoute}`);
     }
 
     try {
@@ -894,6 +928,13 @@ export default function TruckDashboard() {
         cuisineType={truck.cuisine_type}
         logoUrl={truck.logo}
         isOpen={truckOpenNow}
+        onTruckSwitcherPress={
+          isAdmin
+            ? handleChooseTruck
+            : canSwitchPartnerTruck
+              ? () => setTruckSwitcherVisible(true)
+              : undefined
+        }
         greeting={dailyBriefingGreeting}
         missionLabel="Next Action:"
         missionMessage={dashboardRecommendations?.mission.title ?? commandCenter?.nextAction}
@@ -909,7 +950,78 @@ export default function TruckDashboard() {
         onCustomerViewPress={handleBrowseAsCustomer}
       />
 
-      <ScrollView 
+      <Modal
+        visible={truckSwitcherVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          if (!switchingTruckId) setTruckSwitcherVisible(false);
+        }}
+      >
+        <View style={styles.switcherOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              if (!switchingTruckId) setTruckSwitcherVisible(false);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Close truck switcher"
+          />
+          <View style={styles.switcherSheet}>
+            <View style={styles.switcherHeader}>
+              <Text style={styles.switcherTitle}>Switch Truck</Text>
+              <TouchableOpacity
+                style={styles.switcherCloseButton}
+                onPress={() => setTruckSwitcherVisible(false)}
+                disabled={!!switchingTruckId}
+                accessibilityRole="button"
+                accessibilityLabel="Close truck switcher"
+              >
+                <X size={20} color={Colors.dark} />
+              </TouchableOpacity>
+            </View>
+
+            {eligibleOwnedTrucks.map(ownedTruck => {
+              const selected = ownedTruck.id === activeTruckId;
+              const switching = ownedTruck.id === switchingTruckId;
+              return (
+                <TouchableOpacity
+                  key={ownedTruck.id}
+                  style={[styles.switcherTruckRow, selected && styles.switcherTruckRowSelected]}
+                  onPress={() => void handleSwitchTruck(ownedTruck.id)}
+                  disabled={!!switchingTruckId}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected, disabled: !!switchingTruckId }}
+                  accessibilityLabel={`${ownedTruck.name}${selected ? ', selected' : ''}`}
+                >
+                  <Image source={{ uri: ownedTruck.logo }} style={styles.switcherTruckLogo} />
+                  <Text style={styles.switcherTruckName} numberOfLines={1}>{ownedTruck.name}</Text>
+                  {switching ? (
+                    <ActivityIndicator size="small" color={Colors.primary} />
+                  ) : (
+                    <View style={[styles.switcherSelectedIndicator, selected && styles.switcherSelectedIndicatorActive]}>
+                      {selected ? <CheckCircle2 size={20} color={Colors.primary} /> : null}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              style={styles.switcherAddTruckRow}
+              onPress={handleAddAnotherTruckFromSwitcher}
+              disabled={!!switchingTruckId}
+              accessibilityRole="button"
+              accessibilityLabel="Add Another Truck"
+            >
+              <Plus size={20} color={Colors.primary} />
+              <Text style={styles.switcherAddTruckText}>Add Another Truck</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <ScrollView
         style={styles.content} 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
@@ -1170,48 +1282,34 @@ export default function TruckDashboard() {
           <Text style={styles.sectionTitle}>Partner Tools</Text>
         </View>
 
-        <View style={styles.gridContainer}>
-          <DashboardCard 
-            icon={Utensils}
-            label="Menu Editor"
-            onPress={() => router.push('/(truck)/menu-editor' as any)}
-          />
-          <View style={styles.cardWithBadge}>
-            <DashboardCard 
-              icon={Bell}
-              label="Message Center"
-              onPress={() => router.push('/(truck)/owner-updates' as any)}
-            />
-            {hasUnread && (
-              <View style={styles.notificationBadge} />
-            )}
-          </View>
-        </View>
-
-        <View style={styles.gridContainer}>
-          <DashboardCard 
-            icon={ImageIcon}
-            label="Gallery"
-            onPress={() => router.push('/(truck)/gallery' as any)}
-          />
-          <DashboardCard 
-            icon={Pencil}
-            label="Edit Profile"
-            onPress={() => router.push('/(truck)/edit-profile' as any)}
-          />
-        </View>
-
-        <View style={styles.gridContainer}>
-          <DashboardCard 
-            icon={BarChart3}
-            label="Analytics"
-            onPress={() => router.push('/(truck)/analytics' as any)}
-          />
-          <DashboardCard 
-            icon={Settings}
-            label="Settings"
-            onPress={() => router.push('/(truck)/settings' as any)}
-          />
+        <View style={styles.toolList}>
+          {[
+            { icon: Utensils, label: 'Menu Editor', route: '/(truck)/menu-editor' },
+            { icon: Bell, label: 'Message Center', route: '/(truck)/owner-updates', unread: hasUnread },
+            { icon: ImageIcon, label: 'Gallery', route: '/(truck)/gallery' },
+            { icon: Pencil, label: 'Edit Profile', route: '/(truck)/edit-profile' },
+            { icon: BarChart3, label: 'Analytics', route: '/(truck)/analytics' },
+            { icon: Settings, label: 'Settings', route: '/(truck)/settings' },
+          ].map(tool => {
+            const ToolIcon = tool.icon;
+            return (
+              <TouchableOpacity
+                key={tool.label}
+                style={styles.toolRow}
+                onPress={() => router.push(tool.route as any)}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel={tool.label}
+              >
+                <View style={styles.toolIconContainer}>
+                  <ToolIcon size={21} color={Colors.primary} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.toolLabel}>{tool.label}</Text>
+                {tool.unread ? <View style={styles.toolUnreadDot} /> : null}
+                <ChevronRight size={20} color={Colors.gray} />
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <View style={styles.shareMainCard}>
@@ -1997,9 +2095,47 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
     letterSpacing: 0.4,
   },
-  gridContainer: {
+  toolList: {
+    gap: 6,
+    marginBottom: 18,
+  },
+  toolRow: {
+    minHeight: 52,
     flexDirection: 'row',
-    marginHorizontal: -6,
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: `${Colors.primary}20`,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+    elevation: 1,
+  },
+  toolIconContainer: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    backgroundColor: `${Colors.primary}12`,
+  },
+  toolLabel: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  toolUnreadDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    marginRight: 9,
+    backgroundColor: '#FF8C00',
   },
   shareCard: {
     backgroundColor: '#fff',
@@ -2143,26 +2279,6 @@ const styles = StyleSheet.create({
   checklistItemTextComplete: {
     textDecorationLine: 'line-through',
     color: Colors.gray,
-  },
-  cardWithBadge: {
-    flex: 1,
-    position: 'relative',
-  },
-  notificationBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#FF8C00',
-    borderWidth: 2,
-    borderColor: '#fff',
-    shadowColor: '#FF8C00',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 3,
-    elevation: 4,
   },
   previewCard: {
     flexDirection: 'row',
@@ -2452,5 +2568,90 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700' as const,
     color: '#fff',
+  },
+  switcherOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.38)',
+  },
+  switcherSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 32,
+    gap: 8,
+  },
+  switcherHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  switcherTitle: {
+    fontSize: 20,
+    fontWeight: '800' as const,
+    color: Colors.dark,
+  },
+  switcherCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light,
+  },
+  switcherTruckRow: {
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: `${Colors.gray}25`,
+  },
+  switcherTruckRowSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: `${Colors.primary}0D`,
+  },
+  switcherTruckLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.light,
+  },
+  switcherTruckName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  switcherSelectedIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: `${Colors.gray}55`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switcherSelectedIndicatorActive: {
+    borderColor: 'transparent',
+  },
+  switcherAddTruckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    marginTop: 4,
+  },
+  switcherAddTruckText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.primary,
   },
 });

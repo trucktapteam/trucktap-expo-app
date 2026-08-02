@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, Animated, TouchableOpacity } from 'react-native';
-import { Target } from 'lucide-react-native';
+import { ChevronDown, Target } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
 type HeaderCardProps = {
@@ -13,6 +13,7 @@ type HeaderCardProps = {
   missionMessage?: string;
   onMissionPress?: () => void;
   onCustomerViewPress?: () => void;
+  onTruckSwitcherPress?: () => void;
 };
 
 export default function HeaderCard({
@@ -25,6 +26,7 @@ export default function HeaderCard({
   missionMessage,
   onMissionPress,
   onCustomerViewPress,
+  onTruckSwitcherPress,
 }: HeaderCardProps) {
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const showMission = !!missionMessage;
@@ -39,10 +41,24 @@ export default function HeaderCard({
 
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      <View style={styles.content}>
+      <TouchableOpacity
+        style={styles.content}
+        onPress={onTruckSwitcherPress}
+        activeOpacity={onTruckSwitcherPress ? 0.75 : 1}
+        disabled={!onTruckSwitcherPress}
+        accessibilityRole={onTruckSwitcherPress ? 'button' : undefined}
+        accessibilityLabel={onTruckSwitcherPress ? `Switch truck. Current truck: ${truckName}` : undefined}
+      >
         <View style={styles.textSection}>
           <Text style={styles.greeting}>{greeting}</Text>
-          <Text style={styles.truckName} numberOfLines={1}>{truckName}</Text>
+          {onTruckSwitcherPress ? (
+            <View style={styles.truckNameRow}>
+              <Text style={[styles.truckName, styles.switchableTruckName]} numberOfLines={1}>{truckName}</Text>
+              <ChevronDown size={20} color="#fff" strokeWidth={2.5} />
+            </View>
+          ) : (
+            <Text style={styles.truckName} numberOfLines={1}>{truckName}</Text>
+          )}
           <View style={styles.metadataRow}>
             <Text style={styles.cuisineType} numberOfLines={1}>{cuisineType}</Text>
             <View style={[styles.statusBadge, isOpen ? styles.statusOpen : styles.statusClosed]}>
@@ -62,7 +78,7 @@ export default function HeaderCard({
             </View>
           )}
         </View>
-      </View>
+      </TouchableOpacity>
       {showMission ? (
         <TouchableOpacity
           style={styles.briefing}
@@ -122,6 +138,14 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
     color: '#fff',
     marginBottom: 2,
+  },
+  truckNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  switchableTruckName: {
+    flexShrink: 1,
   },
   metadataRow: {
     flexDirection: 'row',

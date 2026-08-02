@@ -74,7 +74,7 @@ export default function QRCodeScreen() {
 
     try {
       await Clipboard.setStringAsync(profileUrl);
-      markQrShared();
+      markQrShared(truck.id);
       Alert.alert('Link Copied', 'Profile link copied to clipboard!');
     } catch (error) {
       console.error('Error copying link:', error);
@@ -92,7 +92,7 @@ export default function QRCodeScreen() {
         url: profileUrl,
         title: `${truck.name} - TruckTap`,
       });
-      markQrShared();
+      markQrShared(truck.id);
     } catch (error) {
       console.error('Error sharing profile:', error);
       Alert.alert('Error', 'Could not share your profile link.');
@@ -142,7 +142,7 @@ export default function QRCodeScreen() {
         mimeType: 'image/png',
         dialogTitle: 'Save or Share Your QR Code',
       });
-      markQrShared();
+      markQrShared(truck.id);
     } catch (error) {
       console.error('Error exporting QR code:', error);
       Alert.alert('Error', 'Could not export your QR code image.');

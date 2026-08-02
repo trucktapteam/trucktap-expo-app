@@ -31,8 +31,10 @@ console.error = (...args: unknown[]) => {
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-console.log('[Supabase] URL configured:', supabaseUrl ? `${supabaseUrl.substring(0, 20)}...` : 'MISSING');
-console.log('[Supabase] Anon key configured:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 10)}...` : 'MISSING');
+if (__DEV__) {
+  console.log('[Supabase] URL configured:', supabaseUrl ? `${supabaseUrl.substring(0, 20)}...` : 'MISSING');
+  console.log('[Supabase] Anon key configured:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 10)}...` : 'MISSING');
+}
 
 let supabase: SupabaseClient;
 

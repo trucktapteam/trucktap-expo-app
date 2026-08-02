@@ -14,6 +14,7 @@ export default function Index() {
     getUserTruck,
     isOwner,
     isOwnerLoading,
+    activeTruckSelectionReady,
     pendingNotificationRoute,
     isInitialNotificationResponseChecked,
     pendingDeepLinkRoute,
@@ -37,7 +38,7 @@ export default function Index() {
       if (DEBUG) console.log('[Index] Truck deep link pending/resolved; skipping default redirect:', pendingDeepLinkRoute);
       return;
     }
-    if (authLoading || isOwnerLoading || releasePolicyLoading || (isAuthenticated && !currentUser)) {
+    if (authLoading || isOwnerLoading || releasePolicyLoading || (isAuthenticated && (!currentUser || (isOwner && !activeTruckSelectionReady)))) {
       if (DEBUG) console.log('[Index] Waiting for auth/owner to load...');
       return;
     }
@@ -78,7 +79,7 @@ export default function Index() {
       clearTimeout(timer);
       clearTimeout(failsafeTimer);
     };
-  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, releasePolicyLoading, ownerAccess, didNavigate, getUserTruck, currentUser, pendingNotificationRoute, isInitialNotificationResponseChecked, pendingDeepLinkRoute]);
+  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, activeTruckSelectionReady, releasePolicyLoading, ownerAccess, didNavigate, getUserTruck, currentUser, pendingNotificationRoute, isInitialNotificationResponseChecked, pendingDeepLinkRoute]);
 
   if (didNavigate) {
     return null;

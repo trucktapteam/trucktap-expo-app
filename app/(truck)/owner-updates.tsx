@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { Bell, AlertCircle, Info, ShieldAlert, Wrench, Send, Plus, X } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Linking } from 'react-native';
+import { Bell, AlertCircle, Info, ShieldAlert, Wrench, Send, Plus, X, Mail, ChevronRight } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp } from '@/contexts/AppContext';
 import { OwnerMessage, OwnerMessageType } from '@/types';
@@ -63,6 +63,20 @@ export default function OwnerUpdatesScreen() {
       Alert.alert('Could not send', error?.message || 'Please try again.');
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleEmailSupport = async () => {
+    const supportUrl = 'mailto:trucktapteam@gmail.com?subject=TruckTap%20Partner%20Support';
+
+    try {
+      await Linking.openURL(supportUrl);
+    } catch (error) {
+      console.log('[MessageCenter] Could not open support email:', error);
+      Alert.alert(
+        'Email TruckTap Support',
+        'Please email trucktapteam@gmail.com for Partner support.'
+      );
     }
   };
 
@@ -145,6 +159,23 @@ export default function OwnerUpdatesScreen() {
           </View>
         )}
 
+        <TouchableOpacity
+          style={styles.supportRow}
+          onPress={() => void handleEmailSupport()}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="Need Help? Questions, bugs, or account help?"
+        >
+          <View style={styles.supportIcon}>
+            <Mail size={20} color={colors.primary} />
+          </View>
+          <View style={styles.supportText}>
+            <Text style={styles.supportTitle}>Need Help?</Text>
+            <Text style={styles.supportSubtitle}>Questions, bugs, or account help?</Text>
+          </View>
+          <ChevronRight size={20} color={colors.secondaryText} />
+        </TouchableOpacity>
+
         {messages.length > 0 ? (
           messages.map((message) => (
             <MessageCard key={message.id} message={message} styles={styles} />
@@ -158,6 +189,7 @@ export default function OwnerUpdatesScreen() {
             </Text>
           </View>
         )}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -262,7 +294,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderWidth: 1,
     borderRadius: 14,
     padding: 14,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   adminToggle: {
     flexDirection: 'row',
@@ -422,5 +454,40 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.secondaryText,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  supportRow: {
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.cardBackground,
+    marginBottom: 16,
+  },
+  supportIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    backgroundColor: `${colors.primary}14`,
+  },
+  supportText: {
+    flex: 1,
+  },
+  supportTitle: {
+    fontSize: 15,
+    fontWeight: '800' as const,
+    color: colors.text,
+    marginBottom: 2,
+  },
+  supportSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.secondaryText,
   },
 });

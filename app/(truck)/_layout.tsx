@@ -10,7 +10,7 @@ import { useReleasePolicy } from '@/contexts/ReleasePolicyContext';
 export default function TruckLayout() {
   const { colors } = useTheme();
   const { isAuthenticated, isLoading } = useAuth();
-  const { currentUser, isOwner, isOwnerLoading } = useApp();
+  const { currentUser, isOwner, isOwnerLoading, activeTruckSelectionReady } = useApp();
   const router = useRouter();
   const pathname = usePathname();
   const segments = useSegments();
@@ -20,7 +20,8 @@ export default function TruckLayout() {
     isLoading ||
     releasePolicyLoading ||
     (isAuthenticated && !currentUser) ||
-    (isOwnerLoading && !isOwner);
+    (isOwnerLoading && !isOwner) ||
+    (isAuthenticated && isOwner && !activeTruckSelectionReady);
 
   useTruckLifecycleLogger('TruckLayout');
 
@@ -96,6 +97,7 @@ export default function TruckLayout() {
       <Stack.Screen name="poster" options={{ title: 'Poster' }} />
       <Stack.Screen name="poster-video" options={{ title: 'Video Poster' }} />
       <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+      <Stack.Screen name="archived-trucks" options={{ title: 'Archived Trucks' }} />
       <Stack.Screen name="owner-updates" options={{ title: 'Message Center' }} />
     </Stack>
   );

@@ -3,7 +3,6 @@ import { AppState as RNAppState } from 'react-native';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, FoodTruck, Review, ReviewReply, MenuItem, OperatingHours, Announcement, OwnerMessage, OwnerMessageType, UpcomingStop, SavedLocation } from '@/types';
-import { teamUpdates } from '@/mocks/data';
 import { DEBUG } from '@/constants/debug';
 import { DEFAULT_TRUCK_HERO_IMAGE, DEFAULT_TRUCK_LOGO_IMAGE } from '@/constants/truckDefaults';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,6 +25,15 @@ import {
   UPCOMING_STOP_PUBLIC_COLUMNS,
 } from '@/lib/upcomingStopData';
 import { removeUpcomingStopImage } from '@/lib/upcomingStopImages';
+import {
+  getActiveTruckStorageKey,
+  getEligiblePartnerTrucks,
+  getRecordsForTruck,
+  getTruckScopedStorageKey,
+  resolveOwnerActiveTruck,
+  resolvePartnerActiveTruck,
+  resolveAdminTruck,
+} from '@/lib/activeTruck';
 
 const parseJsonArray = (val: any): any[] => {
   if (Array.isArray(val)) return val;
@@ -209,17 +217,6 @@ const sanitizeTruckUpdatesForPersistence = (updates: Partial<FoodTruck>): Partia
   return sanitized;
 };
 
-const mapTeamUpdateToOwnerMessage = (update: (typeof teamUpdates)[number]): OwnerMessage => ({
-  id: update.id,
-  title: update.title,
-  body: update.body,
-  type: update.important ? 'important' : 'general',
-  created_at: update.date,
-  target_scope: 'all_trucks',
-  target_truck_id: null,
-  read_at: null,
-});
-
 const mapOwnerMessageRow = (row: any, readAt?: string | null): OwnerMessage => ({
   id: row.id?.toString?.() ?? '',
   title: row.title ?? '',
@@ -317,8 +314,12 @@ export type AppState = {
   pendingDeepLinkRoute: string | null;
   lastViewedOwnerUpdates: string | null;
   selectedAdminTruckId: string | null;
+  activeTruckId: string | null;
+  activeTruckSelectionReady: boolean;
+  eligibleOwnedTrucks: FoodTruck[];
   ownerMessages: OwnerMessage[];
   setSelectedAdminTruckId: (truckId: string | null) => void;
+  switchActiveTruck: (truckId: string) => Promise<void>;
   beginImagePickerSession: (source: string) => void;
   endImagePickerSession: (source: string) => void;
   setShowClosed: (value: boolean) => void;
@@ -397,7 +398,7 @@ export type AppState = {
   dismissChecklist: () => void;
   hasHoursSet: (truckId: string) => boolean;
   qrShared: boolean;
-  markQrShared: () => void;
+  markQrShared: (truckId?: string) => void;
   addGalleryImage: (truckId: string, imageUrl: string) => void;
   removeGalleryImage: (truckId: string, imageUrl: string) => void;
   logout: () => void;
@@ -449,11 +450,23 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [selectedAdminTruckId, setSelectedAdminTruckId] = useState<string | null>(null);
   const [ownerMessages, setOwnerMessages] = useState<OwnerMessage[]>([]);
   const [supabaseOwnedTrucks, setSupabaseOwnedTrucks] = useState<FoodTruck[]>([]);
+  const [activeTruckId, setActiveTruckId] = useState<string | null>(null);
+  const [persistedActiveTruckId, setPersistedActiveTruckId] = useState<string | null>(null);
+  const [activeTruckStorageHydrated, setActiveTruckStorageHydrated] = useState(false);
+  const [activeTruckResolutionReady, setActiveTruckResolutionReady] = useState(false);
   const [truckCheckInAnalytics, setTruckCheckInAnalytics] = useState<Record<string, TruckCheckInAnalytics>>({});
   const [isOwnerLoading, setIsOwnerLoading] = useState<boolean>(true);
-  const [qrShared, setQrShared] = useState<boolean>(false);
+  const [qrSharedState, setQrSharedState] = useState<{ truckId: string | null; value: boolean }>({
+    truckId: null,
+    value: false,
+  });
+  const currentQrTruckId = userProfile?.role === 'admin'
+    ? selectedAdminTruckId ?? userProfile.truck_id ?? null
+    : activeTruckId;
+  const qrShared = !!currentQrTruckId && qrSharedState.truckId === currentQrTruckId && qrSharedState.value;
   const appStateRef = useRef(RNAppState.currentState);
   const selectedAdminTruckIdRef = useRef<string | null>(null);
+  const ownedTrucksRef = useRef<FoodTruck[]>([]);
   const lastForegroundRefreshAtRef = useRef(0);
   const foregroundRefreshInFlightRef = useRef(false);
   const suppressForegroundRefreshRef = useRef(0);
@@ -488,6 +501,37 @@ export const [AppProvider, useApp] = createContextHook(() => {
       });
     }
   }, [selectedAdminTruckId, userProfile?.id, userProfile?.role]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setActiveTruckStorageHydrated(false);
+    setActiveTruckResolutionReady(false);
+    setPersistedActiveTruckId(null);
+    setActiveTruckId(null);
+
+    if (!isAuthenticated || !authUser?.id) {
+      setActiveTruckStorageHydrated(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    AsyncStorage.getItem(getActiveTruckStorageKey(authUser.id))
+      .then(storedTruckId => {
+        if (!cancelled) setPersistedActiveTruckId(storedTruckId);
+      })
+      .catch(error => {
+        console.log('[AppContext] Active truck preference load failed:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setActiveTruckStorageHydrated(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, isAuthenticated]);
 
   // Helper to check if current user owns a truck
   const userOwnsTruck = useCallback((truckId: string): boolean => {
@@ -888,6 +932,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (!isAuthenticated || !authUser || !isSupabaseConfigured) {
       if (DEBUG) console.log('[AppContext] Skipping owned truck fetch');
       setSupabaseOwnedTrucks([]);
+      ownedTrucksRef.current = [];
       setIsOwnerLoading(false);
       return;
     }
@@ -909,6 +954,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       if (error) {
         console.log('[AppContext] Supabase fetch owned trucks error:', error.message);
         setSupabaseOwnedTrucks([]);
+        ownedTrucksRef.current = [];
       } else {
         const mapped = (data ?? []).map(mapSupabaseTruckToLocal);
         const truckIds = mapped.map((truck) => truck.id).filter(Boolean);
@@ -933,11 +979,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
             selectedAdminTruckId: selectedAdminTruckIdRef.current,
           });
         }
+        ownedTrucksRef.current = merged;
         setSupabaseOwnedTrucks(merged);
       }
     } catch (err: any) {
       console.log('[AppContext] Unexpected error fetching owned trucks:', err?.message);
       setSupabaseOwnedTrucks([]);
+      ownedTrucksRef.current = [];
     } finally {
       setIsOwnerLoading(false);
     }
@@ -1194,9 +1242,6 @@ if (!favoritesError && favoriteRows) {
         if (storedIsOnboarded === 'true') setIsOnboarded(true);
         if (storedHasSeenLocationPrompt === 'true') setHasSeenLocationPrompt(true);
 
-        const storedQrShared = await AsyncStorage.getItem('qrShared');
-        if (storedQrShared === 'true') setQrShared(true);
-
         if (DEBUG) console.log('[AppContext] Settings hydrated from storage');
       } catch (error) {
         console.log('Error hydrating settings from storage:', error);
@@ -1213,11 +1258,37 @@ if (!favoritesError && favoriteRows) {
     void AsyncStorage.setItem('checklistDismissed', 'true');
   }, []);
 
-  const markQrShared = useCallback(() => {
-    setQrShared(true);
-    void AsyncStorage.setItem('qrShared', 'true');
-    if (DEBUG) console.log('[AppContext] markQrShared persisted');
-  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const truckId = currentQrTruckId;
+    setQrSharedState({ truckId, value: false });
+
+    if (!truckId || !authUser?.id) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    AsyncStorage.getItem(getTruckScopedStorageKey('qrShared', authUser.id, truckId))
+      .then(stored => {
+        if (!cancelled) setQrSharedState({ truckId, value: stored === 'true' });
+      })
+      .catch(error => {
+        console.log('[AppContext] QR share preference load failed:', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, currentQrTruckId]);
+
+  const markQrShared = useCallback((truckId?: string) => {
+    const targetTruckId = truckId ?? currentQrTruckId;
+    if (!targetTruckId || !authUser?.id) return;
+    setQrSharedState({ truckId: targetTruckId, value: true });
+    void AsyncStorage.setItem(getTruckScopedStorageKey('qrShared', authUser.id, targetTruckId), 'true');
+    if (DEBUG) console.log('[AppContext] markQrShared persisted for truck:', targetTruckId);
+  }, [authUser?.id, currentQrTruckId]);
 
   const hasHoursSet = useCallback((truckId: string) => {
     const truck = foodTrucks.find(t => t.id === truckId);
@@ -2338,6 +2409,93 @@ if (error) {
     return foodTrucks.filter(truck => truck.owner_id === authUser.id);
   }, [isAuthenticated, authUser, foodTrucks, supabaseOwnedTrucks]);
 
+  const eligibleOwnedTrucks = useMemo(() => {
+    if (!isAuthenticated || !authUser) return [];
+    const owned = supabaseOwnedTrucks.length > 0
+      ? supabaseOwnedTrucks
+      : foodTrucks.filter(truck => truck.owner_id === authUser.id);
+    return getEligiblePartnerTrucks(owned, authUser.id);
+  }, [authUser, foodTrucks, isAuthenticated, supabaseOwnedTrucks]);
+
+  useEffect(() => {
+    ownedTrucksRef.current = supabaseOwnedTrucks;
+  }, [supabaseOwnedTrucks]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authUser || !activeTruckStorageHydrated || isOwnerLoading || !userProfile) {
+      setActiveTruckResolutionReady(false);
+      return;
+    }
+
+    if (userProfile.role === 'admin') {
+      setActiveTruckResolutionReady(true);
+      return;
+    }
+
+    const resolution = resolvePartnerActiveTruck({
+      trucks: eligibleOwnedTrucks,
+      userId: authUser.id,
+      persistedTruckId: persistedActiveTruckId,
+      legacyProfileTruckId: userProfile.truck_id,
+    });
+
+    setActiveTruckId(resolution.activeTruckId);
+    setActiveTruckResolutionReady(true);
+
+    const storageKey = getActiveTruckStorageKey(authUser.id);
+    if (resolution.activeTruckId) {
+      if (resolution.activeTruckId !== persistedActiveTruckId) {
+        setPersistedActiveTruckId(resolution.activeTruckId);
+        void AsyncStorage.setItem(storageKey, resolution.activeTruckId);
+      }
+      if (userProfile.truck_id !== resolution.activeTruckId) {
+        const nextProfile = { ...userProfile, truck_id: resolution.activeTruckId };
+        setUserProfile(nextProfile);
+        void AsyncStorage.setItem('userProfile', JSON.stringify(nextProfile));
+      }
+    } else if (persistedActiveTruckId) {
+      setPersistedActiveTruckId(null);
+      void AsyncStorage.removeItem(storageKey);
+    }
+  }, [
+    activeTruckStorageHydrated,
+    authUser,
+    eligibleOwnedTrucks,
+    isAuthenticated,
+    isOwnerLoading,
+    persistedActiveTruckId,
+    userProfile,
+  ]);
+
+  const switchActiveTruck = useCallback(async (truckId: string): Promise<void> => {
+    if (!isAuthenticated || !authUser || userProfile?.role === 'admin') {
+      throw new Error('Partner truck switching is not available in the current mode.');
+    }
+
+    const currentOwnedTrucks = ownedTrucksRef.current.length > 0
+      ? ownedTrucksRef.current
+      : foodTrucks.filter(truck => truck.owner_id === authUser.id);
+    const eligible = getEligiblePartnerTrucks(currentOwnedTrucks, authUser.id);
+    if (!eligible.some(truck => truck.id === truckId)) {
+      throw new Error('That truck is no longer available to this account.');
+    }
+
+    await AsyncStorage.setItem(getActiveTruckStorageKey(authUser.id), truckId);
+    setPersistedActiveTruckId(truckId);
+    setActiveTruckId(truckId);
+    setActiveTruckResolutionReady(true);
+
+    setUserProfile(previous => {
+      if (!previous || previous.truck_id === truckId) return previous;
+      const nextProfile = { ...previous, truck_id: truckId };
+      void AsyncStorage.setItem('userProfile', JSON.stringify(nextProfile));
+      return nextProfile;
+    });
+  }, [authUser, foodTrucks, isAuthenticated, userProfile?.role]);
+
+  const activeTruckSelectionReady =
+    userProfile?.role === 'admin' || activeTruckResolutionReady;
+
   const isAdmin = userProfile?.role === 'admin';
 
   const isOwner = useMemo(() => {
@@ -2352,17 +2510,17 @@ if (error) {
     const owned = supabaseOwnedTrucks.length > 0
       ? supabaseOwnedTrucks
       : foodTrucks.filter(truck => truck.owner_id === authUser.id);
-    if (userProfile?.role === 'admin' && selectedAdminTruckId) {
-      const selected = [...owned, ...foodTrucks].find(t => t.id === selectedAdminTruckId);
-      if (selected) return selected;
+    if (userProfile?.role === 'admin') {
+      return resolveAdminTruck({
+        ownedTrucks: owned,
+        allTrucks: foodTrucks,
+        selectedAdminTruckId,
+        legacyProfileTruckId: currentUser?.truck_id,
+      });
     }
-    if (owned.length === 0) return null;
-    if (currentUser?.truck_id) {
-      const selected = owned.find(t => t.id === currentUser.truck_id);
-      if (selected) return selected;
-    }
-    return owned[0];
-  }, [isAuthenticated, authUser, userProfile?.role, selectedAdminTruckId, currentUser, foodTrucks, supabaseOwnedTrucks]);
+    if (!activeTruckSelectionReady) return null;
+    return resolveOwnerActiveTruck({ ownedTrucks: owned, eligibleOwnedTrucks, activeTruckId });
+  }, [activeTruckId, activeTruckSelectionReady, authUser, currentUser, eligibleOwnedTrucks, foodTrucks, isAuthenticated, selectedAdminTruckId, supabaseOwnedTrucks, userProfile?.role]);
 
   const addReview = useCallback(
   async (truckId: string, rating: number, text: string) => {
@@ -2892,8 +3050,7 @@ if (error) {
 
   const getAnnouncements = useCallback((truckId: string) => {
 
-    return announcements
-      .filter(announcement => announcement.truck_id === truckId)
+    return getRecordsForTruck(announcements, truckId, announcement => announcement.truck_id)
       .filter(announcement => isAnnouncementActive(announcement))
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [announcements]);
@@ -2901,16 +3058,14 @@ if (error) {
   const getUpcomingStops = useCallback((truckId: string) => {
     const requestedId = truckId?.toString() ?? '';
 
-    return upcomingStops
-      .filter(stop => stop.truck_id?.toString() === requestedId)
+    return getRecordsForTruck(upcomingStops, requestedId, stop => stop.truck_id)
       .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
   }, [upcomingStops]);
 
   const getSavedLocations = useCallback((truckId: string) => {
     const requestedId = truckId?.toString() ?? '';
 
-    return savedLocations
-      .filter(location => location.truck_id?.toString() === requestedId)
+    return getRecordsForTruck(savedLocations, requestedId, location => location.truck_id)
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [savedLocations]);
 
@@ -3510,7 +3665,7 @@ if (error) {
     }
 
     if (!isSupabaseConfigured) {
-      setOwnerMessages(teamUpdates.map(mapTeamUpdateToOwnerMessage));
+      setOwnerMessages([]);
       return;
     }
 
@@ -3522,7 +3677,7 @@ if (error) {
 
       if (messagesError) {
         console.log('[AppContext] Owner messages fetch error:', messagesError.message);
-        setOwnerMessages(teamUpdates.map(mapTeamUpdateToOwnerMessage));
+        setOwnerMessages([]);
         return;
       }
 
@@ -3551,7 +3706,7 @@ if (error) {
       setOwnerMessages(mapped);
     } catch (error: any) {
       console.log('[AppContext] Unexpected owner messages fetch error:', error?.message ?? error);
-      setOwnerMessages(teamUpdates.map(mapTeamUpdateToOwnerMessage));
+      setOwnerMessages([]);
     }
   }, [authLoading, authUser, isAuthenticated, isOwner, userProfile?.role]);
 
@@ -3721,8 +3876,12 @@ if (error) {
     isInitialNotificationResponseChecked,
     lastViewedOwnerUpdates,
     selectedAdminTruckId,
+    activeTruckId,
+    activeTruckSelectionReady,
+    eligibleOwnedTrucks,
     ownerMessages,
     setSelectedAdminTruckId,
+    switchActiveTruck,
     beginImagePickerSession,
     endImagePickerSession,
     setShowClosed,
@@ -3811,7 +3970,7 @@ if (error) {
   }), [
     currentUser, isOnboarded, isOnboardedHydrated, hasSeenLocationPrompt, markLocationPromptSeen, foodTrucks, reviews, menuItems, announcements, upcomingStops, upcomingStopsLoading,
     checklistDismissed, showClosed, customerRadius, exploreMode, exploreCenter,
-    pendingRedirect, pendingNotificationRoute, isInitialNotificationResponseChecked, pendingDeepLinkRoute, lastViewedOwnerUpdates, selectedAdminTruckId, ownerMessages, setSelectedAdminTruckId,
+    pendingRedirect, pendingNotificationRoute, isInitialNotificationResponseChecked, pendingDeepLinkRoute, lastViewedOwnerUpdates, selectedAdminTruckId, activeTruckId, activeTruckSelectionReady, eligibleOwnedTrucks, ownerMessages, setSelectedAdminTruckId, switchActiveTruck,
     beginImagePickerSession, endImagePickerSession,
     setShowClosed, setCustomerRadius, setExploreMode, setExploreCenter, setCurrentUser, completeOnboarding,
     refreshCustomerProfile,
