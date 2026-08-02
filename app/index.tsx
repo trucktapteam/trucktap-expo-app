@@ -16,6 +16,7 @@ export default function Index() {
     isOwnerLoading,
     pendingNotificationRoute,
     isInitialNotificationResponseChecked,
+    pendingDeepLinkRoute,
   } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { colors } = useTheme();
@@ -30,6 +31,10 @@ export default function Index() {
     }
     if (pendingNotificationRoute) {
       if (DEBUG) console.log('[Index] Waiting for pending notification route:', pendingNotificationRoute);
+      return;
+    }
+    if (pendingDeepLinkRoute) {
+      if (DEBUG) console.log('[Index] Truck deep link pending/resolved; skipping default redirect:', pendingDeepLinkRoute);
       return;
     }
     if (authLoading || isOwnerLoading || releasePolicyLoading || (isAuthenticated && !currentUser)) {
@@ -73,7 +78,7 @@ export default function Index() {
       clearTimeout(timer);
       clearTimeout(failsafeTimer);
     };
-  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, releasePolicyLoading, ownerAccess, didNavigate, getUserTruck, currentUser, pendingNotificationRoute, isInitialNotificationResponseChecked]);
+  }, [router, isOwner, isAuthenticated, authLoading, isOwnerLoading, releasePolicyLoading, ownerAccess, didNavigate, getUserTruck, currentUser, pendingNotificationRoute, isInitialNotificationResponseChecked, pendingDeepLinkRoute]);
 
   if (didNavigate) {
     return null;

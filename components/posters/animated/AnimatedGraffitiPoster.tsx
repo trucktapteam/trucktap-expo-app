@@ -107,19 +107,8 @@ export default function AnimatedGraffitiPoster({ truck, qrDataUrl, isPlaying = t
           <Text style={styles.truckName}>{truck.name}</Text>
         </Animated.View>
         
-        <View style={styles.cuisineTag}>
-          <Text style={styles.cuisineText}>{truck.cuisine_type}</Text>
-          <View style={styles.underline} />
-        </View>
-
-        {truck.bio ? (
-          <Text style={styles.bio} numberOfLines={3}>
-            {truck.bio}
-          </Text>
-        ) : null}
-
         <View style={styles.qrSection}>
-          <Text style={styles.qrLabel}>⚡ SCAN ME! ⚡</Text>
+          <Text style={styles.qrLabel}>⚡ SCAN TO CONNECT ⚡</Text>
           <View style={styles.qrPaintFrame}>
             <Animated.View style={[styles.burstCircle1, burstStyle]} />
             <Animated.View style={[styles.burstCircle2, burstStyle]} />
@@ -133,12 +122,17 @@ export default function AnimatedGraffitiPoster({ truck, qrDataUrl, isPlaying = t
               />
             </Animated.View>
           </View>
-          <Text style={styles.qrSubtext}>GET THE FULL MENU</Text>
+          <Text style={styles.qrSubtext}>OPEN YOUR CAMERA AND SCAN THE QR CODE</Text>
         </View>
 
         <View style={styles.footer}>
           <View style={styles.footerPaint} />
-          <Text style={styles.footerBrand}>TRUCKTAP</Text>
+          <Image
+            source={require('@/assets/images/icon.png')}
+            style={styles.brandLogo}
+            contentFit="contain"
+          />
+          <Text style={styles.footerBrand}>POWERED BY TRUCKTAP</Text>
         </View>
       </View>
     </View>
@@ -393,6 +387,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     letterSpacing: 1,
     transform: [{ rotate: '1deg' }],
+    textAlign: 'center',
   },
   footer: {
     marginTop: 20,
@@ -400,6 +395,11 @@ const styles = StyleSheet.create({
     position: 'relative' as const,
     paddingHorizontal: 20,
     paddingVertical: 8,
+  },
+  brandLogo: {
+    width: 36,
+    height: 36,
+    marginBottom: 2,
   },
   footerPaint: {
     position: 'absolute' as const,

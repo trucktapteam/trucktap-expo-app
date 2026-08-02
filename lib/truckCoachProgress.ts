@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { TruckCommandCenter } from '@/lib/truckCommandCenter';
-import { Announcement, FoodTruck, Review, UpcomingStop } from '@/types';
+import type { TruckCommandCenter } from '@/lib/truckCommandCenter';
+import { getMenuBoardImageFromMenuImages } from '@/lib/truckMenu';
+import type { Announcement, FoodTruck, MenuItem, Review, UpcomingStop } from '@/types';
 
 export type TruckCoachMilestoneId =
   | 'added_truck_name'
@@ -11,7 +12,9 @@ export type TruckCoachMilestoneId =
   | 'added_first_upcoming_stop'
   | 'posted_first_announcement'
   | 'received_first_review'
-  | 'replied_to_first_review';
+  | 'replied_to_first_review'
+  | 'added_menu'
+  | 'shared_qr_code';
 
 type TruckCoachProgressInput = {
   truck: FoodTruck;
@@ -19,6 +22,8 @@ type TruckCoachProgressInput = {
   upcomingStops?: UpcomingStop[];
   announcements?: Announcement[];
   reviews?: Review[];
+  menuItems?: MenuItem[];
+  qrShared?: boolean;
 };
 
 type TruckCoachProgressMemory = {
@@ -43,6 +48,8 @@ const milestoneCelebrations: Record<TruckCoachMilestoneId, string> = {
   posted_first_announcement: 'Good update. Your first announcement is posted.',
   received_first_review: 'You got your first review. That is a real trust signal.',
   replied_to_first_review: 'Great follow-through. You replied to your first review.',
+  added_menu: 'Nice work! Customers can now see your menu.',
+  shared_qr_code: "You've put your QR code to work - every scan can bring a customer back.",
 };
 
 const milestoneOrder: TruckCoachMilestoneId[] = [
@@ -50,8 +57,10 @@ const milestoneOrder: TruckCoachMilestoneId[] = [
   'uploaded_logo',
   'uploaded_hero_image',
   'became_visible',
+  'added_menu',
   'went_live',
   'added_first_upcoming_stop',
+  'shared_qr_code',
   'posted_first_announcement',
   'received_first_review',
   'replied_to_first_review',
@@ -90,12 +99,23 @@ const hasTruckReview = (reviews: Review[] | undefined, truckId: string): boolean
 const hasTruckReviewReply = (reviews: Review[] | undefined, truckId: string): boolean =>
   (reviews ?? []).some(review => review.truckId?.toString() === truckId && !!review.ownerReply);
 
+const hasTruckMenuContent = (
+  truck: FoodTruck,
+  menuItems: MenuItem[] | undefined,
+  truckId: string
+): boolean => {
+  const truckMenuItems = (menuItems ?? []).filter(item => item.truck_id?.toString() === truckId);
+  return truckMenuItems.length > 0 || !!getMenuBoardImageFromMenuImages(truck.menu_images);
+};
+
 export const getCompletedTruckCoachMilestones = ({
   truck,
   commandCenter,
   upcomingStops,
   announcements,
   reviews,
+  menuItems,
+  qrShared,
 }: TruckCoachProgressInput): TruckCoachMilestoneId[] => {
   const truckId = truck.id?.toString();
   const completed = new Set<TruckCoachMilestoneId>();
@@ -121,8 +141,16 @@ export const getCompletedTruckCoachMilestones = ({
     completed.add('became_visible');
   }
 
+  if (truckId && hasTruckMenuContent(truck, menuItems, truckId)) {
+    completed.add('added_menu');
+  }
+
   if (truck.open_now === true) {
     completed.add('went_live');
+  }
+
+  if (qrShared === true) {
+    completed.add('shared_qr_code');
   }
 
   if (truckId && hasTruckScopedItem(upcomingStops, truckId)) {

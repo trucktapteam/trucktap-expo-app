@@ -176,7 +176,7 @@ export default function TruckSettings() {
 
   const handleExitOwnerMode = () => {
     Alert.alert(
-      'Exit Owner Mode',
+      'Switch to Customer View',
       'Switch back to customer mode?',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -275,15 +275,15 @@ setCurrentUser(customerUser);
   };
 
   const handleReportBug = () => {
-    const email = 'support@trucktap.app';
+    const email = 'trucktapteam@gmail.com';
     const subject = 'Bug Report - TruckTap';
-    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 1.0.50`;
+    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 2.0.0`;
     
     Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   };
 
   const handleSendFeedback = () => {
-    const email = 'support@trucktap.app';
+    const email = 'trucktapteam@gmail.com';
     const subject = 'Feedback - TruckTap';
     const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}`;
     
@@ -416,7 +416,7 @@ setCurrentUser(customerUser);
                 {currentUser?.role === 'admin'
                   ? 'Admin'
                   : currentUser?.role === 'truck'
-                  ? 'Truck Owner'
+                  ? 'TruckTap Partner'
                   : 'Customer'}
               </Text>
             </View>
@@ -540,25 +540,19 @@ setCurrentUser(customerUser);
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>About</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>About TruckTap</Text>
 
           <View style={[styles.card, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
             <View style={styles.aboutRow}>
-              <Text style={[styles.aboutLabel, { color: colors.text }]}>App Name</Text>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>TruckTap</Text>
-            </View>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <View style={styles.aboutRow}>
               <Text style={[styles.aboutLabel, { color: colors.text }]}>Version</Text>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>v1.0.50</Text>
+              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>v2.0.0</Text>
             </View>
 
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-            <View style={styles.aboutRow}>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>Built for food trucks ❤️</Text>
+            <View style={styles.aboutTaglineBlock}>
+              <Text style={[styles.aboutTagline, { color: colors.text }]}>Built for Food Trucks &amp; Vendors</Text>
+              <Text style={[styles.aboutDescription, { color: colors.secondaryText }]}>Helping customers discover and helping local businesses grow.</Text>
             </View>
           </View>
         </View>
@@ -727,6 +721,19 @@ const styles = StyleSheet.create({
   },
   aboutValue: {
     fontSize: 16,
+  },
+  aboutTaglineBlock: {
+    paddingVertical: 8,
+  },
+  aboutTagline: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    marginTop: 6,
+  },
+  aboutDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 4,
   },
   followTitle: {
     fontSize: 14,

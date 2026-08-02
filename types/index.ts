@@ -60,6 +60,7 @@ export type FoodTruck = {
   is_test?: boolean;
   lastOwnerActivityAt?: number;
   created_at?: string;
+  hands_free_live_default_enabled?: boolean;
 };
 
 export type Sighting = {
@@ -118,7 +119,6 @@ export type MenuItem = {
   name: string;
   description: string;
   price: number;
-  category?: string;
   image?: string;
   available: boolean;
 };
@@ -145,6 +145,19 @@ export type UpcomingStop = {
   location_text: string;
   note?: string | null;
   status: UpcomingStopStatus;
+  event_image_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type SavedLocation = {
+  id: string;
+  truck_id: string;
+  label: string;
+  location_text: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
   created_at?: string;
   updated_at?: string;
 };

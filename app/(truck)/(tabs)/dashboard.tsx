@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert, Animated } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { MapPin, Utensils, Pencil, Settings, Clock, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { MapPin, Utensils, Pencil, Settings, Image as ImageIcon, BarChart3, Megaphone, QrCode, Share2, ScanLine, CheckCircle2, AlertCircle, Eye, Link, Sparkles, Bell, ArchiveRestore, Truck, CalendarDays, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp, useTruckMenu, useTruckRating } from '@/contexts/AppContext';
 import * as Clipboard from 'expo-clipboard';
@@ -15,10 +15,19 @@ import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { getTruckCommandCenter } from '@/lib/truckCommandCenter';
 import { isTruckVisibilitySetupComplete } from '@/lib/truckVisibilitySetup';
 import { getPublicReadyRequirementKeys, PublicReadyRequirement } from '@/lib/truckPublicReady';
-import { getTruckCoachProgressCelebration } from '@/lib/truckCoachProgress';
+import { getTruckCoachProgressCelebration, TruckCoachMilestoneCelebration } from '@/lib/truckCoachProgress';
 import { getTruckOpportunities } from '@/lib/truckOpportunities';
-import type { TruckOpportunityAction, TruckOpportunityPriority } from '@/lib/truckOpportunities';
+import type { TruckOpportunityAction } from '@/lib/truckOpportunities';
 import { coordinateTruckDashboardRecommendations } from '@/lib/truckDashboardRecommendations';
+import { getUrgentMission, type TruckMission } from '@/lib/truckMission';
+import { getLocalCalendarDateKey } from '@/lib/truckDailyMission';
+import { resolveStoredDailyTruckMission } from '@/lib/truckDailyMissionStorage';
+import { getTruckBusinessSnapshot } from '@/lib/truckBusinessSnapshot';
+import { getRecurringTruckWin, getTruckWins } from '@/lib/truckWins';
+import BiggestOpportunities from '@/components/coach/BiggestOpportunities';
+import TodaysMission from '@/components/coach/TodaysMission';
+import BusinessSnapshot from '@/components/coach/BusinessSnapshot';
+import Wins from '@/components/coach/Wins';
 
 const formatLastScanned = (dateString: string): string => {
   const date = new Date(dateString);
@@ -83,12 +92,6 @@ const requiredProfileLabels: Record<PublicReadyRequirement, string> = {
   bio: 'Bio',
 };
 
-const opportunityPriorityLabels: Record<TruckOpportunityPriority, string> = {
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-};
-
 export default function TruckDashboard() {
   const router = useRouter();
   const pathname = usePathname();
@@ -102,6 +105,7 @@ export default function TruckDashboard() {
     updateTruckDetails,
     goOffline,
     getQrScanStats,
+    getTruckAnalytics,
     hasHoursSet,
     isProfileComplete,
     hasUnreadOwnerUpdates,
@@ -124,14 +128,22 @@ export default function TruckDashboard() {
   const [toastVisible, setToastVisible] = useState(false);
   const [statusToast, setStatusToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' }>({ visible: false, message: '', type: 'success' });
   const [liveNowMs, setLiveNowMs] = useState(Date.now());
-  const [coachProgressCelebration, setCoachProgressCelebration] = useState('');
-  const [isRoadTipExpanded, setIsRoadTipExpanded] = useState(false);
+  const [coachClockMs, setCoachClockMs] = useState(Date.now());
+  const [dailyMissionState, setDailyMissionState] = useState<{
+    truckId: string;
+    dateKey: string;
+    mission: TruckMission;
+  } | null>(null);
+  const [coachProgressCelebration, setCoachProgressCelebration] = useState<TruckCoachMilestoneCelebration | null>(null);
   const [showWelcomeSetupPrompt, setShowWelcomeSetupPrompt] = useState(!hasShownOwnerSetupPromptThisSession);
   
   const bannerOpacity = useRef(new Animated.Value(0)).current;
   const bannerTranslateY = useRef(new Animated.Value(-5)).current;
   
   const qrStats = truck ? getQrScanStats(truck.id) : { totalScans: 0, lastScanned: undefined };
+  const checkInAnalytics = truck
+    ? getTruckAnalytics(truck.id)
+    : { customerCheckIns: 0, customerCheckInsThisMonth: 0 };
 
   const menuItems = useTruckMenu(truck?.id || '');
   const rating = useTruckRating(truck?.id || '');
@@ -205,7 +217,7 @@ export default function TruckDashboard() {
         hasOperatingHours: hoursSet,
       })
       : null,
-    [announcements, hoursSet, menuItems, ownerMessages, reviews, truck, upcomingStops]
+    [announcements, coachClockMs, hoursSet, menuItems, ownerMessages, reviews, truck, upcomingStops]
   );
   const rawOpportunities = useMemo(
     () => truck
@@ -215,26 +227,94 @@ export default function TruckDashboard() {
         announcements,
         menuItems,
         reviews,
+        qrShared,
+        hasOperatingHours: hoursSet,
+        customerCheckInsThisMonth: checkInAnalytics.customerCheckInsThisMonth,
       })
       : [],
-    [announcements, menuItems, reviews, truck, upcomingStops]
+    [announcements, checkInAnalytics.customerCheckInsThisMonth, coachClockMs, hoursSet, menuItems, qrShared, reviews, truck, upcomingStops]
   );
-  const dashboardRecommendations = useMemo(
-    () => commandCenter
-      ? coordinateTruckDashboardRecommendations(commandCenter, rawOpportunities, truck?.id)
-      : null,
-    [commandCenter, rawOpportunities, truck?.id]
-  );
+  const coachDateKey = getLocalCalendarDateKey(new Date(coachClockMs));
+  const urgentCoachMission = commandCenter ? getUrgentMission(commandCenter) : null;
+  const persistedDailyMission =
+    dailyMissionState &&
+    dailyMissionState.truckId === truck?.id?.toString() &&
+    dailyMissionState.dateKey === coachDateKey
+      ? dailyMissionState.mission
+      : null;
+  const activeCoachMission = urgentCoachMission ?? persistedDailyMission;
+
   useEffect(() => {
-    setIsRoadTipExpanded(false);
-  }, [commandCenter?.nextAction, dashboardRecommendations?.roadTip.id, truck?.id]);
-  const displayTruckCoach = dashboardRecommendations
-    ? {
-      ...dashboardRecommendations.coach,
-      celebration: coachProgressCelebration || dashboardRecommendations.coach.celebration,
+    let mounted = true;
+    const truckId = truck?.id?.toString();
+
+    if (!truckId || !commandCenter || isAdminViewOnly) {
+      setDailyMissionState(null);
+      return () => {
+        mounted = false;
+      };
     }
-    : null;
-  const opportunities = dashboardRecommendations?.opportunities.slice(0, 3) ?? [];
+
+    // Urgent/blocker cards are synchronous overrides. Keep the stored daily
+    // mission in memory underneath so it resumes unchanged when urgency clears.
+    if (urgentCoachMission) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    resolveStoredDailyTruckMission({
+      truckId,
+      date: new Date(),
+      commandCenter,
+      opportunities: rawOpportunities,
+    })
+      .then(mission => {
+        if (mounted) setDailyMissionState({ truckId, dateKey: coachDateKey, mission });
+      })
+      .catch(error => {
+        if (__DEV__) {
+          console.log('[Dashboard] Daily Coach mission failed:', error?.message ?? error);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [coachDateKey, commandCenter, isAdminViewOnly, rawOpportunities, truck?.id, urgentCoachMission]);
+
+  const dashboardRecommendations = useMemo(
+    () => commandCenter && activeCoachMission
+      ? coordinateTruckDashboardRecommendations(commandCenter, rawOpportunities, truck?.id, activeCoachMission)
+      : null,
+    [activeCoachMission, commandCenter, rawOpportunities, truck?.id]
+  );
+  const snapshotTiles = useMemo(
+    () => getTruckBusinessSnapshot({
+      truckId: truck?.id,
+      upcomingStops,
+      openNow: truckOpenNow,
+      liveUpdatedText,
+      qrTotalScans: qrStats.totalScans,
+      reviewsCount: rating.count,
+      reviewsAverage: rating.average,
+      checkInsThisMonth: checkInAnalytics.customerCheckInsThisMonth,
+    }),
+    [checkInAnalytics.customerCheckInsThisMonth, liveUpdatedText, qrStats.totalScans, rating.average, rating.count, truck?.id, truckOpenNow, upcomingStops]
+  );
+  const recurringWin = useMemo(
+    () => getRecurringTruckWin({
+      truckId: truck?.id,
+      upcomingStops,
+      openNow: truckOpenNow,
+      checkInsThisMonth: checkInAnalytics.customerCheckInsThisMonth,
+    }),
+    [checkInAnalytics.customerCheckInsThisMonth, truck?.id, truckOpenNow, upcomingStops]
+  );
+  const wins = useMemo(
+    () => getTruckWins(coachProgressCelebration, recurringWin),
+    [coachProgressCelebration, recurringWin]
+  );
   const dailyBriefingGreeting = useMemo(() => getDailyBriefingGreeting(), []);
   const scheduledStopWarning = commandCenter?.eventReadiness === 'starts_soon'
     ? {
@@ -330,45 +410,6 @@ export default function TruckDashboard() {
     router.push('/(customer)/(tabs)/discover' as any);
   };
 
-  const getOpportunityActionLabel = (action: TruckOpportunityAction): string | null => {
-    switch (action) {
-      case 'schedule':
-        return 'Add stop';
-      case 'announcement':
-        return 'Share update';
-      case 'gallery':
-        return 'Add photos';
-      case 'reviews':
-        return 'Reply';
-      case 'goLive':
-        return 'Go Live';
-      default:
-        return null;
-    }
-  };
-
-  const getOpportunityPriorityPillStyle = (priority: TruckOpportunityPriority) => {
-    switch (priority) {
-      case 'high':
-        return styles.opportunityPriorityHigh;
-      case 'medium':
-        return styles.opportunityPriorityMedium;
-      case 'low':
-        return styles.opportunityPriorityLow;
-    }
-  };
-
-  const getOpportunityPriorityTextStyle = (priority: TruckOpportunityPriority) => {
-    switch (priority) {
-      case 'high':
-        return styles.opportunityPriorityTextHigh;
-      case 'medium':
-        return styles.opportunityPriorityTextMedium;
-      case 'low':
-        return styles.opportunityPriorityTextLow;
-    }
-  };
-
   const handleOpportunityAction = (action: TruckOpportunityAction) => {
     switch (action) {
       case 'schedule':
@@ -380,11 +421,23 @@ export default function TruckDashboard() {
       case 'gallery':
         router.push('/(truck)/gallery' as any);
         return;
+      case 'menu':
+        router.push('/(truck)/menu-editor' as any);
+        return;
       case 'reviews':
         router.push('/(truck)/reviews' as any);
         return;
       case 'goLive':
         handleGoLive();
+        return;
+      case 'qrCenter':
+        router.push('/(truck)/poster' as any);
+        return;
+      case 'checkIns':
+        router.push('/(truck)/analytics' as any);
+        return;
+      case 'profile':
+        router.push('/(truck)/edit-profile' as any);
         return;
       default:
         return;
@@ -395,7 +448,7 @@ export default function TruckDashboard() {
     let mounted = true;
 
     if (!truck || !commandCenter || isAdminViewOnly) {
-      setCoachProgressCelebration('');
+      setCoachProgressCelebration(null);
       return () => {
         mounted = false;
       };
@@ -407,10 +460,12 @@ export default function TruckDashboard() {
       upcomingStops,
       announcements,
       reviews,
+      menuItems,
+      qrShared,
     })
       .then(celebration => {
         if (mounted) {
-          setCoachProgressCelebration(celebration?.message ?? '');
+          setCoachProgressCelebration(celebration);
         }
       })
       .catch(error => {
@@ -418,14 +473,14 @@ export default function TruckDashboard() {
           console.log('[Dashboard] Coach progress celebration failed:', error?.message ?? error);
         }
         if (mounted) {
-          setCoachProgressCelebration('');
+          setCoachProgressCelebration(null);
         }
       });
 
     return () => {
       mounted = false;
     };
-  }, [announcements, commandCenter, isAdminViewOnly, reviews, truck, upcomingStops]);
+  }, [announcements, commandCenter, isAdminViewOnly, menuItems, qrShared, reviews, truck, upcomingStops]);
 
   useEffect(() => {
     if (isArchived) {
@@ -446,6 +501,11 @@ export default function TruckDashboard() {
       bannerTranslateY.setValue(-5);
     }
   }, [isArchived, bannerOpacity, bannerTranslateY]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => setCoachClockMs(Date.now()), 60000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     if (!truckOpenNow) {
@@ -836,8 +896,16 @@ export default function TruckDashboard() {
         isOpen={truckOpenNow}
         greeting={dailyBriefingGreeting}
         missionLabel="Next Action:"
-        missionMessage={dashboardRecommendations?.nextActionMessage ?? commandCenter?.nextAction}
-        onMissionPress={showCommandAction ? handleCommandCenterAction : undefined}
+        missionMessage={dashboardRecommendations?.mission.title ?? commandCenter?.nextAction}
+        onMissionPress={
+          dashboardRecommendations
+            ? dashboardRecommendations.mission.action !== 'none'
+              ? () => handleOpportunityAction(dashboardRecommendations.mission.action)
+              : undefined
+            : showCommandAction
+              ? handleCommandCenterAction
+              : undefined
+        }
         onCustomerViewPress={handleBrowseAsCustomer}
       />
 
@@ -1049,102 +1117,12 @@ export default function TruckDashboard() {
           )}
         </View>
 
-        {commandCenter && (
-          <View style={styles.commandCenterCard}>
-            <View style={styles.commandCenterHeader}>
-              <View style={styles.commandCenterIconWrap}>
-                <Sparkles size={22} color={Colors.primary} />
-              </View>
-              <View style={styles.commandCenterTitleWrap}>
-                <Text style={styles.commandCenterEyebrow}>TruckTap Coach</Text>
-                <Text style={styles.commandCenterTitle}>Road Tip</Text>
-              </View>
-            </View>
-
-            <View style={styles.commandCenterNextBox}>
-              {displayTruckCoach?.celebration ? (
-                <Text style={styles.commandCenterCelebration}>{displayTruckCoach.celebration}</Text>
-              ) : null}
-              <Text style={styles.commandCenterNextAction}>
-                {dashboardRecommendations?.roadTip.summary ?? displayTruckCoach?.message}
-              </Text>
-              <TouchableOpacity
-                style={styles.roadTipToggle}
-                onPress={() => setIsRoadTipExpanded(expanded => !expanded)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel={isRoadTipExpanded ? 'Collapse Road Tip' : 'Learn why this Road Tip matters'}
-                accessibilityState={{ expanded: isRoadTipExpanded }}
-                hitSlop={6}
-              >
-                <Text style={styles.roadTipToggleText}>{isRoadTipExpanded ? 'Show Less' : 'Learn Why'}</Text>
-                {isRoadTipExpanded ? (
-                  <ChevronUp size={16} color={Colors.primary} />
-                ) : (
-                  <ChevronDown size={16} color={Colors.primary} />
-                )}
-              </TouchableOpacity>
-              {isRoadTipExpanded && dashboardRecommendations?.roadTip.detail ? (
-                <View style={styles.roadTipDetailWrap}>
-                  <Text style={styles.roadTipDetail}>{dashboardRecommendations.roadTip.detail}</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
+        {commandCenter && dashboardRecommendations && (
+          <BiggestOpportunities
+            opportunities={dashboardRecommendations.opportunities}
+            onAction={handleOpportunityAction}
+          />
         )}
-
-        <View style={styles.opportunitiesCard}>
-          <View style={styles.opportunitiesHeader}>
-            <View style={styles.opportunitiesTitleWrap}>
-              <Text style={styles.opportunitiesTitle}>Opportunities</Text>
-              <Text style={styles.opportunitiesSubtitle}>
-                Quick checks to keep your truck easy to find.
-              </Text>
-            </View>
-          </View>
-
-          {opportunities.length > 0 ? (
-            <View style={styles.opportunitiesList}>
-              {opportunities.map(opportunity => {
-                const actionLabel = getOpportunityActionLabel(opportunity.action);
-
-                return (
-                  <View key={opportunity.id} style={styles.opportunityItem}>
-                    <View style={styles.opportunityContent}>
-                      <View style={styles.opportunityTitleRow}>
-                        <Text style={styles.opportunityTitle}>{opportunity.title}</Text>
-                        <View style={[
-                          styles.opportunityPriorityPill,
-                          getOpportunityPriorityPillStyle(opportunity.priority),
-                        ]}>
-                          <Text style={[
-                            styles.opportunityPriorityText,
-                            getOpportunityPriorityTextStyle(opportunity.priority),
-                          ]}>
-                            {opportunityPriorityLabels[opportunity.priority]}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={styles.opportunityDescription}>{opportunity.description}</Text>
-                    </View>
-                    {actionLabel ? (
-                      <TouchableOpacity
-                        style={styles.opportunityActionButton}
-                        onPress={() => handleOpportunityAction(opportunity.action)}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={styles.opportunityActionText}>{actionLabel}</Text>
-                        <ChevronRight size={15} color={Colors.primary} />
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </View>
-          ) : (
-            <Text style={styles.opportunitiesEmptyText}>You&apos;re all caught up.</Text>
-          )}
-        </View>
 
         <TouchableOpacity
           style={styles.upcomingStopsCard}
@@ -1176,73 +1154,28 @@ export default function TruckDashboard() {
           </View>
           <View style={styles.announcementTextWrap}>
             <Text style={styles.announcementTitle}>Announcements</Text>
-            <Text style={styles.announcementSubtitle}>Share a 7-day update with customers</Text>
+            <Text style={styles.announcementSubtitle}>Update customers who have favorited your truck</Text>
           </View>
           <ChevronRight size={18} color={Colors.gray} />
         </TouchableOpacity>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Business Activity</Text>
-        </View>
-
-        <StatsRow
-          stats={{
-            menuItems: menuItems.length,
-            rating: rating.average || 0,
-          }}
-        />
-
-        {qrStats.totalScans > 0 && (
-          <View style={styles.qrStatsCard}>
-            <View style={styles.qrStatsHeader}>
-              <ScanLine size={20} color={Colors.primary} />
-              <Text style={styles.qrStatsTitle}>QR Engagement</Text>
-            </View>
-            <View style={styles.qrStatsRow}>
-              <View style={styles.qrStatItem}>
-                <Text style={styles.qrStatNumber}>{qrStats.totalScans}</Text>
-                <Text style={styles.qrStatLabel}>Total Scans</Text>
-              </View>
-              {qrStats.lastScanned ? (
-                <View style={styles.qrStatItem}>
-                  <Text style={styles.qrStatNumber}>{formatLastScanned(qrStats.lastScanned)}</Text>
-                  <Text style={styles.qrStatLabel}>Last Scanned</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
+        {commandCenter && dashboardRecommendations && (
+          <TodaysMission
+            mission={dashboardRecommendations.mission}
+            onAction={handleOpportunityAction}
+          />
         )}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Owner Tools</Text>
+          <Text style={styles.sectionTitle}>Partner Tools</Text>
         </View>
 
         <View style={styles.gridContainer}>
-          <DashboardCard 
-            icon={MapPin}
-            label="Location"
-            onPress={() => router.push('/(truck)/update-location' as any)}
-          />
           <DashboardCard 
             icon={Utensils}
             label="Menu Editor"
             onPress={() => router.push('/(truck)/menu-editor' as any)}
           />
-        </View>
-
-        <View style={styles.gridContainer}>
-          <View style={styles.cardWithBadge}>
-            <DashboardCard 
-              icon={Clock}
-              label="Operating Hours"
-              onPress={() => router.push('/(truck)/operating-hours' as any)}
-            />
-            {!hoursSet && (
-              <View style={styles.warningBadge}>
-                <AlertCircle size={12} color={Colors.error} />
-              </View>
-            )}
-          </View>
           <View style={styles.cardWithBadge}>
             <DashboardCard 
               icon={Bell}
@@ -1281,28 +1214,6 @@ export default function TruckDashboard() {
           />
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Customer-Facing Profile</Text>
-        </View>
-
-        <TouchableOpacity 
-          style={styles.previewCard}
-          onPress={() => router.push(`/truck/${truck.id}?preview=true` as any)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.previewIconContainer}>
-            <Eye size={24} color={Colors.primary} />
-          </View>
-          <View style={styles.previewContent}>
-            <Text style={styles.previewTitle}>Preview Your Profile</Text>
-            <Text style={styles.previewSubtitle}>This is what customers see when they scan your QR code</Text>
-          </View>
-        </TouchableOpacity>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Growth Tools</Text>
-        </View>
-
         <View style={styles.shareMainCard}>
           <View style={styles.shareMainHeader}>
             <View style={styles.shareMainIconContainer}>
@@ -1324,7 +1235,7 @@ export default function TruckDashboard() {
             <View style={styles.shareDisabledHelper}>
               <AlertCircle size={16} color={Colors.warning} />
               <Text style={styles.shareDisabledHelperText}>
-                Add menu items, photos, and operating hours to improve your public profile, but you can still share your truck right now.
+                Add menu items and photos to improve your public profile, but you can still share your truck right now.
               </Text>
             </View>
           )}
@@ -1347,6 +1258,20 @@ export default function TruckDashboard() {
             >
               <Share2 size={20} color="#fff" />
               <Text style={styles.sharePrimaryButtonText}>Share via Text / Social</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.sharePosterButton, !canShareTruck && styles.sharePosterButtonDisabled]}
+              onPress={() => router.push('/(truck)/poster' as any)}
+              disabled={!canShareTruck}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Create and print QR poster"
+            >
+              <QrCode size={20} color={canShareTruck ? Colors.primary : Colors.gray} />
+              <Text style={[styles.sharePosterButtonText, !canShareTruck && styles.sharePosterButtonTextDisabled]}>
+                Create & Print QR Poster
+              </Text>
             </TouchableOpacity>
 
             <View style={styles.shareSecondaryButtons}>
@@ -1372,6 +1297,64 @@ export default function TruckDashboard() {
             </View>
           </View>
         </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Customer Preview</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.previewCard}
+          onPress={() => router.push(`/truck/${truck.id}?preview=true` as any)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.previewIconContainer}>
+            <Eye size={24} color={Colors.primary} />
+          </View>
+          <View style={styles.previewContent}>
+            <Text style={styles.previewTitle}>Preview Your Profile</Text>
+            <Text style={styles.previewSubtitle}>This is what customers see when they scan your QR code</Text>
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Customer Feedback</Text>
+        </View>
+
+        <StatsRow
+          stats={{
+            reviewsCount: rating.count,
+            rating: rating.average || 0,
+          }}
+          onReviewsPress={() => router.push('/(truck)/reviews' as any)}
+        />
+
+        {qrStats.totalScans > 0 && (
+          <View style={styles.qrStatsCard}>
+            <View style={styles.qrStatsHeader}>
+              <ScanLine size={20} color={Colors.primary} />
+              <Text style={styles.qrStatsTitle}>QR Engagement</Text>
+            </View>
+            <View style={styles.qrStatsRow}>
+              <View style={styles.qrStatItem}>
+                <Text style={styles.qrStatNumber}>{qrStats.totalScans}</Text>
+                <Text style={styles.qrStatLabel}>Total Scans</Text>
+              </View>
+              {qrStats.lastScanned ? (
+                <View style={styles.qrStatItem}>
+                  <Text style={styles.qrStatNumber}>{formatLastScanned(qrStats.lastScanned)}</Text>
+                  <Text style={styles.qrStatLabel}>Last Scanned</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        )}
+
+        {commandCenter && dashboardRecommendations && (
+          <>
+            <BusinessSnapshot tiles={snapshotTiles} />
+            <Wins wins={wins} />
+          </>
+        )}
       </ScrollView>
 
       {toastVisible && (
@@ -1582,90 +1565,6 @@ const styles = StyleSheet.create({
   },
   inspectionButtonHalf: {
     flex: 1,
-  },
-  commandCenterCard: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 14,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}22`,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  commandCenterHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 11,
-  },
-  commandCenterIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: `${Colors.primary}12`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  commandCenterTitleWrap: {
-    flex: 1,
-  },
-  commandCenterEyebrow: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-    color: Colors.primary,
-    marginBottom: 3,
-  },
-  commandCenterTitle: {
-    fontSize: 17,
-    fontWeight: '800' as const,
-    color: Colors.dark,
-  },
-  commandCenterNextBox: {
-    backgroundColor: `${Colors.primary}0D`,
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}18`,
-  },
-  commandCenterNextAction: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '700' as const,
-    color: Colors.dark,
-  },
-  roadTipToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 3,
-    marginTop: 9,
-    paddingVertical: 2,
-  },
-  roadTipToggleText: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: Colors.primary,
-  },
-  roadTipDetailWrap: {
-    borderTopWidth: 1,
-    borderTopColor: `${Colors.primary}18`,
-    marginTop: 8,
-    paddingTop: 9,
-  },
-  roadTipDetail: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: Colors.gray,
-  },
-  commandCenterCelebration: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: Colors.success,
-    marginBottom: 7,
   },
   scheduledStopWarning: {
     backgroundColor: '#fff',
@@ -2245,134 +2144,9 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
     color: Colors.gray,
   },
-  opportunitiesCard: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 14,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}18`,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  opportunitiesHeader: {
-    marginBottom: 12,
-  },
-  opportunitiesTitleWrap: {
-    gap: 4,
-  },
-  opportunitiesTitle: {
-    fontSize: 17,
-    fontWeight: '700' as const,
-    color: Colors.dark,
-  },
-  opportunitiesSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: Colors.gray,
-  },
-  opportunitiesList: {
-    gap: 10,
-  },
-  opportunityItem: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    padding: 12,
-    gap: 10,
-  },
-  opportunityContent: {
-    gap: 5,
-  },
-  opportunityTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  opportunityTitle: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700' as const,
-    color: Colors.dark,
-  },
-  opportunityDescription: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: Colors.gray,
-  },
-  opportunityPriorityPill: {
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  opportunityPriorityHigh: {
-    backgroundColor: `${Colors.error}14`,
-  },
-  opportunityPriorityMedium: {
-    backgroundColor: `${Colors.warning}18`,
-  },
-  opportunityPriorityLow: {
-    backgroundColor: `${Colors.primary}12`,
-  },
-  opportunityPriorityText: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-  },
-  opportunityPriorityTextHigh: {
-    color: Colors.error,
-  },
-  opportunityPriorityTextMedium: {
-    color: Colors.warning,
-  },
-  opportunityPriorityTextLow: {
-    color: Colors.primary,
-  },
-  opportunityActionButton: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: `${Colors.primary}10`,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  opportunityActionText: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-    color: Colors.primary,
-  },
-  opportunitiesEmptyText: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: Colors.gray,
-  },
   cardWithBadge: {
     flex: 1,
     position: 'relative',
-    marginHorizontal: 6,
-  },
-  warningBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Colors.error,
-    shadowColor: Colors.error,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
   },
   notificationBadge: {
     position: 'absolute',
@@ -2507,6 +2281,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700' as const,
     color: '#fff',
+  },
+  sharePosterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.light,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: `${Colors.primary}45`,
+  },
+  sharePosterButtonDisabled: {
+    borderColor: `${Colors.gray}30`,
+  },
+  sharePosterButtonText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  sharePosterButtonTextDisabled: {
+    color: Colors.gray,
   },
   shareSecondaryButtons: {
     flexDirection: 'row',

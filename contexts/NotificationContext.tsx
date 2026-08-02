@@ -32,13 +32,11 @@ console.log('[Notifications] isExpoGo:', isExpoGo);
 
 type NotificationPreferences = {
   favoritesOpen: boolean;
-  newTrucksNearby: boolean;
   truckAnnouncements: boolean;
 };
 
 const DEFAULT_PREFS: NotificationPreferences = {
   favoritesOpen: false,
-  newTrucksNearby: false,
   truckAnnouncements: false,
 };
 
@@ -47,13 +45,11 @@ const FOREGROUND_PERMISSION_REFRESH_DEBOUNCE_MS = 5000;
 
 const profileRowToPreferences = (row: any): NotificationPreferences => ({
   favoritesOpen: row?.notify_favorites_open === true,
-  newTrucksNearby: row?.notify_new_trucks === true,
   truckAnnouncements: row?.notify_announcements === true,
 });
 
 const preferencesToProfilePayload = (prefs: NotificationPreferences) => ({
   notify_favorites_open: prefs.favoritesOpen,
-  notify_new_trucks: prefs.newTrucksNearby,
   notify_announcements: prefs.truckAnnouncements,
 });
 

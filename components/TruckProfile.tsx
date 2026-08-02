@@ -2,7 +2,9 @@ import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, TextInput, Modal, Alert, Platform, Animated, Share, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { CalendarDays, MapPin, Clock, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Globe, Users, ShieldCheck } from 'lucide-react-native';
+import { CalendarDays, MapPin, Clock, ImageIcon, Star, MessageSquare, Navigation, ChevronRight, CheckCircle, Shield, Phone, X, Utensils, Pencil, Globe, Users, ShieldCheck } from 'lucide-react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { getSocialBrandIcon } from '@/lib/socialLinkIcons';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApp, useTruckReviews, useTruckRating } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -200,6 +202,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
   const [reviewRating, setReviewRating] = useState<number>(5);
   const [reviewComment, setReviewComment] = useState<string>('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedEventFlyer, setSelectedEventFlyer] = useState<string | null>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState<boolean>(false);
   const [authAction, setAuthAction] = useState<string>('');
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
@@ -276,11 +279,11 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
 
   const handleOwnerAction = useCallback((action: string) => {
     if (!isAuthenticated || !authUser) {
-      Alert.alert('Owner Access Required', 'You must be logged in as the truck owner to perform this action.');
+      Alert.alert('Partner Access Required', 'You must be logged in as this truck\'s TruckTap Partner to perform this action.');
       return;
     }
     if (!isOwnerOfTruck) {
-      Alert.alert('Owner Access Required', 'Only the truck owner can perform this action.');
+      Alert.alert('Partner Access Required', 'Only this truck\'s TruckTap Partner can perform this action.');
       return;
     }
     switch (action) {
@@ -796,20 +799,28 @@ console.log('[FORMAT DATE]', dateInput);
                 <Clock size={20} color={colors.secondaryText} />
                 <Text style={styles.infoText}>{formatOperatingHours(truck.id)}</Text>
               </View>
-              {socialLinks.map(link => (
-                <TouchableOpacity
-                  key={link.key}
-                  style={styles.infoRow}
-                  onPress={() => handleOpenExternalProfileLink(link.url)}
-                  activeOpacity={0.7}
-                  accessibilityRole="link"
-                >
-                  <Globe size={20} color={colors.primary} />
-                  <Text style={[styles.infoText, styles.profileLinkText]} numberOfLines={1}>
-                    {link.label}: {getProfileLinkLabel(link.url)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {socialLinks.map(link => {
+                const brandIcon = getSocialBrandIcon(link.key);
+                return (
+                  <TouchableOpacity
+                    key={link.key}
+                    style={styles.infoRow}
+                    onPress={() => handleOpenExternalProfileLink(link.url)}
+                    activeOpacity={0.7}
+                    accessibilityRole="link"
+                    accessibilityLabel={`${link.label}: ${getProfileLinkLabel(link.url)}`}
+                  >
+                    {brandIcon ? (
+                      <FontAwesome5 name={brandIcon.name} brand size={20} color={brandIcon.color} />
+                    ) : (
+                      <Globe size={20} color={colors.primary} />
+                    )}
+                    <Text style={[styles.infoText, styles.profileLinkText]} numberOfLines={1}>
+                      {getProfileLinkLabel(link.url)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
               <View style={styles.bioDivider} />
               <ExpandableText text={truck.bio} numberOfLines={3} style={styles.bioText} />
             </View>
@@ -891,7 +902,7 @@ console.log('[FORMAT DATE]', dateInput);
                       activeOpacity={0.7}
                     >
                       {item.image ? (
-                        <Image source={{ uri: item.image }} style={styles.menuItemImage} contentFit="cover" />
+                        <Image source={{ uri: item.image }} style={styles.menuItemImage} contentFit="contain" />
                       ) : (
                         <View style={styles.menuItemImagePlaceholder}>
                           <Utensils size={32} color={colors.secondaryText} />
@@ -1037,7 +1048,7 @@ console.log('[FORMAT DATE]', dateInput);
         <ExpandableText text={review.text} numberOfLines={3} style={styles.reviewComment} />
         {review.ownerReply && (
           <View style={styles.ownerReplyCard}>
-            <Text style={styles.ownerReplyLabel}>Owner response</Text>
+            <Text style={styles.ownerReplyLabel}>Reply from {truck.name}</Text>
             <ExpandableText
               text={review.ownerReply.body}
               numberOfLines={3}
@@ -1066,6 +1077,13 @@ console.log('[FORMAT DATE]', dateInput);
         image={selectedImage}
         onClose={() => setSelectedImage(null)}
         onPhotoView={() => incrementPhotoView(truck.id)}
+      />
+
+      <FullscreenImageViewer
+        visible={selectedEventFlyer !== null}
+        image={selectedEventFlyer}
+        onClose={() => setSelectedEventFlyer(null)}
+        accessibilityLabel="Event flyer"
       />
 
       <Modal
@@ -1118,6 +1136,29 @@ console.log('[FORMAT DATE]', dateInput);
                     </Text>
                   </View>
                 </View>
+
+                {selectedUpcomingStop.event_image_url ? (
+                  <TouchableOpacity
+                    style={styles.stopDetailFlyerButton}
+                    onPress={() => {
+                      setSelectedEventFlyer(selectedUpcomingStop.event_image_url ?? null);
+                      setSelectedUpcomingStop(null);
+                    }}
+                    activeOpacity={0.82}
+                    accessibilityRole="button"
+                    accessibilityLabel="View event flyer full screen"
+                  >
+                    <Image
+                      source={{ uri: selectedUpcomingStop.event_image_url }}
+                      style={styles.stopDetailFlyerImage}
+                      contentFit="contain"
+                    />
+                    <View style={styles.stopDetailFlyerLabelRow}>
+                      <ImageIcon size={16} color={colors.primary} />
+                      <Text style={styles.stopDetailFlyerLabel}>View Event Flyer</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
 
                 {getUpcomingStopDescription(selectedUpcomingStop) ? (
                   <Text style={styles.stopDetailDescription}>
@@ -1192,7 +1233,7 @@ console.log('[FORMAT DATE]', dateInput);
             />
             {review.ownerReply && (
               <View style={styles.ownerReplyCard}>
-                <Text style={styles.ownerReplyLabel}>Owner response</Text>
+                <Text style={styles.ownerReplyLabel}>Reply from {truck.name}</Text>
                 <ExpandableText
                   text={review.ownerReply.body}
                   numberOfLines={6}
@@ -1723,8 +1764,6 @@ emptyReviewText: {
     fontWeight: '700' as const,
     color: colors.primary,
     marginBottom: 6,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.4,
   },
   ownerReplyText: {
     fontSize: 14,
@@ -1817,6 +1856,30 @@ emptyReviewText: {
     color: colors.secondaryText,
     lineHeight: 22,
     marginBottom: 20,
+  },
+  stopDetailFlyerButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  stopDetailFlyerImage: {
+    width: '100%',
+    height: 300,
+    backgroundColor: colors.secondaryBackground,
+  },
+  stopDetailFlyerLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 11,
+  },
+  stopDetailFlyerLabel: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: colors.primary,
   },
   stopDetailNavigateButton: {
     flexDirection: 'row',

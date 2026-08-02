@@ -124,7 +124,7 @@ const handleBecomeOwner = () => {
     </TouchableOpacity>
 
     <TouchableOpacity onPress={handleCreateAccount}>
-      <Text style={styles.createAccountText}>Create Account</Text>
+      <Text style={styles.createAccountText}>Join the TruckTap Network</Text>
     </TouchableOpacity>
 
     {showOwnerPromo ? (
@@ -133,7 +133,7 @@ const handleBecomeOwner = () => {
         <Text style={styles.ownerPromoSubtitle}>
           Run your truck from TruckTap. Go LIVE, update your menu, and reach more customers.
         </Text>
-        <Text style={styles.ownerPromoCta}>Become a Truck Owner →</Text>
+        <Text style={styles.ownerPromoCta}>Join the TruckTap Partner Network →</Text>
       </TouchableOpacity>
     ) : null}
 

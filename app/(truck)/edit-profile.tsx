@@ -15,6 +15,8 @@ import { usePathname, useRouter, useSegments } from 'expo-router';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, MapPin, Phone, Globe, Users, ShieldCheck } from 'lucide-react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { SOCIAL_BRAND_ICONS } from '@/lib/socialLinkIcons';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -37,7 +39,6 @@ const CUISINES = [
   'Italian',
   'Mediterranean',
   'Mexican',
-  'Other',
   'Seafood',
   'Snow Cones',
   'Soul Food',
@@ -123,9 +124,9 @@ export default function EditProfile() {
     hydratedTruckIdRef.current = truck.id;
     setName(truck.name || '');
     const savedCuisine = truck.cuisine_type || '';
-    const isPredefinedCuisine = CUISINES.includes(savedCuisine);
+    const isPredefinedCuisine = !savedCuisine || CUISINES.includes(savedCuisine);
     setCuisineType(savedCuisine);
-    setIsCustomCuisine(!isPredefinedCuisine);
+    setIsCustomCuisine(Boolean(savedCuisine) && !isPredefinedCuisine);
     setCustomCuisine(isPredefinedCuisine ? '' : savedCuisine);
     setPhone(truck.phone || '');
     setBio(truck.bio || '');
@@ -213,12 +214,6 @@ export default function EditProfile() {
       newErrors.name = 'Truck name is required';
     }
 
-    if (!cuisineType.trim()) {
-      newErrors.cuisineType = isCustomCuisine
-        ? 'What do you serve'
-        : 'Cuisine type is required';
-    }
-
     const phoneDigits = phone.replace(/\D/g, '');
     if (phone.trim() && phoneDigits.length > 0 && phoneDigits.length < 10) {
       newErrors.phone = 'Please enter a valid 10-digit phone number';
@@ -247,7 +242,7 @@ export default function EditProfile() {
     }
     
     return Object.keys(newErrors).length === 0;
-  }, [name, cuisineType, isCustomCuisine, phone, website, facebookUrl, instagramUrl, tiktokUrl]);
+  }, [name, phone, website, facebookUrl, instagramUrl, tiktokUrl]);
 
   const toggleTrustBadge = useCallback((badgeId: string) => {
     setTrustBadges(prev =>
@@ -588,9 +583,7 @@ export default function EditProfile() {
               <Text style={styles.sectionTitle}>Basic Info</Text>
               <View style={styles.card}>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>
-                    Truck Name <Text style={styles.required}>*</Text>
-                  </Text>
+                  <Text style={styles.label}>Truck Name</Text>
                   <TextInput
                     style={[styles.input, errors.name && styles.inputError]}
                     value={name}
@@ -607,9 +600,7 @@ export default function EditProfile() {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>
-                    Cuisine Type <Text style={styles.required}>*</Text>
-                  </Text>
+                  <Text style={styles.label}>Cuisine Type (Optional)</Text>
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -635,9 +626,6 @@ export default function EditProfile() {
                               setIsCustomCuisine(false);
                               setCuisineType(cuisine);
                             }
-                            if (errors.cuisineType) {
-                              setErrors((prev) => ({ ...prev, cuisineType: '' }));
-                            }
                           }}
                         >
                           <Text
@@ -654,22 +642,16 @@ export default function EditProfile() {
                   </ScrollView>
                   {isCustomCuisine ? (
                     <TextInput
-                      style={[styles.input, errors.cuisineType && styles.inputError]}
+                      style={styles.input}
                       value={customCuisine}
                       onChangeText={(text) => {
                         setCustomCuisine(text);
                         setCuisineType(text);
-                        if (errors.cuisineType && text.trim()) {
-                          setErrors((prev) => ({ ...prev, cuisineType: '' }));
-                        }
                       }}
                       placeholder="What do you serve"
                       placeholderTextColor={Colors.gray}
                       autoCapitalize="words"
                     />
-                  ) : null}
-                  {errors.cuisineType ? (
-                    <Text style={styles.errorText}>{errors.cuisineType}</Text>
                   ) : null}
                 </View>
               </View>
@@ -802,7 +784,13 @@ export default function EditProfile() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Facebook (Optional)</Text>
                   <View style={styles.inputWithIcon}>
-                    <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <FontAwesome5
+                      name={SOCIAL_BRAND_ICONS.facebook.name}
+                      brand
+                      size={18}
+                      color={SOCIAL_BRAND_ICONS.facebook.color}
+                      style={styles.inputIcon}
+                    />
                     <TextInput
                       style={[styles.input, styles.inputWithIconText, errors.facebookUrl && styles.inputError]}
                       value={facebookUrl}
@@ -824,7 +812,13 @@ export default function EditProfile() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Instagram (Optional)</Text>
                   <View style={styles.inputWithIcon}>
-                    <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <FontAwesome5
+                      name={SOCIAL_BRAND_ICONS.instagram.name}
+                      brand
+                      size={18}
+                      color={SOCIAL_BRAND_ICONS.instagram.color}
+                      style={styles.inputIcon}
+                    />
                     <TextInput
                       style={[styles.input, styles.inputWithIconText, errors.instagramUrl && styles.inputError]}
                       value={instagramUrl}
@@ -846,7 +840,13 @@ export default function EditProfile() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>TikTok (Optional)</Text>
                   <View style={styles.inputWithIcon}>
-                    <Globe size={18} color={Colors.gray} style={styles.inputIcon} />
+                    <FontAwesome5
+                      name={SOCIAL_BRAND_ICONS.tiktok.name}
+                      brand
+                      size={18}
+                      color={SOCIAL_BRAND_ICONS.tiktok.color}
+                      style={styles.inputIcon}
+                    />
                     <TextInput
                       style={[styles.input, styles.inputWithIconText, errors.tiktokUrl && styles.inputError]}
                       value={tiktokUrl}
@@ -1084,9 +1084,6 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.dark,
     marginBottom: 8,
-  },
-  required: {
-    color: Colors.error,
   },
   input: {
     backgroundColor: Colors.lightGray,

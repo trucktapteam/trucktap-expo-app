@@ -11,7 +11,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import QRCode from 'qrcode';
 import { Download, Share2, Play, Pause } from 'lucide-react-native';
 import Slider from '@react-native-community/slider';
 import Colors from '@/constants/colors';
@@ -22,6 +21,7 @@ import PromoVideoTemplateC from '@/components/posters/video/PromoVideoTemplateC'
 import { captureRef } from 'react-native-view-shot';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import QRCodeDataUrlGenerator from '@/components/qr/QRCodeDataUrlGenerator';
 
 type VideoTemplate = 'clean' | 'neon' | 'graffiti';
 
@@ -48,6 +48,8 @@ export default function PosterVideoScreen() {
   const truck = getUserTruck();
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(true);
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [qrGenerationAttempt, setQrGenerationAttempt] = useState(0);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [selectedTemplate, setSelectedTemplate] = useState<VideoTemplate>('clean');
   const [duration, setDuration] = useState<number>(8);
@@ -55,32 +57,26 @@ export default function PosterVideoScreen() {
   const videoRef = useRef<View>(null);
   useTruckLifecycleLogger('PosterVideoScreen');
 
-  const generateQRCode = useCallback(async () => {
-    if (!truck) return;
+  const handleQrGenerated = useCallback((dataUrl: string) => {
+    setQrDataUrl(dataUrl);
+    setQrError(null);
+    setIsGenerating(false);
+  }, []);
 
-    try {
-      setIsGenerating(true);
-      const shareUrl = getTruckShareUrl(truck.id);
-      const dataUrl = await QRCode.toDataURL(shareUrl, {
-        width: 600,
-        margin: 1,
-        color: {
-          dark: '#111111',
-          light: '#FFFFFF',
-        },
-      });
-      setQrDataUrl(dataUrl);
-    } catch (error) {
-      console.error('Error generating QR code:', error);
-      Alert.alert('Error', 'Could not generate QR code');
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [truck]);
+  const handleQrError = useCallback((error: Error) => {
+    console.error('Error generating promo video QR code:', error);
+    setQrDataUrl('');
+    setQrError('Could not generate the promo QR code. Please try again.');
+    setIsGenerating(false);
+    Alert.alert('QR Code Error', 'Could not generate the promo QR code. Please try again.');
+  }, []);
 
-  React.useEffect(() => {
-    generateQRCode();
-  }, [generateQRCode]);
+  const retryQrGeneration = () => {
+    setQrDataUrl('');
+    setQrError(null);
+    setIsGenerating(true);
+    setQrGenerationAttempt(current => current + 1);
+  };
 
   const handleGenerateVideo = async () => {
     if (Platform.OS === 'web') {
@@ -106,7 +102,11 @@ export default function PosterVideoScreen() {
   };
 
   const captureFrame = async () => {
-    if (!videoRef.current || !truck) return;
+    if (!truck) return;
+    if (!videoRef.current) {
+      Alert.alert('Preview Not Ready', 'Wait for the promo preview to finish rendering, then try again.');
+      return;
+    }
 
     try {
       setIsSaving(true);
@@ -142,7 +142,11 @@ export default function PosterVideoScreen() {
   };
 
   const shareFrame = async () => {
-    if (!videoRef.current || !truck) return;
+    if (!truck) return;
+    if (!videoRef.current) {
+      Alert.alert('Preview Not Ready', 'Wait for the promo preview to finish rendering, then try again.');
+      return;
+    }
 
     try {
       setIsSaving(true);
@@ -199,6 +203,13 @@ export default function PosterVideoScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      <QRCodeDataUrlGenerator
+        key={`${truck.id}-${qrGenerationAttempt}`}
+        value={getTruckShareUrl(truck.id)}
+        size={600}
+        onGenerated={handleQrGenerated}
+        onError={handleQrError}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -253,10 +264,17 @@ export default function PosterVideoScreen() {
         <View style={styles.previewContainer}>
           <Text style={styles.previewLabel}>Preview:</Text>
           <View style={styles.videoWrapper}>
-            <View ref={videoRef} style={styles.videoPreview}>
+            <View ref={videoRef} style={styles.videoPreview} collapsable={false}>
               {isGenerating ? (
                 <View style={styles.loadingContainer}>
                   <Text style={styles.loadingText}>Generating QR Code...</Text>
+                </View>
+              ) : qrError ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.qrErrorText}>{qrError}</Text>
+                  <TouchableOpacity onPress={retryQrGeneration} style={styles.retryButton}>
+                    <Text style={styles.retryButtonText}>Try Again</Text>
+                  </TouchableOpacity>
                 </View>
               ) : qrDataUrl && truck ? (
                 <>
@@ -626,5 +644,25 @@ const styles = StyleSheet.create({
   errorSubtitle: {
     fontSize: 14,
     color: Colors.gray,
+  },
+  qrErrorText: {
+    maxWidth: 250,
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.danger,
+    fontWeight: '600' as const,
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+  },
+  retryButtonText: {
+    color: Colors.light,
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
 });

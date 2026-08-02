@@ -102,15 +102,15 @@ export default function SettingsScreen() {
   };
 
   const handleReportBug = () => {
-    const email = 'support@trucktap.app';
+    const email = 'trucktapteam@gmail.com';
     const subject = 'Bug Report - TruckTap';
-    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 1.0.50`;
+    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 2.0.0`;
     
     Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   };
 
   const handleSendFeedback = () => {
-    const email = 'support@trucktap.app';
+    const email = 'trucktapteam@gmail.com';
     const subject = 'Feedback - TruckTap';
     const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}`;
     
@@ -126,12 +126,12 @@ export default function SettingsScreen() {
 
   const handleSwitchToTruck = () => {
     Alert.alert(
-      'Truck Owner?',
-      'Are you a food truck owner looking to promote your business?',
+      'Join the TruckTap Partner Network?',
+      'Do you own or operate a food truck and want to grow with TruckTap?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Go to Truck Login',
+          text: 'Partner Login',
           onPress: () => router.push('/truck-login' as any)
         }
       ]
@@ -298,25 +298,6 @@ export default function SettingsScreen() {
                   <View style={styles.settingLeft}>
                     <Bell size={20} color={colors.secondaryText} />
                     <View style={styles.settingText}>
-                      <Text style={[styles.settingLabel, { color: colors.text }]}>New trucks added</Text>
-                      <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Get notified when new food trucks join TruckTap</Text>
-                    </View>
-                  </View>
-                  <Switch
-                    value={notifPrefs.newTrucksNearby}
-                    onValueChange={(val) => togglePreference('newTrucksNearby', val)}
-                    disabled={notificationSwitchesDisabled}
-                    trackColor={{ false: colors.border, true: colors.primary }}
-                    ios_backgroundColor={colors.border}
-                  />
-                </View>
-
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-                <View style={styles.settingRow}>
-                  <View style={styles.settingLeft}>
-                    <Bell size={20} color={colors.secondaryText} />
-                    <View style={styles.settingText}>
                       <Text style={[styles.settingLabel, { color: colors.text }]}>Truck announcements</Text>
                       <Text style={[styles.settingHelper, { color: colors.secondaryText }]}>Updates from trucks you follow</Text>
                     </View>
@@ -394,7 +375,15 @@ export default function SettingsScreen() {
 
           <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
             <View style={styles.aboutRow}>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>Built for food trucks ❤️</Text>
+              <Text style={[styles.aboutLabel, { color: colors.text }]}>Version</Text>
+              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>v2.0.0</Text>
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <View style={styles.aboutTaglineBlock}>
+              <Text style={[styles.aboutTagline, { color: colors.text }]}>Built for Food Trucks &amp; Vendors</Text>
+              <Text style={[styles.aboutDescription, { color: colors.secondaryText }]}>Helping customers discover and helping local businesses grow.</Text>
             </View>
           </View>
 
@@ -432,7 +421,7 @@ export default function SettingsScreen() {
 
           <TouchableOpacity style={[styles.truckOwnerButton, { backgroundColor: colors.cardBackground, borderColor: `${colors.primary}30` }]} onPress={handleSwitchToTruck}>
             <Truck size={20} color={colors.primary} />
-            <Text style={[styles.truckOwnerButtonText, { color: colors.primary }]}>Are you a truck owner?</Text>
+            <Text style={[styles.truckOwnerButtonText, { color: colors.primary }]}>Own or operate a food truck?</Text>
             <ChevronRight size={20} color={colors.primary} style={styles.chevron} />
           </TouchableOpacity>
         </View>
@@ -448,7 +437,7 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        <Text style={[styles.versionFooter, { color: colors.secondaryText }]}>v1.0.50</Text>
+        <Text style={[styles.versionFooter, { color: colors.secondaryText }]}>v2.0.0</Text>
         <View style={styles.bottomSpacing} />
       </ScrollView>
 
@@ -670,8 +659,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  aboutLabel: {
+    fontSize: 16,
+    fontWeight: '500' as const,
+  },
   aboutValue: {
     fontSize: 16,
+  },
+  aboutTaglineBlock: {
+    paddingVertical: 8,
+  },
+  aboutTagline: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    marginTop: 6,
+  },
+  aboutDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 4,
   },
   followTitle: {
     fontSize: 14,

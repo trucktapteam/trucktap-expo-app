@@ -50,7 +50,7 @@ export default function RoleSelectScreen() {
             <View style={[styles.iconCircle, { backgroundColor: `${colors.primary}15` }]}>
               <ChefHat size={48} color={colors.primary} strokeWidth={2} />
             </View>
-            <Text style={[styles.optionTitle, { color: colors.text }]}>Food Truck Owner</Text>
+            <Text style={[styles.optionTitle, { color: colors.text }]}>TruckTap Partner</Text>
             <Text style={[styles.optionDescription, { color: colors.secondaryText }]}>
               Go LIVE. Reach more customers.
             </Text>

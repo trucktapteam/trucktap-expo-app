@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Dimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -17,26 +17,28 @@ const IMAGE_SIZE = (width - (SPACING * (COLUMNS + 1))) / COLUMNS;
 export default function TruckGalleryScreen() {
   const {
     getUserTruck,
-    addGalleryImage,
     removeGalleryImage,
+    updateTruckDetails,
     beginImagePickerSession,
     endImagePickerSession,
   } = useApp();
 
   const truck = getUserTruck();
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ completed: 0, total: 0 });
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const uploadLockRef = useRef(false);
 
   useTruckLifecycleLogger('TruckGallery');
 
   // helper to upload a gallery image to Supabase storage and return a public URL
   const uploadGalleryImageAsync = useCallback(
-    async (uri: string, truckId: string): Promise<string> => {
+    async (uri: string, truckId: string, fileSuffix: string): Promise<string> => {
       try {
         console.log('[TruckGallery] uploading gallery image', uri);
         const response = await fetch(uri);
         const arrayBuffer = await response.arrayBuffer();
-        const filePath = `${truckId}/gallery-${Date.now()}.jpg`;
+        const filePath = `${truckId}/gallery-${fileSuffix}.jpg`;
         console.log('[TruckGallery] storage path:', filePath);
 
         const { error: uploadError } = await supabase
@@ -82,35 +84,74 @@ export default function TruckGalleryScreen() {
   }
 
   const handleAddPhoto = async () => {
+    if (uploadLockRef.current) return;
+
+    uploadLockRef.current = true;
+    setLoading(true);
     beginImagePickerSession('TruckGallery');
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        selectionLimit: 0,
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets.length > 0) {
-        const localUri = result.assets[0].uri;
-        setLoading(true);
-
         try {
-          const publicUrl = await uploadGalleryImageAsync(localUri, truck.id);
-          addGalleryImage(truck.id, publicUrl);
+          const uploadBatchId = Date.now();
+          setUploadProgress({ completed: 0, total: result.assets.length });
+          const uploadResults = await Promise.allSettled(
+            result.assets.map((asset, index) =>
+              uploadGalleryImageAsync(asset.uri, truck.id, `${uploadBatchId}-${index}`)
+                .finally(() => {
+                  setUploadProgress(progress => ({
+                    ...progress,
+                    completed: progress.completed + 1,
+                  }));
+                })
+            )
+          );
+          const publicUrls = uploadResults.flatMap(uploadResult =>
+            uploadResult.status === 'fulfilled' ? [uploadResult.value] : []
+          );
+          const failedCount = uploadResults.length - publicUrls.length;
+
+          if (publicUrls.length === 0) {
+            throw new Error('No selected gallery photos could be uploaded.');
+          }
+
+          await updateTruckDetails(truck.id, {
+            images: [...truck.images, ...publicUrls],
+          });
           if (__DEV__) {
-            console.log('[TruckGallery] gallery image queued for save:', {
+            console.log('[TruckGallery] gallery images saved:', {
               truckId: truck.id,
-              publicUrl,
+              imageCount: publicUrls.length,
             });
           }
+
+          if (failedCount > 0) {
+            Alert.alert(
+              'Some Photos Were Not Added',
+              `${publicUrls.length} ${publicUrls.length === 1 ? 'photo was' : 'photos were'} added, but ${failedCount} could not be uploaded.`
+            );
+          } else {
+            Alert.alert(
+              'Photos Added',
+              `${publicUrls.length} ${publicUrls.length === 1 ? 'photo was' : 'photos were'} added to your gallery.`
+            );
+          }
         } catch (error) {
-          console.error('[TruckGallery] failed to upload gallery image:', error);
-          Alert.alert('Upload Failed', 'Failed to upload image. Please try again.');
-        } finally {
-          setLoading(false);
+          console.error('[TruckGallery] failed to upload gallery images:', error);
+          Alert.alert('Upload Failed', 'Failed to upload the selected photos. Please try again.');
         }
       }
     } finally {
+      uploadLockRef.current = false;
+      setLoading(false);
+      setUploadProgress({ completed: 0, total: 0 });
       endImagePickerSession('TruckGallery');
     }
   };
@@ -149,7 +190,11 @@ export default function TruckGalleryScreen() {
         >
           <Plus size={20} color={Colors.light} />
           <Text style={styles.addButtonText}>
-            {loading ? 'Adding...' : 'Add Photo'}
+            {loading
+              ? uploadProgress.total > 0
+                ? `Uploading ${uploadProgress.completed} of ${uploadProgress.total}...`
+                : 'Selecting Photos...'
+              : 'Add Photos'}
           </Text>
         </TouchableOpacity>
       </View>

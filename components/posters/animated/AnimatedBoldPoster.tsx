@@ -13,7 +13,7 @@ export default function AnimatedBoldPoster({ truck, qrDataUrl, isPlaying = true 
   return (
     <View style={styles.poster}>
       <View style={styles.orangeBar} />
-      
+
       <View style={styles.heroContainer}>
         <Image
           source={{ uri: truck.hero_image }}
@@ -36,21 +36,11 @@ export default function AnimatedBoldPoster({ truck, qrDataUrl, isPlaying = true 
         <Animated.View style={nameFadeStyle}>
           <Text style={styles.truckName}>{truck.name}</Text>
         </Animated.View>
-        
-        <View style={styles.cuisineBadge}>
-          <Text style={styles.cuisineText}>{truck.cuisine_type}</Text>
-        </View>
-
-        {truck.bio ? (
-          <Text style={styles.bio} numberOfLines={3}>
-            {truck.bio}
-          </Text>
-        ) : null}
 
         <View style={styles.qrSection}>
           <View style={styles.orangeAccentBar} />
           <Animated.View style={scanMeWiggleStyle}>
-            <Text style={styles.qrLabel}>SCAN TO VIEW MENU</Text>
+            <Text style={styles.qrLabel}>SCAN TO CONNECT</Text>
           </Animated.View>
           <Animated.View style={[styles.qrWrapper, qrPulseStyle]}>
             <Image
@@ -59,11 +49,16 @@ export default function AnimatedBoldPoster({ truck, qrDataUrl, isPlaying = true 
               contentFit="contain"
             />
           </Animated.View>
-          <Text style={styles.qrSubtext}>Open camera & scan QR code</Text>
+          <Text style={styles.qrSubtext}>Open your camera and scan the QR code</Text>
         </View>
 
         <View style={styles.footer}>
           <View style={styles.orangeAccentBar} />
+          <Image
+            source={require('@/assets/images/icon.png')}
+            style={styles.brandLogo}
+            contentFit="contain"
+          />
           <Text style={styles.footerText}>POWERED BY</Text>
           <Text style={styles.footerBrand}>TRUCKTAP</Text>
         </View>
@@ -131,28 +126,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
     textTransform: 'uppercase' as const,
   },
-  cuisineBadge: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  cuisineText: {
-    fontSize: 15,
-    fontWeight: '800' as const,
-    color: Colors.light,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 1.5,
-  },
-  bio: {
-    fontSize: 15,
-    color: Colors.gray,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 20,
-    fontWeight: '500' as const,
-  },
   qrSection: {
     width: '100%',
     alignItems: 'center',
@@ -193,10 +166,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
+    textAlign: 'center',
   },
   footer: {
     marginTop: 24,
     alignItems: 'center',
+  },
+  brandLogo: {
+    width: 38,
+    height: 38,
+    marginBottom: 4,
   },
   footerText: {
     fontSize: 10,

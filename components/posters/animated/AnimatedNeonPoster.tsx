@@ -98,19 +98,8 @@ export default function AnimatedNeonPoster({ truck, qrDataUrl, isPlaying = true 
             <View style={styles.nameGlow} />
           </Animated.View>
           
-          <View style={styles.cuisineBadge}>
-            <Text style={styles.cuisineText}>{truck.cuisine_type}</Text>
-            <View style={styles.cuisineGlow} />
-          </View>
-
-          {truck.bio ? (
-            <Text style={styles.bio} numberOfLines={3}>
-              {truck.bio}
-            </Text>
-          ) : null}
-
           <View style={styles.qrSection}>
-            <Text style={styles.qrLabel}>⚡ SCAN FOR MENU ⚡</Text>
+            <Text style={styles.qrLabel}>⚡ SCAN TO CONNECT ⚡</Text>
             <View style={styles.qrContainer}>
               <View style={styles.qrGlow} />
               <Animated.View style={[styles.qrWrapper, qrPulseStyle, qrGlowStyle]}>
@@ -121,10 +110,15 @@ export default function AnimatedNeonPoster({ truck, qrDataUrl, isPlaying = true 
                 />
               </Animated.View>
             </View>
-            <Text style={styles.qrSubtext}>Point camera to unlock</Text>
+            <Text style={styles.qrSubtext}>Open your camera and scan the QR code</Text>
           </View>
 
           <View style={styles.footer}>
+            <Image
+              source={require('@/assets/images/icon.png')}
+              style={styles.brandLogo}
+              contentFit="contain"
+            />
             <Text style={styles.footerText}>Powered by</Text>
             <Text style={styles.footerBrand}>TRUCKTAP</Text>
           </View>
@@ -335,10 +329,16 @@ const styles = StyleSheet.create({
     textShadowColor: '#00E5FF',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 8,
+    textAlign: 'center',
   },
   footer: {
     marginTop: 24,
     alignItems: 'center',
+  },
+  brandLogo: {
+    width: 38,
+    height: 38,
+    marginBottom: 4,
   },
   footerText: {
     fontSize: 10,

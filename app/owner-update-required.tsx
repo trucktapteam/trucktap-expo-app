@@ -17,7 +17,7 @@ export default function OwnerUpdateRequiredScreen() {
     ? 'Truck management is temporarily paused'
     : policy?.updateTitle ?? 'TruckTap has been upgraded!';
   const message = paused
-    ? 'TruckTap is temporarily pausing owner-management actions. Customers can still browse and find trucks.'
+    ? 'TruckTap is temporarily pausing Partner tools. Customers can still browse and find trucks.'
     : policy?.updateMessage ?? 'Please install the latest version to manage your truck.';
 
   return (

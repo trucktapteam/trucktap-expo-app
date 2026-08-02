@@ -20,44 +20,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, Pencil, Trash, Camera, X, ArrowUpDown, GripVertical, MoreVertical, Check, Utensils } from 'lucide-react-native';
+import { Plus, Pencil, Trash, Camera, X, ArrowUpDown, GripVertical, MoreVertical, Check, CheckCircle2, Utensils } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { MenuItem } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { buildMenuImagesWithMenuBoard, getMenuBoardImageFromMenuImages } from '@/lib/truckMenu';
+import FullImageModal from '@/components/FullImageModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-const CATEGORIES = [
-  'All',
-  'Featured',
-  'Breakfast',
-  'Mains',
-  'Appetizers',
-  'Sides',
-  'Drinks',
-  'Dessert',
-  'Kids',
-  'Specials',
-  'All Day',
-];
-
-const CATEGORY_COLORS: { [key: string]: string } = {
-  Featured: '#D1C4E9',
-  Breakfast: '#BFF8E1',
-  Mains: '#FFC5CC',
-  Appetizers: '#F3E5F5',
-  Sides: '#E8F5E9',
-  Drinks: '#E3F2FD',
-  Dessert: '#FCE4EC',
-  Kids: '#FFF3CD',
-  Specials: '#EDE7F6',
-  'All Day': '#FFE0B2',
-};
 
 type SortOption = 'name-asc' | 'name-desc' | 'price-asc' | 'price-desc';
 
@@ -83,7 +57,6 @@ export default function MenuEditor() {
   const [formName, setFormName] = useState<string>('');
   const [formDescription, setFormDescription] = useState<string>('');
   const [formPrice, setFormPrice] = useState<string>('');
-  const [formCategory, setFormCategory] = useState<string>('');
   const [formImage, setFormImage] = useState<string>('');
   const [formAvailable, setFormAvailable] = useState<boolean>(true);
   const [showBulkMenu, setShowBulkMenu] = useState<boolean>(false);
@@ -91,6 +64,8 @@ export default function MenuEditor() {
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   const [isPickingImage, setIsPickingImage] = useState<boolean>(false);
   const [isUploadingMenuBoard, setIsUploadingMenuBoard] = useState<boolean>(false);
+  const [isRemovingMenuBoard, setIsRemovingMenuBoard] = useState<boolean>(false);
+  const [isViewingMenuBoard, setIsViewingMenuBoard] = useState<boolean>(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const modalSlideAnim = useRef(new Animated.Value(300)).current;
 
@@ -159,7 +134,6 @@ export default function MenuEditor() {
     setFormName('');
     setFormDescription('');
     setFormPrice('');
-    setFormCategory('');
     setFormImage('');
     setFormAvailable(true);
     setEditingItem(null);
@@ -175,7 +149,6 @@ export default function MenuEditor() {
     setFormName(item.name);
     setFormDescription(item.description);
     setFormPrice(item.price.toFixed(2));
-    setFormCategory(item.category || '');
     setFormImage(item.image || '');
     setFormAvailable(item.available);
     setModalVisible(true);
@@ -215,7 +188,6 @@ export default function MenuEditor() {
           name: formName.trim(),
           description: formDescription.trim(),
           price,
-          category: formCategory.trim() || undefined,
           image: formImage.trim() || undefined,
           available: formAvailable,
         });
@@ -246,7 +218,6 @@ export default function MenuEditor() {
           name: formName.trim(),
           description: formDescription.trim(),
           price,
-          category: formCategory.trim() || undefined,
           image: formImage.trim() || undefined,
           available: formAvailable,
         });
@@ -266,7 +237,7 @@ export default function MenuEditor() {
 
     setModalVisible(false);
     resetForm();
-  }, [formName, formDescription, formPrice, formCategory, formImage, formAvailable, truck, editingItem, updateMenuItem, addMenuItem]);
+  }, [formName, formDescription, formPrice, formImage, formAvailable, truck, editingItem, updateMenuItem, addMenuItem]);
 
   const handleDelete = useCallback(() => {
     if (!editingItem) return;
@@ -432,6 +403,35 @@ export default function MenuEditor() {
     }
   }, [beginImagePickerSession, endImagePickerSession, isUploadingMenuBoard, truck, updateTruckDetails, uploadMenuBoardImageAsync]);
 
+  const handleRemoveMenuBoard = useCallback(() => {
+    if (!truck?.id || !menuBoardImageUrl || isRemovingMenuBoard) return;
+
+    Alert.alert(
+      'Remove Menu Board?',
+      'Customers will no longer see this menu board photo. Your detailed menu items will not be affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setIsRemovingMenuBoard(true);
+            try {
+              const nextMenuImages = buildMenuImagesWithMenuBoard(truck.menu_images, null);
+              await updateTruckDetails(truck.id, { menu_images: nextMenuImages });
+              setIsViewingMenuBoard(false);
+            } catch (error) {
+              console.error('[MenuEditor] failed to remove menu board image:', error);
+              Alert.alert('Remove Failed', 'Could not remove your menu board photo. Please try again.');
+            } finally {
+              setIsRemovingMenuBoard(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [isRemovingMenuBoard, menuBoardImageUrl, truck, updateTruckDetails]);
+
   const pickImage = useCallback(async () => {
     if (isPickingImage) {
       if (__DEV__) console.log('[MenuEditor] pickImage ignored - picker already open');
@@ -456,8 +456,7 @@ export default function MenuEditor() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
+        allowsEditing: false,
         quality: 0.8,
       });
 
@@ -465,7 +464,7 @@ export default function MenuEditor() {
       const localUri = asset?.uri ?? null;
 
       if (__DEV__) {
-        console.log('[MenuEditor] crop OK/image picker returned:', {
+        console.log('[MenuEditor] image picker returned:', {
           canceled: result.canceled,
           assetCount: result.canceled ? 0 : result.assets?.length ?? 0,
           firstUri: localUri,
@@ -474,18 +473,18 @@ export default function MenuEditor() {
       }
 
       if (result.canceled) {
-        if (__DEV__) console.log('[MenuEditor] crop canceled before upload');
+        if (__DEV__) console.log('[MenuEditor] image selection canceled before upload');
         return;
       }
 
       if (!localUri) {
-        console.error('[MenuEditor] crop OK returned no URI; upload cannot start', result);
-        Alert.alert('Upload Failed', 'The cropped image did not return a usable file. Please try again.');
+        console.error('[MenuEditor] image picker returned no URI; upload cannot start', result);
+        Alert.alert('Upload Failed', 'The selected image did not return a usable file. Please try again.');
         return;
       }
 
       if (__DEV__) {
-        console.log('[MenuEditor] starting upload after crop OK:', {
+        console.log('[MenuEditor] starting upload after image selection:', {
           truckId: truck?.id ?? null,
           editingItemId: editingItem?.id ?? null,
           localUri,
@@ -506,7 +505,7 @@ export default function MenuEditor() {
           if (editingItem) {
             await updateMenuItem(editingItem.id, { image: publicUrl });
             if (__DEV__) {
-              console.log('[MenuEditor] existing item image persisted after crop:', {
+              console.log('[MenuEditor] existing item image persisted:', {
                 truckId: truck.id,
                 itemId: editingItem.id,
                 publicUrl,
@@ -534,7 +533,7 @@ export default function MenuEditor() {
         setFormImage(localUri);
       }
     } catch (error) {
-      console.error('[MenuEditor] image picker/crop callback failed:', error);
+      console.error('[MenuEditor] image picker callback failed:', error);
       Alert.alert('Upload Failed', 'Could not finish selecting the image. Please try again.');
     } finally {
       setIsPickingImage(false);
@@ -564,17 +563,10 @@ export default function MenuEditor() {
     return cleaned;
   }, []);
 
-  const getCategoryColor = useCallback((category?: string) => {
-    if (!category) return '#F5F5F5';
-    return CATEGORY_COLORS[category] || '#F5F5F5';
-  }, []);
-
   const renderMenuItem = useCallback(({ item, index }: { item: MenuItem; index: number }) => {
     if (deletingItemId === item.id) return null;
 
     const isJustSaved = savedItemId === item.id;
-    const categoryColor = getCategoryColor(item.category);
-
     return (
       <Animated.View
         style={[
@@ -602,7 +594,7 @@ export default function MenuEditor() {
           </View>
           
           {item.image ? (
-            <Image source={{ uri: item.image }} style={styles.menuImage} contentFit="cover" />
+            <Image source={{ uri: item.image }} style={styles.menuImage} contentFit="contain" />
           ) : (
             <View style={styles.menuImagePlaceholder}>
               <Text style={styles.placeholderText}>No Image</Text>
@@ -620,11 +612,6 @@ export default function MenuEditor() {
             ) : null}
             <View style={styles.menuFooter}>
               {item.price > 0 ? <Text style={styles.menuPrice}>${item.price.toFixed(2)}</Text> : null}
-              {item.category ? (
-                <View style={[styles.categoryBadge, { backgroundColor: categoryColor }]}>
-                  <Text style={styles.categoryBadgeText}>{item.category}</Text>
-                </View>
-              ) : null}
               {!item.available && (
                 <View style={styles.unavailableBadge}>
                   <Text style={styles.unavailableText}>Unavailable</Text>
@@ -644,7 +631,7 @@ export default function MenuEditor() {
         </TouchableOpacity>
       </Animated.View>
     );
-  }, [fadeAnim, deletingItemId, savedItemId, getCategoryColor]);
+  }, [fadeAnim, deletingItemId, savedItemId]);
 
   const renderEmpty = useCallback(() => {
     return (
@@ -734,24 +721,66 @@ export default function MenuEditor() {
         )}
       </View>
 
-      <View style={styles.quickMenuCard}>
-        <View style={styles.quickMenuHeader}>
-          {menuBoardImageUrl ? (
-            <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardPreview} contentFit="contain" />
-          ) : null}
-          <View style={styles.quickMenuTextBlock}>
-            <Text style={styles.quickMenuTitle}>Menu Board</Text>
-            <Text style={styles.quickMenuSubtitle}>
-              {menuBoardImageUrl ? 'Menu board uploaded.' : 'Upload a full menu photo customers can zoom.'}
-            </Text>
-            <Text style={styles.quickMenuTip}>Tip: crop or straighten your menu photo in your phone&apos;s photo app first.</Text>
-          </View>
-          <TouchableOpacity style={styles.quickMenuButton} onPress={handleUploadMenuBoard} disabled={isUploadingMenuBoard}>
-            {isUploadingMenuBoard ? <ActivityIndicator size="small" color="#fff" /> : <Camera size={18} color="#fff" />}
-            <Text style={styles.quickMenuButtonText}>Upload</Text>
+      {menuBoardImageUrl ? (
+        <View style={styles.menuBoardCompactCard}>
+          <TouchableOpacity
+            onPress={() => setIsViewingMenuBoard(true)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="View menu board"
+          >
+            <Image source={{ uri: menuBoardImageUrl }} style={styles.menuBoardCompactThumbnail} contentFit="contain" />
           </TouchableOpacity>
+          <View style={styles.menuBoardCompactStatus}>
+            <View style={styles.menuBoardReadyRow}>
+              <CheckCircle2 size={15} color={Colors.success} />
+              <Text style={styles.menuBoardReadyText}>Menu Board Ready</Text>
+            </View>
+            <Text style={styles.menuBoardAttachedText}>Attached to your customer menu</Text>
+          </View>
+          <View style={styles.menuBoardCompactActions}>
+            <TouchableOpacity style={styles.menuBoardTextAction} onPress={() => setIsViewingMenuBoard(true)}>
+              <Text style={styles.menuBoardTextActionLabel}>View</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuBoardTextAction}
+              onPress={handleUploadMenuBoard}
+              disabled={isUploadingMenuBoard || isRemovingMenuBoard}
+            >
+              {isUploadingMenuBoard ? (
+                <ActivityIndicator size="small" color={Colors.primary} />
+              ) : (
+                <Text style={styles.menuBoardTextActionLabel}>Replace</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuBoardTextAction}
+              onPress={handleRemoveMenuBoard}
+              disabled={isUploadingMenuBoard || isRemovingMenuBoard}
+            >
+              {isRemovingMenuBoard ? (
+                <ActivityIndicator size="small" color={Colors.danger} />
+              ) : (
+                <Text style={styles.menuBoardRemoveActionLabel}>Remove</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={styles.quickMenuCard}>
+          <View style={styles.quickMenuHeader}>
+            <View style={styles.quickMenuTextBlock}>
+              <Text style={styles.quickMenuTitle}>Menu Board</Text>
+              <Text style={styles.quickMenuSubtitle}>Upload a full menu photo customers can zoom.</Text>
+              <Text style={styles.quickMenuTip}>Tip: choose a clear, well-lit photo that is easy for customers to read.</Text>
+            </View>
+            <TouchableOpacity style={styles.quickMenuButton} onPress={handleUploadMenuBoard} disabled={isUploadingMenuBoard}>
+              {isUploadingMenuBoard ? <ActivityIndicator size="small" color="#fff" /> : <Camera size={18} color="#fff" />}
+              <Text style={styles.quickMenuButtonText}>Upload</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <View style={styles.sectionHeaderBlock}>
         <Text style={styles.sectionHeaderTitle}>Detailed Menu Items</Text>
@@ -822,7 +851,7 @@ export default function MenuEditor() {
                       <Image
                         source={{ uri: item.image }}
                         style={styles.previewImage}
-                        contentFit="cover"
+                        contentFit="contain"
                       />
                     ) : (
                       <View style={styles.previewImagePlaceholder}>
@@ -892,7 +921,7 @@ export default function MenuEditor() {
               <Text style={styles.label}>Item Photo</Text>
               {formImage ? (
                 <View style={styles.imagePreviewContainer}>
-                  <Image source={{ uri: formImage }} style={styles.previewImageFull} contentFit="cover" />
+                  <Image source={{ uri: formImage }} style={styles.previewImageFull} contentFit="contain" />
                   <TouchableOpacity style={styles.changePhotoButton} onPress={pickImage}>
                     <Camera size={18} color="#fff" />
                     <Text style={styles.changePhotoText}>Change Photo</Text>
@@ -957,35 +986,6 @@ export default function MenuEditor() {
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Category</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categorySelector}
-              >
-                {CATEGORIES.filter(c => c !== 'All').map(category => (
-                  <TouchableOpacity
-                    key={category}
-                    style={[
-                      styles.categorySelectorChip,
-                      formCategory === category && styles.categorySelectorChipActive,
-                    ]}
-                    onPress={() => setFormCategory(category)}
-                  >
-                    <Text
-                      style={[
-                        styles.categorySelectorText,
-                        formCategory === category && styles.categorySelectorTextActive,
-                      ]}
-                    >
-                      {category}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.formGroup}>
               <View style={styles.switchRow}>
                 <View>
                   <Text style={styles.label}>Available</Text>
@@ -1021,6 +1021,13 @@ export default function MenuEditor() {
         </Animated.View>
         </SafeAreaView>
       </Modal>
+
+      <FullImageModal
+        visible={isViewingMenuBoard && Boolean(menuBoardImageUrl)}
+        image={menuBoardImageUrl}
+        onClose={() => setIsViewingMenuBoard(false)}
+        accessibilityLabel="Menu board image"
+      />
     </SafeAreaView>
   );
 }
@@ -1154,11 +1161,65 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: '#fff',
   },
-  menuBoardPreview: {
-    width: 54,
-    height: 54,
+  menuBoardCompactCard: {
+    minHeight: 64,
+    marginHorizontal: 20,
+    marginTop: 10,
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: `${Colors.success}30`,
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  menuBoardCompactThumbnail: {
+    width: 46,
+    height: 46,
     borderRadius: 8,
     backgroundColor: Colors.lightGray,
+  },
+  menuBoardCompactStatus: {
+    flex: 1,
+    minWidth: 0,
+  },
+  menuBoardReadyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  menuBoardReadyText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.dark,
+  },
+  menuBoardAttachedText: {
+    marginTop: 2,
+    fontSize: 10,
+    color: Colors.gray,
+  },
+  menuBoardCompactActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  menuBoardTextAction: {
+    minHeight: 32,
+    minWidth: 38,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuBoardTextActionLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  menuBoardRemoveActionLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.danger,
   },
   sectionHeaderBlock: {
     paddingHorizontal: 20,
@@ -1302,17 +1363,7 @@ const styles = StyleSheet.create({
     height: 70,
     borderRadius: 12,
     marginRight: 12,
-  },
-  categoryBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  categoryBadgeText: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: Colors.dark,
-    opacity: 0.8,
+    backgroundColor: Colors.lightGray,
   },
   savedIndicator: {
     flexDirection: 'row',
@@ -1414,6 +1465,7 @@ const styles = StyleSheet.create({
   previewImage: {
     width: '100%',
     height: 120,
+    backgroundColor: Colors.lightGray,
   },
   previewImagePlaceholder: {
     width: '100%',
@@ -1544,6 +1596,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 200,
     borderRadius: 12,
+    backgroundColor: Colors.lightGray,
   },
   changePhotoButton: {
     position: 'absolute',
@@ -1560,31 +1613,6 @@ const styles = StyleSheet.create({
   changePhotoText: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: '#fff',
-  },
-  categorySelector: {
-    flexDirection: 'row',
-    paddingVertical: 8,
-  },
-  categorySelectorChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.lightGray,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  categorySelectorChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  categorySelectorText: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.gray,
-  },
-  categorySelectorTextActive: {
     color: '#fff',
   },
   switchRow: {

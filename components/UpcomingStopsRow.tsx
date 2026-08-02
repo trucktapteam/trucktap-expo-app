@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
-import { CalendarDays, Clock, MapPin } from 'lucide-react-native';
+import { Image } from 'expo-image';
+import { CalendarDays, Clock, ImageIcon, MapPin } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { UpcomingStop, UpcomingStopStatus } from '@/types';
 
@@ -106,6 +107,17 @@ export default function UpcomingStopsRow({ stops, onStopPress }: UpcomingStopsRo
                   {statusLabels[stop.status]}
                 </Text>
               </View>
+              {stop.event_image_url ? (
+                <View style={styles.flyerRow}>
+                  <Image
+                    source={{ uri: stop.event_image_url }}
+                    style={styles.flyerThumbnail}
+                    contentFit="cover"
+                  />
+                  <ImageIcon size={13} color={colors.primary} />
+                  <Text style={styles.flyerText}>View Event Flyer</Text>
+                </View>
+              ) : null}
             </TouchableOpacity>
           );
         })}
@@ -184,5 +196,23 @@ const createStyles = (colors: any, cardWidth: number) => StyleSheet.create({
     fontSize: 10,
     fontWeight: '800' as const,
     textTransform: 'uppercase' as const,
+  },
+  flyerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 9,
+  },
+  flyerThumbnail: {
+    width: 32,
+    height: 32,
+    borderRadius: 5,
+    backgroundColor: colors.border,
+  },
+  flyerText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: colors.primary,
   },
 });
