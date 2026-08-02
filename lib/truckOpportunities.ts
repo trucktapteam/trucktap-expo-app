@@ -1,4 +1,4 @@
-import { Announcement, FoodTruck, MenuItem, Review, UpcomingStop } from '@/types';
+import type { Announcement, FoodTruck, MenuItem, Review, UpcomingStop } from '@/types';
 
 export type TruckOpportunityPriority = 'high' | 'medium' | 'low';
 
@@ -10,6 +10,8 @@ export type TruckOpportunityAction =
   | 'menu'
   | 'goLive'
   | 'qrCenter'
+  | 'checkIns'
+  | 'profile'
   | 'none';
 
 export type TruckOpportunity = {
@@ -18,6 +20,10 @@ export type TruckOpportunity = {
   icon: string;
   title: string;
   description: string;
+  /** Longer "why this matters" copy - shown when this opportunity becomes Today's Mission, and behind a "Learn more" on the card itself. */
+  why: string;
+  /** Optional short bullet list - QR placement ideas, announcement examples, a suggested script, etc. */
+  tips?: string[];
   action: TruckOpportunityAction;
 };
 
@@ -27,6 +33,9 @@ export type TruckOpportunitiesInput = FoodTruck & {
   reviews?: Review[];
   upcomingStops?: UpcomingStop[];
   qrShared?: boolean;
+  hasOperatingHours?: boolean;
+  /** Real, already-computed check-in count for the current calendar month (see contexts/AppContext.tsx getTruckAnalytics). */
+  customerCheckInsThisMonth?: number;
 };
 
 type SortableTruckOpportunity = TruckOpportunity & {
@@ -106,6 +115,20 @@ const hasGoneLiveRecently = (truck: TruckOpportunitiesInput, now = Date.now()): 
   return lastLiveAt !== null && now - lastLiveAt <= RECENT_LIVE_WINDOW_MS;
 };
 
+const hasBioText = (truck: TruckOpportunitiesInput): boolean =>
+  typeof truck.bio === 'string' && truck.bio.trim().length > 0;
+
+const hasServiceAreaText = (truck: TruckOpportunitiesInput): boolean =>
+  typeof truck.service_area === 'string' && truck.service_area.trim().length > 0;
+
+const hasOperatingHoursSet = (truck: TruckOpportunitiesInput): boolean =>
+  truck.hasOperatingHours === true ||
+  !!truck.operatingHours ||
+  (typeof truck.hours === 'string' && truck.hours.trim().length > 0);
+
+const hasUncheckedInCustomersThisMonth = (truck: TruckOpportunitiesInput): boolean =>
+  (truck.customerCheckInsThisMonth ?? 0) === 0;
+
 export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOpportunity[] {
   if (truck.archived === true || !!truck.archivedAt || truck.is_test === true) {
     return [];
@@ -113,51 +136,113 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
 
   const opportunities: SortableTruckOpportunity[] = [];
 
+  if (!truck.qrShared) {
+    opportunities.push({
+      id: 'put-qr-to-work',
+      priority: 'high',
+      recommendationPriority: 'high',
+      icon: 'qr-code',
+      title: 'Put Your QR Code to Work',
+      description: 'Every scan turns a walk-up customer into a follower who can find you again.',
+      why: "Your QR code sends customers straight to your permanent TruckTap page - the same place every time, not a one-off link. Once someone scans it, they can favorite your truck, view your menu, check upcoming stops, read announcements, get notified the moment you go LIVE, and leave a review. That's the difference between a customer you serve once and a customer who follows you.",
+      tips: [
+        'On the truck itself, where it’s visible from the line',
+        'On your menu board',
+        'On the service window',
+        'On business cards',
+        'On receipts',
+        'On signs at events',
+        'On table tents, if customers sit nearby',
+        'Ask every customer to scan before they leave',
+      ],
+      action: 'qrCenter',
+    });
+  }
+
   if (truck.upcomingStops && !hasUpcomingStop(truck)) {
     opportunities.push({
-      id: 'add-next-stop',
+      id: 'schedule-upcoming-stops',
       priority: 'high',
       recommendationPriority: 'high',
       icon: 'calendar-plus',
-      title: 'Add your next stop',
-      description: "Followers love knowing where you'll be next.",
+      title: 'Schedule Upcoming Stops',
+      description: 'Customers plan meals before they get hungry - give them a reason to plan around you.',
+      why: 'Most customers decide where to eat before they’re actually hungry. A scheduled stop lets them plan a visit ahead of time instead of hoping to run into you. It also keeps your profile looking active between service days, which builds the kind of consistency that turns a one-time visitor into a regular.',
       action: 'schedule',
+    });
+  }
+
+  if (!hasGoneLiveRecently(truck)) {
+    opportunities.push({
+      id: 'go-live-regularly',
+      priority: 'high',
+      recommendationPriority: 'high',
+      icon: 'radio',
+      title: 'Go LIVE Regularly',
+      description: 'Nearby customers are only notified while you’re LIVE - the more often, the more chances to be found.',
+      why: 'Going LIVE is what puts your truck on the map for customers searching right now. Truck owners who go LIVE consistently build trust and habit - customers learn to check TruckTap first because it usually pays off.',
+      action: 'goLive',
     });
   }
 
   if (truck.announcements && !hasActiveAnnouncement(truck)) {
     opportunities.push({
       id: 'share-announcement',
-      priority: 'high',
-      recommendationPriority: 'high',
+      priority: 'medium',
+      recommendationPriority: 'medium',
       icon: 'megaphone',
-      title: 'Share an announcement',
-      description: 'Keep followers engaged between events.',
+      title: 'Share an Announcement',
+      description: 'A quick update keeps followers engaged between visits.',
+      why: 'Announcements give followers a reason to check back even on days you’re not LIVE. They’re most useful when they’re specific and timely rather than generic.',
+      tips: [
+        'Today’s special: "Smoked brisket tacos today only"',
+        'Sold out: "Sold out of the carnitas - see you tomorrow"',
+        'Weather delay: "Running late today because of the storm"',
+        'Holiday hours: "Closed Monday for the holiday, back Tuesday"',
+        'New menu items: "New: spicy mango salsa, try it this week"',
+        'Promotions: "Bring a friend Friday - buy one get one on tacos"',
+      ],
       action: 'announcement',
     });
   }
 
-  if (Array.isArray(truck.images) && truck.images.length < 5) {
+  if (hasUncheckedInCustomersThisMonth(truck)) {
     opportunities.push({
-      id: 'add-gallery-photos',
+      id: 'customer-check-ins',
       priority: 'medium',
       recommendationPriority: 'medium',
-      icon: 'images',
-      title: 'Add more photos',
-      description: 'Customers enjoy seeing your food before they visit.',
-      action: 'gallery',
+      icon: 'check-circle',
+      title: 'Encourage Customer Check-Ins',
+      description: 'Check-ins prove your traffic and show up in your Business Snapshot.',
+      why: 'Every check-in is a customer confirming they found you through TruckTap - it’s the clearest signal you have that the app is bringing you real business. It only takes a reminder to build the habit.',
+      tips: ['"Check in on TruckTap before you leave!"'],
+      action: 'checkIns',
     });
   }
 
   if (truck.menuItems && getVisibleMenuItemCount(truck) < 5) {
     opportunities.push({
-      id: 'expand-menu',
+      id: 'complete-menu',
       priority: 'medium',
       recommendationPriority: 'medium',
       icon: 'utensils',
-      title: 'Expand your menu',
-      description: 'A larger menu helps customers know what you offer.',
+      title: 'Complete Your Menu',
+      description: 'A fuller menu helps customers decide before they arrive.',
+      why: 'Customers who browse your menu ahead of time arrive already knowing what they want, which usually means a smoother, faster order for both of you.',
       action: 'menu',
+    });
+  }
+
+  if (Array.isArray(truck.images) && truck.images.length < 5) {
+    opportunities.push({
+      id: 'gallery-photos',
+      priority: 'medium',
+      recommendationPriority: 'medium',
+      icon: 'images',
+      title: 'Add Gallery Photos',
+      description: 'Customers enjoy seeing your food before they visit.',
+      why: 'Photos make a profile feel active and trustworthy. A mix of food, truck, and service shots gives customers a real sense of the experience before they show up.',
+      action: 'gallery',
     });
   }
 
@@ -167,33 +252,31 @@ export function getTruckOpportunities(truck: TruckOpportunitiesInput): TruckOppo
       priority: 'medium',
       recommendationPriority: 'medium',
       icon: 'message-square-reply',
-      title: 'Reply to reviews',
+      title: 'Reply to Reviews',
       description: 'Customers appreciate hearing back from owners.',
+      why: 'A short, genuine reply shows both that reviewer and everyone reading later that feedback actually reaches you.',
       action: 'reviews',
     });
   }
 
-  if (!hasGoneLiveRecently(truck)) {
-    opportunities.push({
-      id: 'go-live-more-often',
-      priority: 'low',
-      recommendationPriority: 'low',
-      icon: 'radio',
-      title: 'Go LIVE more often',
-      description: 'Frequent LIVE activity builds customer trust.',
-      action: 'goLive',
-    });
-  }
+  const missingPolishCount = [
+    !hasBioText(truck),
+    !hasServiceAreaText(truck),
+    !hasOperatingHoursSet(truck),
+  ].filter(Boolean).length;
 
-  if (!truck.qrShared) {
+  if (missingPolishCount > 0) {
     opportunities.push({
-      id: 'put-qr-to-work',
+      id: 'remaining-profile-polish',
       priority: 'low',
       recommendationPriority: 'low',
-      icon: 'qr-code',
-      title: 'Put your QR to work',
-      description: 'Customers who scan it can follow you, view your menu, and find you again.',
-      action: 'qrCenter',
+      icon: 'sparkles',
+      title: 'Finish Your Profile',
+      description: missingPolishCount === 1
+        ? 'One small detail left to round out your profile.'
+        : `${missingPolishCount} small details left to round out your profile.`,
+      why: 'Your truck is already visible to customers - this is polish, not a blocker. A bio, service area, and posted hours help set accurate expectations before someone visits.',
+      action: 'profile',
     });
   }
 

@@ -9,7 +9,7 @@ export default function MinimalPoster({ truck, qrDataUrl }: PosterProps) {
     <View style={styles.poster}>
       <View style={styles.content}>
         <View style={styles.topBorder} />
-        
+
         {truck.logo ? (
           <View style={styles.logoContainer}>
             <Image
@@ -19,18 +19,8 @@ export default function MinimalPoster({ truck, qrDataUrl }: PosterProps) {
             />
           </View>
         ) : null}
-
+        
         <Text style={styles.truckName}>{truck.name}</Text>
-        
-        <View style={styles.divider} />
-        
-        <Text style={styles.cuisineText}>{truck.cuisine_type}</Text>
-
-        {truck.bio ? (
-          <Text style={styles.bio} numberOfLines={4}>
-            {truck.bio}
-          </Text>
-        ) : null}
 
         <View style={styles.heroContainer}>
           <Image
@@ -41,7 +31,7 @@ export default function MinimalPoster({ truck, qrDataUrl }: PosterProps) {
         </View>
 
         <View style={styles.qrSection}>
-          <Text style={styles.qrLabel}>Scan to visit</Text>
+          <Text style={styles.qrLabel}>Scan to connect</Text>
           <View style={styles.qrWrapper}>
             <Image
               source={{ uri: qrDataUrl }}
@@ -49,12 +39,17 @@ export default function MinimalPoster({ truck, qrDataUrl }: PosterProps) {
               contentFit="contain"
             />
           </View>
-          <Text style={styles.qrSubtext}>Use your camera app</Text>
+          <Text style={styles.qrSubtext}>Open your camera and scan the QR code</Text>
         </View>
 
         <View style={styles.divider} />
 
         <View style={styles.footer}>
+          <Image
+            source={require('@/assets/images/icon.png')}
+            style={styles.brandLogo}
+            contentFit="contain"
+          />
           <Text style={styles.footerText}>Powered by TruckTap</Text>
         </View>
         
@@ -116,22 +111,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#D0D0D0',
     marginVertical: 16,
   },
-  cuisineText: {
-    fontSize: 12,
-    fontWeight: '400' as const,
-    color: Colors.gray,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 2,
-    marginBottom: 16,
-  },
-  bio: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-    fontWeight: '300' as const,
-  },
   heroContainer: {
     width: '100%',
     height: 160,
@@ -173,11 +152,17 @@ const styles = StyleSheet.create({
     fontWeight: '300' as const,
     color: '#999',
     marginTop: 12,
+    textAlign: 'center',
   },
   footer: {
     marginTop: 8,
     marginBottom: 16,
     alignItems: 'center',
+  },
+  brandLogo: {
+    width: 34,
+    height: 34,
+    marginBottom: 4,
   },
   footerText: {
     fontSize: 10,

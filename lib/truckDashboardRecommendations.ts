@@ -1,62 +1,29 @@
-import { getTruckCoachMessage, TruckCoachMessage } from '@/lib/truckCoach';
-import { getRoadTipCategory, RoadTip, selectDailyRoadTip } from '@/lib/truckCoach/roadTips';
-import { TruckCommandCenter, TruckNextBestAction } from '@/lib/truckCommandCenter';
-import { TruckOpportunity, TruckOpportunityAction } from '@/lib/truckOpportunities';
+import { getTodaysMission } from '@/lib/truckMission';
+import type { TruckMission } from '@/lib/truckMission';
+import type { TruckCommandCenter } from '@/lib/truckCommandCenter';
+import type { TruckOpportunity } from '@/lib/truckOpportunities';
+
+const BIGGEST_OPPORTUNITIES_LIMIT = 5;
 
 export type TruckDashboardRecommendations = {
-  nextActionMessage: string;
-  coach: TruckCoachMessage;
-  roadTip: RoadTip;
+  mission: TruckMission;
+  /** Top opportunities for the Biggest Opportunities card - excludes whichever one is already shown as the Mission, so nothing is duplicated. */
   opportunities: TruckOpportunity[];
-};
-
-const opportunityActionByNextAction: Record<TruckNextBestAction, TruckOpportunityAction | null> = {
-  'Add Truck Name': null,
-  'Upload Logo': null,
-  'Upload Hero Image': null,
-  'Add Bio': null,
-  'Add Service Area': null,
-  'Add Menu': 'menu',
-  'Add Gallery Photos': 'gallery',
-  'Add Operating Hours': null,
-  'Go LIVE': 'goLive',
-  'Add Upcoming Stop': 'schedule',
-  'Check Messages': null,
-  'Add Announcement': 'announcement',
-  'Respond to Reviews': 'reviews',
-  "Great Job — You're Ready": null,
-  'No action available': null,
 };
 
 export function coordinateTruckDashboardRecommendations(
   commandCenter: TruckCommandCenter,
   opportunities: TruckOpportunity[],
-  truckId?: string | number | null
+  truckId?: string | number | null,
+  missionOverride?: TruckMission | null
 ): TruckDashboardRecommendations {
-  const actionCoach = getTruckCoachMessage(commandCenter);
-  const roadTip = selectDailyRoadTip(truckId, getRoadTipCategory(commandCenter.nextAction));
-  const activeOpportunityAction = opportunityActionByNextAction[commandCenter.nextAction];
-  const seenActions = new Set<TruckOpportunityAction>();
+  const mission = missionOverride ?? getTodaysMission(commandCenter, opportunities, truckId);
 
-  const secondaryOpportunities = opportunities.filter(opportunity => {
-    if (activeOpportunityAction && opportunity.action === activeOpportunityAction) return false;
-    if (opportunity.action === 'none') return true;
-    if (seenActions.has(opportunity.action)) return false;
+  const displayOpportunities = (
+    mission.kind === 'opportunity' && mission.sourceOpportunityId
+      ? opportunities.filter(opportunity => opportunity.id !== mission.sourceOpportunityId)
+      : opportunities
+  ).slice(0, BIGGEST_OPPORTUNITIES_LIMIT);
 
-    seenActions.add(opportunity.action);
-    return true;
-  });
-
-  return {
-    nextActionMessage: actionCoach.message,
-    coach: {
-      ...actionCoach,
-      headline: 'Road Tip',
-      message: roadTip.summary,
-      encouragement: roadTip.detail,
-      estimatedTime: '',
-    },
-    roadTip,
-    opportunities: secondaryOpportunities,
-  };
+  return { mission, opportunities: displayOpportunities };
 }

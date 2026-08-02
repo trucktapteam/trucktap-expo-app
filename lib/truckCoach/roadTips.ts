@@ -1,4 +1,4 @@
-import { TruckNextBestAction } from '@/lib/truckCommandCenter';
+import type { TruckNextBestAction } from '@/lib/truckCommandCenter';
 
 export type RoadTipCategory =
   | 'schedule'

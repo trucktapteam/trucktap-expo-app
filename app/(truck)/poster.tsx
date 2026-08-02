@@ -11,9 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import QRCode from 'qrcode';
-import { useRouter } from 'expo-router';
-import { Download, Share2, Film, Video } from 'lucide-react-native';
+import { Download, Share2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { PosterStyle, POSTER_STYLES } from '@/components/posters/PosterBase';
@@ -28,89 +26,116 @@ import AnimatedGraffitiPoster from '@/components/posters/animated/AnimatedGraffi
 import { captureRef } from 'react-native-view-shot';
 import { getTruckShareUrl } from '@/lib/truckShare';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import QRCodeDataUrlGenerator from '@/components/qr/QRCodeDataUrlGenerator';
 
 export default function PosterScreen() {
   const { getUserTruck } = useApp();
-  const router = useRouter();
   const truck = getUserTruck();
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(true);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [qrGenerationAttempt, setQrGenerationAttempt] = useState(0);
+  const [activeAction, setActiveAction] = useState<'export' | 'share' | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<PosterStyle>('bold');
   const [isAnimated, setIsAnimated] = useState<boolean>(false);
   const posterRef = useRef<View>(null);
   const animatedPosterRef = useRef<View>(null);
+  const actionInProgressRef = useRef(false);
   useTruckLifecycleLogger('PosterScreen');
 
-  const generateQRCode = useCallback(async () => {
-    if (!truck) return;
+  const handleQrGenerated = useCallback((dataUrl: string) => {
+    setQrDataUrl(dataUrl);
+    setQrError(null);
+    setIsGenerating(false);
+  }, []);
 
-    try {
-      setIsGenerating(true);
-      const shareUrl = getTruckShareUrl(truck.id);
-      const dataUrl = await QRCode.toDataURL(shareUrl, {
-        width: 600,
-        margin: 1,
-        color: {
-          dark: '#111111',
-          light: '#FFFFFF',
-        },
-      });
-      setQrDataUrl(dataUrl);
-    } catch (error) {
-      console.error('Error generating QR code:', error);
-      Alert.alert('Error', 'Could not generate QR code');
-    } finally {
-      setIsGenerating(false);
+  const handleQrError = useCallback((error: Error) => {
+    console.error('Error generating poster QR code:', error);
+    setQrDataUrl('');
+    setQrError('Could not generate the poster QR code. Please try again.');
+    setIsGenerating(false);
+    Alert.alert('QR Code Error', 'Could not generate the poster QR code. Please try again.');
+  }, []);
+
+  const retryQrGeneration = () => {
+    setQrDataUrl('');
+    setQrError(null);
+    setIsGenerating(true);
+    setQrGenerationAttempt(current => current + 1);
+  };
+
+  const captureStaticPoster = async () => {
+    if (isAnimated) {
+      throw new Error('Select Static Preview before exporting or sharing your poster.');
     }
-  }, [truck]);
+    if (isGenerating || !qrDataUrl) {
+      throw new Error('Wait for the static poster preview to finish rendering, then try again.');
+    }
 
-  React.useEffect(() => {
-    generateQRCode();
-  }, [generateQRCode]);
+    const captureTarget = posterRef.current;
+    if (!captureTarget) {
+      throw new Error('The static poster preview is not ready yet. Please try again.');
+    }
+
+    const uri = await captureRef(captureTarget, {
+      format: 'png',
+      quality: 1,
+      result: 'tmpfile',
+    });
+
+    if (!uri) {
+      throw new Error('The poster image could not be created. Please try again.');
+    }
+
+    return uri;
+  };
+
+  const beginAction = (action: 'export' | 'share') => {
+    if (actionInProgressRef.current) return false;
+    actionInProgressRef.current = true;
+    setActiveAction(action);
+    return true;
+  };
+
+  const finishAction = () => {
+    actionInProgressRef.current = false;
+    setActiveAction(null);
+  };
 
   const downloadPoster = async () => {
-    if (!posterRef.current || !truck) return;
+    if (!beginAction('export')) return;
 
     try {
-      setIsSaving(true);
+      if (!truck) {
+        throw new Error('Your truck information is not available. Please reopen this page and try again.');
+      }
 
       if (Platform.OS === 'web') {
         Alert.alert('Info', 'Download is available on mobile devices. Please use the share option on web.');
         return;
       }
 
-      const { status } = await MediaLibrary.requestPermissionsAsync(true);
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant photo library access to save poster');
-        return;
-      }
-
-      const uri = await captureRef(posterRef, {
-        format: 'png',
-        quality: 1,
-        width: 1080,
-        height: 1920,
-      });
-
-      const asset = await MediaLibrary.createAssetAsync(uri);
-      await MediaLibrary.createAlbumAsync('TruckTap', asset, false);
+      const uri = await captureStaticPoster();
+      await MediaLibrary.saveToLibraryAsync(uri);
 
       const styleName = POSTER_STYLES.find(s => s.value === selectedStyle)?.label || selectedStyle;
       Alert.alert('Success', `${styleName} poster saved to your photos!`);
     } catch (error) {
       console.error('Error saving poster:', error);
-      Alert.alert('Error', 'Could not save poster to photos');
+      const message = error instanceof Error ? error.message : 'An unexpected error occurred.';
+      Alert.alert('Could Not Save Poster', message);
     } finally {
-      setIsSaving(false);
+      finishAction();
     }
   };
 
   const sharePoster = async () => {
-    if (!posterRef.current || !truck) return;
+    if (!beginAction('share')) return;
 
     try {
-      setIsSaving(true);
+      if (!truck) {
+        throw new Error('Your truck information is not available. Please reopen this page and try again.');
+      }
 
       if (Platform.OS === 'web') {
         if (navigator.share) {
@@ -126,28 +151,24 @@ export default function PosterScreen() {
         return;
       }
 
-      const uri = await captureRef(posterRef, {
-        format: 'png',
-        quality: 1,
-        width: 1080,
-        height: 1920,
-      });
+      const uri = await captureStaticPoster();
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
-        Alert.alert('Error', 'Sharing is not available on this device');
-        return;
+        throw new Error('Sharing is not available on this device.');
       }
 
       await Sharing.shareAsync(uri, {
         mimeType: 'image/png',
         dialogTitle: 'Share Marketing Poster',
+        UTI: 'public.png',
       });
     } catch (error) {
       console.error('Error sharing poster:', error);
-      Alert.alert('Error', 'Could not share poster');
+      const message = error instanceof Error ? error.message : 'An unexpected error occurred.';
+      Alert.alert('Could Not Share Poster', message);
     } finally {
-      setIsSaving(false);
+      finishAction();
     }
   };
 
@@ -164,6 +185,13 @@ export default function PosterScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      <QRCodeDataUrlGenerator
+        key={`${truck.id}-${qrGenerationAttempt}`}
+        value={getTruckShareUrl(truck.id)}
+        size={600}
+        onGenerated={handleQrGenerated}
+        onError={handleQrError}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -221,10 +249,17 @@ export default function PosterScreen() {
 
         <View style={styles.posterWrapper}>
           {!isAnimated ? (
-            <View ref={posterRef}>
+            <View ref={posterRef} style={styles.captureTarget} collapsable={false}>
               {isGenerating ? (
                 <View style={styles.loadingContainer}>
                   <Text style={styles.loadingText}>Generating QR Code...</Text>
+                </View>
+              ) : qrError ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.qrErrorText}>{qrError}</Text>
+                  <TouchableOpacity onPress={retryQrGeneration} style={styles.retryButton}>
+                    <Text style={styles.retryButtonText}>Try Again</Text>
+                  </TouchableOpacity>
                 </View>
               ) : qrDataUrl && truck ? (
                 <>
@@ -236,10 +271,17 @@ export default function PosterScreen() {
               ) : null}
             </View>
           ) : (
-            <View ref={animatedPosterRef}>
+            <View ref={animatedPosterRef} style={styles.captureTarget} collapsable={false}>
               {isGenerating ? (
                 <View style={styles.loadingContainer}>
                   <Text style={styles.loadingText}>Generating QR Code...</Text>
+                </View>
+              ) : qrError ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.qrErrorText}>{qrError}</Text>
+                  <TouchableOpacity onPress={retryQrGeneration} style={styles.retryButton}>
+                    <Text style={styles.retryButtonText}>Try Again</Text>
+                  </TouchableOpacity>
                 </View>
               ) : qrDataUrl && truck ? (
                 <>
@@ -261,61 +303,25 @@ export default function PosterScreen() {
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={downloadPoster}
-            disabled={!qrDataUrl || isGenerating || isSaving || isAnimated}
+            disabled={activeAction !== null}
           >
             <Download size={20} color={Colors.light} />
             <Text style={styles.primaryButtonText}>
-              {isSaving ? 'Saving...' : 'Export Static Poster PNG'}
+              {activeAction === 'export' ? 'Saving...' : 'Export Static Poster PNG'}
             </Text>
           </TouchableOpacity>
-
-          {Platform.OS !== 'web' && (
-            <TouchableOpacity
-              style={[styles.primaryButton, isAnimated && styles.animatedExportButton]}
-              onPress={() => Alert.alert('Not Available', 'Animated MP4 export requires the mobile app. Use screen recording as an alternative.')}
-              disabled={!qrDataUrl || isGenerating || isSaving || !isAnimated}
-            >
-              <Film size={20} color={isAnimated ? Colors.light : Colors.gray} />
-              <Text style={[styles.primaryButtonText, !isAnimated && styles.disabledButtonText]}>
-                Export Animated Poster MP4
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {Platform.OS === 'web' && isAnimated && (
-            <View style={styles.webMessage}>
-              <Text style={styles.webMessageText}>
-                Animated export is available on mobile through the TruckTap App.
-              </Text>
-            </View>
-          )}
 
           <TouchableOpacity
             style={styles.secondaryButton}
             onPress={sharePoster}
-            disabled={!qrDataUrl || isGenerating || isSaving || isAnimated}
+            disabled={activeAction !== null}
           >
-            <Share2 size={20} color={isAnimated ? Colors.gray : Colors.primary} />
-            <Text style={[styles.secondaryButtonText, isAnimated && styles.disabledButtonText]}>
-              Share Poster
+            <Share2 size={20} color={Colors.primary} />
+            <Text style={styles.secondaryButtonText}>
+              {activeAction === 'share' ? 'Opening Share Sheet...' : 'Share Poster'}
             </Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          style={styles.promoVideoButton}
-          onPress={() => router.push('/(truck)/poster-video' as any)}
-        >
-          <View style={styles.promoVideoIcon}>
-            <Video size={24} color={Colors.primary} />
-          </View>
-          <View style={styles.promoVideoContent}>
-            <Text style={styles.promoVideoTitle}>🎥 Create Promo Video</Text>
-            <Text style={styles.promoVideoSubtitle}>
-              Generate TikTok & Instagram Reels ready videos
-            </Text>
-          </View>
-        </TouchableOpacity>
 
         <View style={styles.instructionCard}>
           <Text style={styles.instructionTitle}>Marketing Ideas</Text>
@@ -409,6 +415,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
+  captureTarget: {
+    width: 340,
+    alignItems: 'center',
+  },
   loadingContainer: {
     width: 340,
     height: 600,
@@ -421,6 +431,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.gray,
     fontWeight: '600' as const,
+  },
+  qrErrorText: {
+    maxWidth: 270,
+    fontSize: 15,
+    lineHeight: 21,
+    color: Colors.danger,
+    fontWeight: '600' as const,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+  },
+  retryButtonText: {
+    color: Colors.light,
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
   buttonContainer: {
     width: '100%',
@@ -535,63 +565,5 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.dark,
     textAlign: 'center',
-  },
-  animatedExportButton: {
-    backgroundColor: Colors.primary,
-  },
-  disabledButtonText: {
-    color: Colors.gray,
-  },
-  webMessage: {
-    backgroundColor: Colors.light,
-    padding: 16,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.primary,
-  },
-  webMessageText: {
-    fontSize: 13,
-    color: Colors.gray,
-    lineHeight: 20,
-    textAlign: 'center',
-  },
-  promoVideoButton: {
-    backgroundColor: Colors.light,
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  promoVideoIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.lightGray,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  promoVideoContent: {
-    flex: 1,
-  },
-  promoVideoTitle: {
-    fontSize: 18,
-    fontWeight: '700' as const,
-    color: Colors.dark,
-    marginBottom: 4,
-  },
-  promoVideoSubtitle: {
-    fontSize: 14,
-    color: Colors.gray,
-    lineHeight: 20,
   },
 });
