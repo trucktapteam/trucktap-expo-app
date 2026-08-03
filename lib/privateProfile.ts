@@ -12,31 +12,12 @@ export type PrivateProfileRow = {
   notify_owner_reviews: boolean | null;
 };
 
-const LEGACY_PRIVATE_PROFILE_SELECT =
-  'display_name, profile_photo, role, truck_id, notify_favorites_open, notify_new_trucks, notify_announcements, notify_owner_favorites, notify_owner_reviews';
-
-const isMissingPrivateProfileRpc = (error: { code?: string; message?: string } | null): boolean =>
-  error?.code === 'PGRST202'
-  || (
-    error?.code === '42883'
-    && error.message?.toLowerCase().includes('get_private_profile') === true
-  );
-
-export const fetchPrivateProfile = async (profileId: string) => {
-  const rpcResult = await supabase
+// get_private_profile() is confirmed deployed in production, and current
+// profiles grants (id, display_name, profile_photo only for
+// anon/authenticated) intentionally prevent a direct table select from ever
+// succeeding for the columns this type needs. There is no working fallback
+// path, so any RPC error is returned as-is for the caller to handle.
+export const fetchPrivateProfile = async (profileId: string) =>
+  supabase
     .rpc('get_private_profile', { p_profile_id: profileId })
     .single<PrivateProfileRow>();
-
-  if (!isMissingPrivateProfileRpc(rpcResult.error)) {
-    return rpcResult;
-  }
-
-  // Compatibility with the current production schema before the privacy
-  // migration exists. Once the RPC is present, authorization failures never
-  // fall back to direct table access.
-  return supabase
-    .from('profiles')
-    .select(LEGACY_PRIVATE_PROFILE_SELECT)
-    .eq('id', profileId)
-    .single<PrivateProfileRow>();
-};
