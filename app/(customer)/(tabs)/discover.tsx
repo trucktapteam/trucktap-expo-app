@@ -7,7 +7,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useFilteredTrucks, useApp } from '@/contexts/AppContext';
 import { Image } from 'expo-image';
 import { supabase } from '@/lib/supabase';
-import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, getSafeSpotterDisplayName, hasSightingCoordinates } from '@/lib/sightings';
+import { formatSightingLastSeen, formatSightingSpotter, getSafeSpotterDisplayName, hasSightingCoordinates } from '@/lib/sightings';
 import { addDisplayLocationsToSightings, getSightingLocationText } from '@/lib/sightingLocation';
 import { FoodTruck, Sighting } from '@/types';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
@@ -419,22 +419,16 @@ export default function CustomerHomeScreen() {
     setEditingSightingNotes('');
   };
 
-  const selectedSightingIsOwned = !!(
-    currentUser?.id &&
-    selectedSighting?.user_id &&
-    currentUser.id === selectedSighting.user_id
-  );
+  const selectedSightingIsOwned = !!selectedSighting?.is_own_sighting;
 
   useEffect(() => {
     if (__DEV__ && selectedSighting) {
       console.log('[Discover] Sighting ownership check:', {
         sightingId: selectedSighting.id,
-        sightingUserId: selectedSighting.user_id ?? null,
-        currentUserId: currentUser?.id ?? null,
         owned: selectedSightingIsOwned,
       });
     }
-  }, [currentUser?.id, selectedSighting, selectedSightingIsOwned]);
+  }, [selectedSighting, selectedSightingIsOwned]);
 
   const handleStartEditSighting = useCallback(() => {
     if (!selectedSighting || !selectedSightingIsOwned) return;
@@ -518,7 +512,6 @@ export default function CustomerHomeScreen() {
     if (__DEV__) {
       console.log('[Discover] Sighting delete permission check:', {
         sightingId: selectedSighting.id,
-        sightingUserId: selectedSighting.user_id ?? null,
         currentUserId: currentUser.id,
         allowed: selectedSightingIsOwned,
       });
@@ -582,9 +575,7 @@ export default function CustomerHomeScreen() {
   const fetchSightings = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from('sightings')
-        .select('*')
-        .gt('expires_at', new Date().toISOString())
+        .rpc('get_public_sightings')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -592,23 +583,9 @@ export default function CustomerHomeScreen() {
       }
 
       const sightingsWithCoordinates = (data ?? []).filter(hasSightingCoordinates);
-      const sightingsWithSpotters = await addSpotterNamesToSightings(supabase, sightingsWithCoordinates);
       const sightingsWithDisplayLocations = await addDisplayLocationsToSightings(
-        sightingsWithSpotters
+        sightingsWithCoordinates
       );
-      if (__DEV__) {
-        const submitterIds = new Set(
-          sightingsWithCoordinates
-            .map((sighting) => sighting.user_id)
-            .filter((userId): userId is string => typeof userId === 'string' && userId.length > 0)
-        );
-        const mappedSpotterCount = sightingsWithSpotters.filter(sighting => !!sighting.spotted_by_name).length;
-        console.log('[Discover] Sighting spotter enrichment:', {
-          activeSightingCount: sightingsWithCoordinates.length,
-          submitterIdsLoaded: submitterIds.size,
-          spottedByMappingCount: mappedSpotterCount,
-        });
-      }
       setSightings(sightingsWithDisplayLocations);
     } catch (error) {
       console.error('[Discover] Failed to load sightings:', error);

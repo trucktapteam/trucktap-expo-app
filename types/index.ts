@@ -67,7 +67,11 @@ export type Sighting = {
   id: string;
   truck_name: string;
   photo_url?: string | null;
+  // Raw user_id is never present on rows fetched via get_public_sightings() (the
+  // shared feed); only direct owner/admin table reads (e.g. the edit mutation
+  // response) populate it. Use is_own_sighting for ownership checks instead.
   user_id?: string | null;
+  is_own_sighting?: boolean;
   spotted_by_name?: string | null;
   latitude: number;
   longitude: number;

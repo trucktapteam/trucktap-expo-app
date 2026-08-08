@@ -11,7 +11,7 @@ import AuthPromptModal from '@/components/AuthPromptModal';
 import { Image } from 'expo-image';
 import { FoodTruck, Sighting } from '@/types';
 import { supabase } from '@/lib/supabase';
-import { addSpotterNamesToSightings, formatSightingLastSeen, formatSightingSpotter, hasSightingCoordinates } from '@/lib/sightings';
+import { formatSightingLastSeen, formatSightingSpotter, hasSightingCoordinates } from '@/lib/sightings';
 import { addDisplayLocationsToSightings, getSightingLocationText } from '@/lib/sightingLocation';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
 import { trackEvent } from '@/lib/analytics';
@@ -77,9 +77,7 @@ export default function FullMapScreen() {
   const fetchSightings = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from('sightings')
-        .select('*')
-        .gt('expires_at', new Date().toISOString())
+        .rpc('get_public_sightings')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -87,9 +85,8 @@ export default function FullMapScreen() {
       }
 
       const sightingsWithCoordinates = (data ?? []).filter(hasSightingCoordinates);
-      const sightingsWithSpotters = await addSpotterNamesToSightings(supabase, sightingsWithCoordinates);
       const sightingsWithDisplayLocations = await addDisplayLocationsToSightings(
-        sightingsWithSpotters
+        sightingsWithCoordinates
       );
       setSightings(sightingsWithDisplayLocations);
     } catch (error) {
@@ -174,22 +171,16 @@ export default function FullMapScreen() {
     }, 500);
   };
 
-  const selectedSightingIsOwned = !!(
-    currentUser?.id &&
-    selectedSighting?.user_id &&
-    currentUser.id === selectedSighting.user_id
-  );
+  const selectedSightingIsOwned = !!selectedSighting?.is_own_sighting;
 
   useEffect(() => {
     if (__DEV__ && selectedSighting) {
       console.log('[FullMapScreen] Sighting ownership check:', {
         sightingId: selectedSighting.id,
-        sightingUserId: selectedSighting.user_id ?? null,
-        currentUserId: currentUser?.id ?? null,
         owned: selectedSightingIsOwned,
       });
     }
-  }, [currentUser?.id, selectedSighting, selectedSightingIsOwned]);
+  }, [selectedSighting, selectedSightingIsOwned]);
 
   const handleStartEditSighting = useCallback(() => {
     if (!selectedSighting || !selectedSightingIsOwned) return;
@@ -273,7 +264,6 @@ export default function FullMapScreen() {
     if (__DEV__) {
       console.log('[FullMapScreen] Sighting delete permission check:', {
         sightingId: selectedSighting.id,
-        sightingUserId: selectedSighting.user_id ?? null,
         currentUserId: currentUser.id,
         allowed: selectedSightingIsOwned,
       });
