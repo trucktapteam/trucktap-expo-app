@@ -6,11 +6,13 @@ do $$
 declare
   v_owner uuid := 'a7000000-0000-4000-8000-000000000001';
   v_other uuid := 'a7000000-0000-4000-8000-000000000002';
+  v_admin uuid := 'a7000000-0000-4000-8000-000000000003';
   v_live_id uuid;
   v_anon_id uuid;
   v_expired_id uuid;
   v_count int;
   v_row record;
+  v_policy_names text[];
 begin
   if has_function_privilege('anon', 'public.get_public_sightings()', 'execute') = false
     or has_function_privilege('authenticated', 'public.get_public_sightings()', 'execute') = false
@@ -22,10 +24,12 @@ begin
     id, aud, role, email, encrypted_password, created_at, updated_at
   ) values
     (v_owner, 'authenticated', 'authenticated', 'sightings-owner@example.invalid', '', statement_timestamp(), statement_timestamp()),
-    (v_other, 'authenticated', 'authenticated', 'sightings-other@example.invalid', '', statement_timestamp(), statement_timestamp());
+    (v_other, 'authenticated', 'authenticated', 'sightings-other@example.invalid', '', statement_timestamp(), statement_timestamp()),
+    (v_admin, 'authenticated', 'authenticated', 'sightings-admin@example.invalid', '', statement_timestamp(), statement_timestamp());
 
   update public.profiles set display_name = 'Owner Spotter' where id = v_owner;
   update public.profiles set display_name = 'Other User' where id = v_other;
+  update public.profiles set role = 'admin' where id = v_admin;
 
   insert into public.sightings (truck_name, photo_url, latitude, longitude, notes, expires_at, user_id)
   values ('Live Truck', 'https://example.invalid/truck-images/sightings/live.jpg', 40.123456, -105.654321, 'live', now() + interval '1 hour', v_owner)
@@ -109,6 +113,52 @@ begin
       and pg_get_function_result(p.oid) ilike '%user_id%'
   ) then
     raise exception 'get_public_sightings() return signature exposes a user_id column';
+  end if;
+
+  -- Admin moderation (required by TruckTap-admin/expo's app/sightings.tsx, which does
+  -- an unfiltered select('*') and updates/deletes by id alone): an admin sees every
+  -- row via direct table SELECT, including other users' and the expired one.
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+  select count(*) into v_count from public.sightings;
+  if v_count <> 3 then
+    raise exception 'admin direct SELECT on public.sightings returned % rows, expected 3 (all rows)', v_count;
+  end if;
+
+  -- Admin can update a sighting they do not own.
+  update public.sightings set notes = 'moderated' where id = v_anon_id;
+  if not found then
+    raise exception 'admin UPDATE on a sighting they do not own was rejected';
+  end if;
+
+  -- Admin can delete a sighting they do not own.
+  delete from public.sightings where id = v_anon_id;
+  if found is not true then
+    raise exception 'admin DELETE on a sighting they do not own was rejected';
+  end if;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- The final policy set is exactly what this migration intends: no stale
+  -- dashboard-created policies (sightings_admin_select_all,
+  -- sightings_public_select_not_expired, sightings_authenticated_insert,
+  -- sightings_admin_update_delete, sightings_admin_update_delete_del) survive, and
+  -- exactly the intended policies exist.
+  select array_agg(polname order by polname)
+  into v_policy_names
+  from pg_policy pol
+  join pg_class c on c.oid = pol.polrelid
+  where c.relname = 'sightings' and c.relnamespace = 'public'::regnamespace;
+
+  if v_policy_names <> array[
+    'Admins can delete any sighting',
+    'Admins can update any sighting',
+    'Anyone can create sightings',
+    'Owner or admin can read sightings',
+    'Users can delete own sightings',
+    'Users can update own sightings'
+  ]::text[] then
+    raise exception 'unexpected final policy set on public.sightings: %', v_policy_names;
   end if;
 end;
 $$;
