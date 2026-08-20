@@ -23,6 +23,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Toast from '@/components/Toast';
 import AuthPromptModal from '@/components/AuthPromptModal';
 import { supabase } from '@/lib/supabase';
+import { prepareImageForUpload } from '@/lib/imageUpload';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 
 const CUISINES = [
@@ -336,11 +337,16 @@ export default function EditProfile() {
 
   // helper to upload a file URI to Supabase storage and return a public URL
   const uploadImageAsync = useCallback(
-  async (uri: string, truckId: string, type: 'hero' | 'logo'): Promise<string> => {
+  async (
+    asset: { uri: string; width?: number; height?: number },
+    truckId: string,
+    type: 'hero' | 'logo'
+  ): Promise<string> => {
     try {
-      if (__DEV__) console.log('[EditProfile] uploading image', { type, uri });
+      if (__DEV__) console.log('[EditProfile] uploading image', { type, uri: asset.uri });
 
-      const response = await fetch(uri);
+      const preparedUri = await prepareImageForUpload(asset.uri, type, asset);
+      const response = await fetch(preparedUri);
       const arrayBuffer = await response.arrayBuffer();
       const filePath = `${truckId}/${type}-${Date.now()}.jpg`;
 
@@ -418,10 +424,10 @@ export default function EditProfile() {
         }
 
         if (!result.canceled && result.assets[0]) {
-          const localUri = result.assets[0].uri;
+          const pickedAsset = result.assets[0];
           if (truck && truck.id) {
             try {
-              const publicUrl = await uploadImageAsync(localUri, truck.id, type);
+              const publicUrl = await uploadImageAsync(pickedAsset, truck.id, type);
               if (type === 'hero') {
                 setHeroImage(publicUrl);
                 if (__DEV__) {
@@ -476,9 +482,9 @@ export default function EditProfile() {
           } else {
             // no truck context, just use the local URI
             if (type === 'hero') {
-              setHeroImage(localUri);
+              setHeroImage(pickedAsset.uri);
             } else {
-              setLogo(localUri);
+              setLogo(pickedAsset.uri);
             }
           }
         }

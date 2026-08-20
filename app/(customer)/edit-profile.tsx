@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { User, Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
+import { prepareImageForUpload } from '@/lib/imageUpload';
 import Toast from '@/components/Toast';
 import AuthPromptModal from '@/components/AuthPromptModal';
 
@@ -42,19 +43,19 @@ export default function EditProfileScreen() {
 
   try {
     const image = result.assets[0];
-    const fileExt = image.uri.split('.').pop()?.toLowerCase() || 'jpg';
-    const fileName = `${currentUser.id}-${Date.now()}.${fileExt}`;
+    const fileName = `${currentUser.id}-${Date.now()}.jpg`;
 
     console.log('[EditProfile] Uploading image:', image.uri);
     console.log('[EditProfile] File name:', fileName);
 
-    const response = await fetch(image.uri);
+    const preparedUri = await prepareImageForUpload(image.uri, 'profilePhoto', image);
+    const response = await fetch(preparedUri);
     const arrayBuffer = await response.arrayBuffer();
 
     const { data, error } = await supabase.storage
       .from('profile-photos')
       .upload(fileName, arrayBuffer, {
-        contentType: image.mimeType || `image/${fileExt}`,
+        contentType: 'image/jpeg',
         upsert: true,
       });
 

@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import Toast from '@/components/Toast';
 import Colors from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
+import { prepareImageForUpload } from '@/lib/imageUpload';
 import { useAuth } from '@/contexts/AuthContext';
 
 type LocationCoords = {
@@ -33,6 +34,7 @@ export default function AddSightingScreen() {
   const [truckName, setTruckName] = useState('');
   const [notes, setNotes] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoDimensions, setPhotoDimensions] = useState<{ width?: number; height?: number }>({});
   const [coords, setCoords] = useState<LocationCoords | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,6 +85,7 @@ export default function AddSightingScreen() {
 
     if (!result.canceled && result.assets[0]?.uri) {
       setPhotoUri(result.assets[0].uri);
+      setPhotoDimensions({ width: result.assets[0].width, height: result.assets[0].height });
     }
   }, []);
 
@@ -100,11 +103,13 @@ export default function AddSightingScreen() {
 
     if (!result.canceled && result.assets[0]?.uri) {
       setPhotoUri(result.assets[0].uri);
+      setPhotoDimensions({ width: result.assets[0].width, height: result.assets[0].height });
     }
   }, []);
 
-  const uploadPhotoAsync = useCallback(async (uri: string) => {
-    const response = await fetch(uri);
+  const uploadPhotoAsync = useCallback(async (uri: string, dimensions: { width?: number; height?: number }) => {
+    const preparedUri = await prepareImageForUpload(uri, 'sighting', dimensions);
+    const response = await fetch(preparedUri);
     const arrayBuffer = await response.arrayBuffer();
     const filePath = `sightings/sighting-${Date.now()}.jpg`;
 
@@ -155,7 +160,7 @@ export default function AddSightingScreen() {
         throw new Error('Unable to capture your location for this sighting.');
       }
 
-      const photoUrl = await uploadPhotoAsync(photoUri);
+      const photoUrl = await uploadPhotoAsync(photoUri, photoDimensions);
       const expiresAt = new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString();
 
       const { error } = await supabase.from('sightings').insert({
@@ -182,7 +187,7 @@ export default function AddSightingScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [authLoading, captureLocation, coords, isAuthenticated, notes, photoUri, router, truckName, uploadPhotoAsync, user]);
+  }, [authLoading, captureLocation, coords, isAuthenticated, notes, photoDimensions, photoUri, router, truckName, uploadPhotoAsync, user]);
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>

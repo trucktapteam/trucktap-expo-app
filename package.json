@@ -10,7 +10,7 @@
     "verify-pages-artifact": "node scripts/verify-pages-artifact.mjs",
     "check-credential-literals": "node scripts/check-credential-literals.mjs",
     "lint": "expo lint",
-    "test:node": "node --test lib/activeTruck.test.mjs lib/handsFreeLive.test.mjs lib/liveLocationCompatibility.test.mjs lib/locationTimezone.test.mjs lib/releasePolicyCore.test.mjs lib/sightingLocation.test.mjs lib/truckBusinessSnapshot.test.mjs lib/truckMission.test.mjs lib/truckOpportunities.test.mjs lib/truckPublicReady.test.mjs lib/truckWins.test.mjs lib/upcomingStopImages.test.mjs lib/upcomingStopReminders.test.mjs lib/upcomingStopTime.test.mjs scripts/check-credential-literals.test.mjs supabase/functions/account-delete-boundary.test.mjs supabase/functions/credential-logging.test.mjs supabase/functions/notify-hands-free-live-transition/index.node.test.mjs supabase/functions/notification-auth-boundaries.test.mjs",
+    "test:node": "node --test lib/activeTruck.test.mjs lib/handsFreeLive.test.mjs lib/imageUploadCore.test.mjs lib/liveLocationCompatibility.test.mjs lib/locationTimezone.test.mjs lib/releasePolicyCore.test.mjs lib/sightingLocation.test.mjs lib/truckBusinessSnapshot.test.mjs lib/truckMission.test.mjs lib/truckOpportunities.test.mjs lib/truckPublicReady.test.mjs lib/truckWins.test.mjs lib/upcomingStopImages.test.mjs lib/upcomingStopReminders.test.mjs lib/upcomingStopTime.test.mjs scripts/check-credential-literals.test.mjs supabase/functions/account-delete-boundary.test.mjs supabase/functions/credential-logging.test.mjs supabase/functions/notify-hands-free-live-transition/index.node.test.mjs supabase/functions/notification-auth-boundaries.test.mjs",
     "typecheck": "tsc --noEmit",
     "android": "expo run:android",
     "ios": "expo run:ios"
@@ -46,6 +46,7 @@
     "expo-font": "~14.0.9",
     "expo-haptics": "~15.0.7",
     "expo-image": "~3.0.11",
+    "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.11",
     "expo-linear-gradient": "~15.0.7",
     "expo-linking": "~8.0.12",

@@ -25,6 +25,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { MenuItem } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { prepareImageForUpload } from '@/lib/imageUpload';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { buildMenuImagesWithMenuBoard, getMenuBoardImageFromMenuImages } from '@/lib/truckMenu';
 import FullImageModal from '@/components/FullImageModal';
@@ -287,10 +288,11 @@ export default function MenuEditor() {
 
   // helper to upload a menu item image to Supabase storage and return a public URL
   const uploadMenuImageAsync = useCallback(
-    async (uri: string, truckId: string): Promise<string> => {
+    async (asset: { uri: string; width?: number; height?: number }, truckId: string): Promise<string> => {
       try {
-        if (__DEV__) console.log('[MenuEditor] upload start:', { truckId, uri });
-        const response = await fetch(uri);
+        if (__DEV__) console.log('[MenuEditor] upload start:', { truckId, uri: asset.uri });
+        const preparedUri = await prepareImageForUpload(asset.uri, 'menuItem', asset);
+        const response = await fetch(preparedUri);
         const arrayBuffer = await response.arrayBuffer();
         const filePath = `${truckId}/menu-${Date.now()}.jpg`;
         if (__DEV__) {
@@ -336,9 +338,10 @@ export default function MenuEditor() {
   );
 
   const uploadMenuBoardImageAsync = useCallback(
-    async (uri: string, truckId: string): Promise<string> => {
+    async (asset: { uri: string; width?: number; height?: number }, truckId: string): Promise<string> => {
       try {
-        const response = await fetch(uri);
+        const preparedUri = await prepareImageForUpload(asset.uri, 'menuBoard', asset);
+        const response = await fetch(preparedUri);
         const arrayBuffer = await response.arrayBuffer();
         const filePath = `${truckId}/menu-board-${Date.now()}.jpg`;
 
@@ -387,11 +390,11 @@ export default function MenuEditor() {
       const asset = result.canceled ? null : result.assets?.[0] ?? null;
       const localUri = asset?.uri ?? null;
 
-      if (!localUri) {
+      if (!localUri || !asset) {
         return;
       }
 
-      const publicUrl = await uploadMenuBoardImageAsync(localUri, truck.id);
+      const publicUrl = await uploadMenuBoardImageAsync(asset, truck.id);
       const nextMenuImages = buildMenuImagesWithMenuBoard(truck.menu_images, publicUrl);
       await updateTruckDetails(truck.id, { menu_images: nextMenuImages });
     } catch (error) {
@@ -477,7 +480,7 @@ export default function MenuEditor() {
         return;
       }
 
-      if (!localUri) {
+      if (!localUri || !asset) {
         console.error('[MenuEditor] image picker returned no URI; upload cannot start', result);
         Alert.alert('Upload Failed', 'The selected image did not return a usable file. Please try again.');
         return;
@@ -493,7 +496,7 @@ export default function MenuEditor() {
 
       if (truck && truck.id) {
         try {
-          const publicUrl = await uploadMenuImageAsync(localUri, truck.id);
+          const publicUrl = await uploadMenuImageAsync(asset, truck.id);
           if (__DEV__) {
             console.log('[MenuEditor] assigning publicUrl to formImage:', {
               truckId: truck.id,

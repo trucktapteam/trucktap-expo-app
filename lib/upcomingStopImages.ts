@@ -1,8 +1,8 @@
 import { supabase } from '@/lib/supabase';
+import { prepareImageForUpload } from '@/lib/imageUpload';
 import {
   buildUpcomingStopImagePath,
   extractUpcomingStopImagePath,
-  UPCOMING_STOP_IMAGE_ALLOWED_TYPES,
   UPCOMING_STOP_IMAGE_BUCKET,
   UPCOMING_STOP_IMAGE_MAX_BYTES,
 } from '@/lib/upcomingStopImageCore';
@@ -14,16 +14,22 @@ export const uploadUpcomingStopImage = async (input: {
   truckId: string;
   stopId: string;
   mimeType?: string | null;
+  width?: number;
+  height?: number;
 }) => {
-  const response = await fetch(input.uri);
+  // Event flyers previously uploaded verbatim (no dimension cap, no
+  // recompression) — a saved poster capture or an unedited phone photo
+  // could land here at several megabytes. prepareImageForUpload resizes
+  // (if oversized) and re-encodes to JPEG, so the mimeType is always jpeg
+  // afterward regardless of what was picked.
+  const preparedUri = await prepareImageForUpload(input.uri, 'eventFlyer', input);
+  const response = await fetch(preparedUri);
   const body = await response.arrayBuffer();
   if (body.byteLength > UPCOMING_STOP_IMAGE_MAX_BYTES) {
     throw new Error('The event flyer must be 8 MB or smaller.');
   }
 
-  const mimeType = UPCOMING_STOP_IMAGE_ALLOWED_TYPES.includes(input.mimeType as any)
-    ? input.mimeType!
-    : 'image/jpeg';
+  const mimeType = 'image/jpeg';
   const path = buildUpcomingStopImagePath(
     input.truckId,
     input.stopId,

@@ -8,6 +8,7 @@ import { useApp } from '@/contexts/AppContext';
 import FullImageModal from '@/components/FullImageModal';
 import { supabase } from '@/lib/supabase';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
+import { prepareImageForUpload } from '@/lib/imageUpload';
 
 const { width } = Dimensions.get('window');
 const SPACING = 12;
@@ -33,10 +34,15 @@ export default function TruckGalleryScreen() {
 
   // helper to upload a gallery image to Supabase storage and return a public URL
   const uploadGalleryImageAsync = useCallback(
-    async (uri: string, truckId: string, fileSuffix: string): Promise<string> => {
+    async (
+      asset: { uri: string; width?: number; height?: number },
+      truckId: string,
+      fileSuffix: string
+    ): Promise<string> => {
       try {
-        console.log('[TruckGallery] uploading gallery image', uri);
-        const response = await fetch(uri);
+        console.log('[TruckGallery] uploading gallery image', asset.uri);
+        const preparedUri = await prepareImageForUpload(asset.uri, 'gallery', asset);
+        const response = await fetch(preparedUri);
         const arrayBuffer = await response.arrayBuffer();
         const filePath = `${truckId}/gallery-${fileSuffix}.jpg`;
         console.log('[TruckGallery] storage path:', filePath);
@@ -104,7 +110,7 @@ export default function TruckGalleryScreen() {
           setUploadProgress({ completed: 0, total: result.assets.length });
           const uploadResults = await Promise.allSettled(
             result.assets.map((asset, index) =>
-              uploadGalleryImageAsync(asset.uri, truck.id, `${uploadBatchId}-${index}`)
+              uploadGalleryImageAsync(asset, truck.id, `${uploadBatchId}-${index}`)
                 .finally(() => {
                   setUploadProgress(progress => ({
                     ...progress,

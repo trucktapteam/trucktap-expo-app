@@ -19,6 +19,7 @@ import { Camera, CheckCircle2, ChevronLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabase';
+import { prepareImageForUpload } from '@/lib/imageUpload';
 import {
   getTruckVisibilitySetupStatus,
   TruckVisibilitySetupRequirement,
@@ -135,8 +136,13 @@ export default function VisibilityWizardScreen() {
     }
   };
 
-  const uploadImageAsync = async (uri: string, truckId: string, type: 'logo' | 'hero'): Promise<string> => {
-    const response = await fetch(uri);
+  const uploadImageAsync = async (
+    asset: { uri: string; width?: number; height?: number },
+    truckId: string,
+    type: 'logo' | 'hero'
+  ): Promise<string> => {
+    const preparedUri = await prepareImageForUpload(asset.uri, type, asset);
+    const response = await fetch(preparedUri);
     const arrayBuffer = await response.arrayBuffer();
     const filePath = `${truckId}/${type}-${Date.now()}.jpg`;
 
@@ -196,7 +202,7 @@ export default function VisibilityWizardScreen() {
       if (!asset?.uri) return;
 
       setSaving(true);
-      const publicUrl = await uploadImageAsync(asset.uri, truck.id, type);
+      const publicUrl = await uploadImageAsync(asset, truck.id, type);
       if (type === 'logo') {
         setLogo(publicUrl);
       } else {

@@ -1646,6 +1646,8 @@ export default function UpcomingStopsScreen() {
               truckId: truck.id,
               stopId: editingStopId,
               mimeType: eventFlyerAsset.mimeType,
+              width: eventFlyerAsset.width,
+              height: eventFlyerAsset.height,
             });
             eventImageUpdates = { event_image_url: pendingUploadedEventImageUrl };
           } else {
@@ -1736,6 +1738,8 @@ export default function UpcomingStopsScreen() {
                 truckId: truck.id,
                 stopId: createdStop.id,
                 mimeType: eventFlyerAsset.mimeType,
+                width: eventFlyerAsset.width,
+                height: eventFlyerAsset.height,
               });
               await updateUpcomingStop(createdStop.id, { event_image_url: uploadedUrl });
             } catch (flyerError) {
