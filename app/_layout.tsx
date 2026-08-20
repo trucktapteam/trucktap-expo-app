@@ -3,7 +3,7 @@ import { Stack, usePathname, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from 'expo-notifications';
 import React, { useEffect, useRef } from "react";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppProvider, useApp } from "@/contexts/AppContext";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
@@ -18,6 +18,7 @@ import { trackEvent } from '@/lib/analytics';
 import { getTruckRouteFromUrl } from '@/lib/truckShare';
 import { PASSWORD_RECOVERY_PATH } from '@/lib/authRedirect';
 import { ReleasePolicyProvider } from '@/contexts/ReleasePolicyContext';
+import MajorReleaseAnnouncement from '@/components/MajorReleaseAnnouncement';
 
 void SplashScreen.preventAutoHideAsync().catch((e) => {
   console.log('[RootLayout] SplashScreen.preventAutoHideAsync error:', e);
@@ -345,32 +346,35 @@ function RootLayoutNav() {
   }, [pathname, segments]);
   
   return (
-    <Stack screenOptions={{
-      headerBackTitle: "Back",
-      headerStyle: { backgroundColor: colors.background },
-      headerTintColor: colors.text,
-      headerShadowVisible: false,
-    }}>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-      <Stack.Screen name="role-select" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding-location" options={{ headerShown: false }} />
-      <Stack.Screen name="truck-setup" options={{ title: 'Create Truck' }} />
-      <Stack.Screen name="truck-login" options={{ title: 'TruckTap Partner Login' }} />
-      <Stack.Screen name="admin-truck-picker" options={{ title: 'Choose a Truck' }} />
-      <Stack.Screen name="admin-live-activity" options={{ title: 'LIVE Activity' }} />
-      <Stack.Screen name="customer-login" options={{ headerShown: false, presentation: 'transparentModal' }} />
-      <Stack.Screen name="owner-update-required" options={{ headerShown: false }} />
-      <Stack.Screen name="update-required" options={{ headerShown: false }} />
-      <Stack.Screen name="auth/check-email" options={{ headerShown: false }} />
-      <Stack.Screen name="auth/verified" options={{ headerShown: false }} />
-      <Stack.Screen name="auth/reset-password" options={{ headerShown: false }} />
-      <Stack.Screen name="(customer)" options={{ headerShown: false }} />
-      <Stack.Screen name="(truck)" options={{ headerShown: false }} />
-      <Stack.Screen name="truck/[id]" options={{ headerShown: false }} />
-      <Stack.Screen name="public/[id]" options={{ headerShown: false }} />
-      <Stack.Screen name="+not-found" />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <Stack screenOptions={{
+        headerBackTitle: "Back",
+        headerStyle: { backgroundColor: colors.background },
+        headerTintColor: colors.text,
+        headerShadowVisible: false,
+      }}>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="role-select" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding-location" options={{ headerShown: false }} />
+        <Stack.Screen name="truck-setup" options={{ title: 'Create Truck' }} />
+        <Stack.Screen name="truck-login" options={{ title: 'TruckTap Partner Login' }} />
+        <Stack.Screen name="admin-truck-picker" options={{ title: 'Choose a Truck' }} />
+        <Stack.Screen name="admin-live-activity" options={{ title: 'LIVE Activity' }} />
+        <Stack.Screen name="customer-login" options={{ headerShown: false, presentation: 'transparentModal' }} />
+        <Stack.Screen name="owner-update-required" options={{ headerShown: false }} />
+        <Stack.Screen name="update-required" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/check-email" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/verified" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/reset-password" options={{ headerShown: false }} />
+        <Stack.Screen name="(customer)" options={{ headerShown: false }} />
+        <Stack.Screen name="(truck)" options={{ headerShown: false }} />
+        <Stack.Screen name="truck/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="public/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+      <MajorReleaseAnnouncement />
+    </View>
   );
 }
 
