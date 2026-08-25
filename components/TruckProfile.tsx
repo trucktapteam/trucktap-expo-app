@@ -31,6 +31,10 @@ import { getMenuBoardImageFromMenuImages } from '@/lib/truckMenu';
 const CHECK_IN_RADIUS_FEET = 1320;
 const FEET_PER_METER = 3.28084;
 const EARTH_RADIUS_METERS = 6371000;
+// Matches the server-side reviews_text_length CHECK constraint
+// (supabase/migrations/20260825220000_add_text_length_limits.sql) and the
+// existing review-reply body limit (app/(truck)/reviews.tsx).
+const REVIEW_TEXT_MAX_LENGTH = 1000;
 
 const upcomingStopStatusLabels: Record<UpcomingStopStatus, string> = {
   scheduled: 'Scheduled',
@@ -557,7 +561,12 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
       Alert.alert('Error', 'Please write a comment');
       return;
     }
-    
+
+    if (reviewComment.trim().length > REVIEW_TEXT_MAX_LENGTH) {
+      Alert.alert('Error', `Reviews must be ${REVIEW_TEXT_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
+
    try {
   await addReview(truck.id, reviewRating, reviewComment);
 
@@ -1216,6 +1225,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
                       value={reviewComment}
                       onChangeText={setReviewComment}
                       textAlignVertical="top"
+                      maxLength={REVIEW_TEXT_MAX_LENGTH}
                     />
                     
                     <TouchableOpacity style={styles.submitButton} onPress={handleSubmitReview}>

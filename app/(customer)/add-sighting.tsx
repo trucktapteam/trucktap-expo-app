@@ -27,6 +27,10 @@ type LocationCoords = {
 };
 
 const SIGHTING_NOTES_MAX_LENGTH = 280;
+// Matches the server-side sightings_truck_name_length CHECK constraint
+// (supabase/migrations/20260825220000_add_text_length_limits.sql) and the
+// existing sighting-edit maxLength in discover.tsx/full-map.tsx.
+const SIGHTING_TRUCK_NAME_MAX_LENGTH = 80;
 
 export default function AddSightingScreen() {
   const router = useRouter();
@@ -147,6 +151,24 @@ export default function AddSightingScreen() {
       return;
     }
 
+    if (truckName.trim().length > SIGHTING_TRUCK_NAME_MAX_LENGTH) {
+      setToast({
+        visible: true,
+        message: `Truck name must be ${SIGHTING_TRUCK_NAME_MAX_LENGTH} characters or fewer.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    if (notes.trim().length > SIGHTING_NOTES_MAX_LENGTH) {
+      setToast({
+        visible: true,
+        message: `Notes must be ${SIGHTING_NOTES_MAX_LENGTH} characters or fewer.`,
+        type: 'error',
+      });
+      return;
+    }
+
     if (!photoUri) {
       setToast({ visible: true, message: 'A photo is required for a sighting.', type: 'error' });
       return;
@@ -230,6 +252,7 @@ export default function AddSightingScreen() {
               onChangeText={setTruckName}
               placeholder="Tasty Tacos Truck"
               placeholderTextColor={Colors.gray}
+              maxLength={SIGHTING_TRUCK_NAME_MAX_LENGTH}
             />
           </View>
 
