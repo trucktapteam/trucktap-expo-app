@@ -10,6 +10,7 @@ import StatsRow from '@/components/StatsRow';
 import Toast from '@/components/Toast';
 import { DEBUG } from '@/constants/debug';
 import { getTruckShareUrl } from '@/lib/truckShare';
+import PosterSignPreview from '@/components/posters/PosterSignPreview';
 import { useTruckLifecycleLogger } from '@/hooks/useTruckLifecycleLogger';
 import { getTruckCommandCenter } from '@/lib/truckCommandCenter';
 import { isTruckVisibilitySetupComplete } from '@/lib/truckVisibilitySetup';
@@ -110,6 +111,7 @@ export default function TruckDashboard() {
     isProfileComplete,
     hasUnreadOwnerUpdates,
     qrShared,
+    markQrShared,
     ownerMessages,
     announcements,
     upcomingStops,
@@ -1329,6 +1331,10 @@ export default function TruckDashboard() {
             </View>
           </View>
 
+          {canShareTruck && (
+            <PosterSignPreview truck={truck} onShared={() => markQrShared(truck.id)} />
+          )}
+
           {canShareTruck && !profileComplete && (
             <View style={styles.shareDisabledHelper}>
               <AlertCircle size={16} color={Colors.warning} />
@@ -1348,27 +1354,15 @@ export default function TruckDashboard() {
           )}
 
           <View style={[styles.shareButtonsContainer, !canShareTruck && styles.shareButtonsContainerDisabled]}>
-            <TouchableOpacity 
-              style={[styles.sharePrimaryButton, !canShareTruck && styles.sharePrimaryButtonDisabled]}
+            <TouchableOpacity
+              style={[styles.shareSecondaryActionButton, !canShareTruck && styles.shareSecondaryActionButtonDisabled]}
               onPress={handleShareProfile}
               disabled={!canShareTruck}
               activeOpacity={0.7}
             >
-              <Share2 size={20} color="#fff" />
-              <Text style={styles.sharePrimaryButtonText}>Share via Text / Social</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.sharePosterButton, !canShareTruck && styles.sharePosterButtonDisabled]}
-              onPress={() => router.push('/(truck)/poster' as any)}
-              disabled={!canShareTruck}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Create and print QR poster"
-            >
-              <QrCode size={20} color={canShareTruck ? Colors.primary : Colors.gray} />
-              <Text style={[styles.sharePosterButtonText, !canShareTruck && styles.sharePosterButtonTextDisabled]}>
-                Create & Print QR Poster
+              <Share2 size={20} color={canShareTruck ? Colors.primary : Colors.gray} />
+              <Text style={[styles.shareSecondaryActionButtonText, !canShareTruck && styles.shareSecondaryActionButtonTextDisabled]}>
+                Share via Text / Social
               </Text>
             </TouchableOpacity>
 
@@ -1394,6 +1388,16 @@ export default function TruckDashboard() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {canShareTruck && (
+            <TouchableOpacity
+              onPress={() => router.push('/(truck)/poster' as any)}
+              activeOpacity={0.7}
+              style={styles.moreStylesLinkButton}
+            >
+              <Text style={styles.moreStylesLinkText}>Choose a different poster style</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.sectionHeader}>
@@ -2372,33 +2376,7 @@ const styles = StyleSheet.create({
   shareButtonsContainerDisabled: {
     opacity: 0.6,
   },
-  sharePrimaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: Colors.primary,
-    paddingVertical: 13,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  sharePrimaryButtonDisabled: {
-    backgroundColor: Colors.gray,
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
-  },
-  sharePrimaryButtonText: {
-    fontSize: 15,
-    fontWeight: '700' as const,
-    color: '#fff',
-  },
-  sharePosterButton: {
+  shareSecondaryActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2410,16 +2388,26 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: `${Colors.primary}45`,
   },
-  sharePosterButtonDisabled: {
+  shareSecondaryActionButtonDisabled: {
     borderColor: `${Colors.gray}30`,
   },
-  sharePosterButtonText: {
+  shareSecondaryActionButtonText: {
     fontSize: 14,
     fontWeight: '700' as const,
     color: Colors.primary,
   },
-  sharePosterButtonTextDisabled: {
+  shareSecondaryActionButtonTextDisabled: {
     color: Colors.gray,
+  },
+  moreStylesLinkButton: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  moreStylesLinkText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.primary,
+    textDecorationLine: 'underline' as const,
   },
   shareSecondaryButtons: {
     flexDirection: 'row',

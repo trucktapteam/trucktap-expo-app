@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.rork.trucktap_food_truck_finder_cqgko70",
+      "sha256_cert_fingerprints": [
+        "74:82:CC:DA:1B:0D:8F:03:8E:43:05:C5:7B:1B:19:AB:27:0F:0E:19:E1:FE:53:C6:A0:D3:25:E0:AB:E1:F6:48"
+      ]
+    }
+  }
+]

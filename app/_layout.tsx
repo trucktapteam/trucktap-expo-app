@@ -19,6 +19,7 @@ import { getTruckRouteFromUrl } from '@/lib/truckShare';
 import { PASSWORD_RECOVERY_PATH } from '@/lib/authRedirect';
 import { ReleasePolicyProvider } from '@/contexts/ReleasePolicyContext';
 import MajorReleaseAnnouncement from '@/components/MajorReleaseAnnouncement';
+import ReviewPromptLeadIn from '@/components/ReviewPromptLeadIn';
 
 void SplashScreen.preventAutoHideAsync().catch((e) => {
   console.log('[RootLayout] SplashScreen.preventAutoHideAsync error:', e);
@@ -374,6 +375,7 @@ function RootLayoutNav() {
         <Stack.Screen name="+not-found" />
       </Stack>
       <MajorReleaseAnnouncement />
+      <ReviewPromptLeadIn />
     </View>
   );
 }
