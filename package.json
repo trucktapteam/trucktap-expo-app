@@ -13,7 +13,8 @@
     "test:node": "node --test lib/activeTruck.test.mjs lib/handsFreeLive.test.mjs lib/imageUploadCore.test.mjs lib/liveLocationCompatibility.test.mjs lib/locationTimezone.test.mjs lib/releasePolicyCore.test.mjs lib/sightingLocation.test.mjs lib/truckBusinessSnapshot.test.mjs lib/truckMission.test.mjs lib/truckOpportunities.test.mjs lib/truckPublicReady.test.mjs lib/truckWins.test.mjs lib/upcomingStopImages.test.mjs lib/upcomingStopReminders.test.mjs lib/upcomingStopTime.test.mjs scripts/check-credential-literals.test.mjs supabase/functions/account-delete-boundary.test.mjs supabase/functions/credential-logging.test.mjs supabase/functions/notify-hands-free-live-transition/index.node.test.mjs supabase/functions/notification-auth-boundaries.test.mjs",
     "typecheck": "tsc --noEmit",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -89,6 +90,7 @@
     "@types/react": "~19.1.10",
     "eslint": "^9.31.0",
     "eslint-config-expo": "~10.0.0",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9.2"
   },
   "overrides": {

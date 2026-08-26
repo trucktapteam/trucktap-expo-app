@@ -1,0 +1,23 @@
+diff --git a/node_modules/@rork-ai/toolkit-sdk/metro/transformer.js b/node_modules/@rork-ai/toolkit-sdk/metro/transformer.js
+index 45a51fa..840eb2b 100644
+--- a/node_modules/@rork-ai/toolkit-sdk/metro/transformer.js
++++ b/node_modules/@rork-ai/toolkit-sdk/metro/transformer.js
+@@ -6,7 +6,17 @@
+ const fs = require("fs");
+ const path = require("path");
+ 
+-const upstreamTransformer = require("@expo/metro-config/babel-transformer");
++// PATCHED (see patches/@rork-ai+toolkit-sdk+0.2.54.patch): the original bare
++// require("@expo/metro-config/babel-transformer") only resolves when
++// @expo/metro-config happens to be hoisted to the project root, which npm
++// does not guarantee. Resolve it explicitly through Expo's own installed
++// dependency context instead, so it works whether @expo/metro-config is
++// hoisted or nested under expo/node_modules.
++const upstreamTransformer = require(
++  require.resolve("@expo/metro-config/babel-transformer", {
++    paths: [path.dirname(require.resolve("expo/package.json"))],
++  }),
++);
+ 
+ /**
+  * Detects the Expo SDK version from the installed expo package
