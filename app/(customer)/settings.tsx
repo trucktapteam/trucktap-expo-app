@@ -104,7 +104,7 @@ export default function SettingsScreen() {
   const handleReportBug = () => {
     const email = 'trucktapteam@gmail.com';
     const subject = 'Bug Report - TruckTap';
-    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 2.0.0`;
+    const body = `\n\n---\nUser: ${currentUser?.name || 'Unknown'}\nRole: ${currentUser?.role || 'Unknown'}\nVersion: 2.0.1`;
     
     Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   };
@@ -376,7 +376,7 @@ export default function SettingsScreen() {
           <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
             <View style={styles.aboutRow}>
               <Text style={[styles.aboutLabel, { color: colors.text }]}>Version</Text>
-              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>v2.0.0</Text>
+              <Text style={[styles.aboutValue, { color: colors.secondaryText }]}>v2.0.1</Text>
             </View>
 
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -437,7 +437,7 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        <Text style={[styles.versionFooter, { color: colors.secondaryText }]}>v2.0.0</Text>
+        <Text style={[styles.versionFooter, { color: colors.secondaryText }]}>v2.0.1</Text>
         <View style={styles.bottomSpacing} />
       </ScrollView>
 
