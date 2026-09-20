@@ -24,6 +24,10 @@ import {
   normalizeUpcomingStopStatus,
   UPCOMING_STOP_PUBLIC_COLUMNS,
 } from '@/lib/upcomingStopData';
+import {
+  getNextUpcomingStopForTruck as selectNextUpcomingStopForTruck,
+  getVisibleUpcomingStopsForTruck as selectVisibleUpcomingStopsForTruck,
+} from '@/lib/upcomingStopSelection';
 import { removeUpcomingStopImage } from '@/lib/upcomingStopImages';
 import {
   getActiveTruckStorageKey,
@@ -378,6 +382,7 @@ export type AppState = {
   deleteAnnouncement: (announcementId: string) => void;
   getAnnouncements: (truckId: string) => Announcement[];
   getUpcomingStops: (truckId: string) => UpcomingStop[];
+  getVisibleUpcomingStops: (truckId: string) => UpcomingStop[];
   getNextUpcomingStopForTruck: (truckId: string) => UpcomingStop | null;
   getTruckActivityStatus: (truck: FoodTruck | null | undefined) => TruckActivityStatus;
   getTruckActivitySummary: (truckId: string) => TruckActivitySummary;
@@ -3069,18 +3074,13 @@ if (error) {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [savedLocations]);
 
-  const getNextUpcomingStopForTruck = useCallback((truckId: string) => {
-    const requestedId = truckId?.toString() ?? '';
-    const now = Date.now();
+  const getVisibleUpcomingStops = useCallback((truckId: string) => (
+    selectVisibleUpcomingStopsForTruck(upcomingStops, truckId)
+  ), [upcomingStops]);
 
-    return upcomingStops.find((stop) => {
-      if (stop.truck_id?.toString() !== requestedId) return false;
-      if (stop.status === 'cancelled' || stop.status === 'completed') return false;
-
-      const startsAt = Date.parse(stop.starts_at);
-      return Number.isFinite(startsAt) && startsAt > now;
-    }) ?? null;
-  }, [upcomingStops]);
+  const getNextUpcomingStopForTruck = useCallback((truckId: string) => (
+    selectNextUpcomingStopForTruck(upcomingStops, truckId)
+  ), [upcomingStops]);
 
   const getTruckActivityStatus = useCallback((truck: FoodTruck | null | undefined): TruckActivityStatus => {
     const now = Date.now();
@@ -3112,13 +3112,7 @@ if (error) {
       return `Updated ${diffDays} Days Ago`;
     };
 
-    const futureStops = upcomingStops.filter((stop) => {
-      if (!requestedId || stop.truck_id?.toString() !== requestedId) return false;
-      if (stop.status !== 'scheduled') return false;
-
-      const startsAt = parseActivityTime(stop.starts_at);
-      return startsAt !== null && startsAt > now;
-    });
+    const futureStops = requestedId ? selectVisibleUpcomingStopsForTruck(upcomingStops, requestedId, now) : [];
     const hasUpcomingStop = futureStops.length > 0;
     const stopActivityTime = futureStops
       .map(stop => (
@@ -3186,13 +3180,7 @@ if (error) {
     );
     const hasReviews = reviews.some(review => review.truckId?.toString() === requestedId);
 
-    const futureStops = upcomingStops.filter((stop) => {
-      if (stop.truck_id?.toString() !== requestedId) return false;
-      if (stop.status === 'cancelled' || stop.status === 'completed') return false;
-
-      const startsAt = Date.parse(stop.starts_at);
-      return Number.isFinite(startsAt) && startsAt > now;
-    });
+    const futureStops = selectVisibleUpcomingStopsForTruck(upcomingStops, requestedId, now);
 
     const truckAnnouncements = announcements.filter(
       announcement => announcement.truck_id?.toString() === requestedId
@@ -3934,6 +3922,7 @@ if (error) {
     deleteAnnouncement,
     getAnnouncements,
     getUpcomingStops,
+    getVisibleUpcomingStops,
     getNextUpcomingStopForTruck,
     getTruckActivityStatus,
     getTruckActivitySummary,
@@ -3983,7 +3972,7 @@ if (error) {
     updateOperatingHours, getOperatingHours, isTruckOpenNow, hasHoursSet,
     qrShared, markQrShared, dismissChecklist, incrementView, incrementMenuView, incrementCall,
     incrementNavigation, incrementPhotoView, getTruckAnalytics, addAnnouncement,
-    deleteAnnouncement, getAnnouncements, getUpcomingStops, addUpcomingStop,
+    deleteAnnouncement, getAnnouncements, getUpcomingStops, getVisibleUpcomingStops, addUpcomingStop,
     getNextUpcomingStopForTruck, getTruckActivityStatus, getTruckActivitySummary, isTruckInactive,
     updateUpcomingStop, deleteUpcomingStop, fetchUpcomingStopsFromSupabase,
     getSavedLocations, addSavedLocation, updateSavedLocation, deleteSavedLocation, savedLocationsLoading,

@@ -112,7 +112,7 @@ interface TruckProfileProps {
 
 export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProps) {
   const router = useRouter();
-  const { foodTrucks, currentUser, toggleFavorite, addReview, isTruckOpenNow, incrementView, incrementNavigation, incrementMenuView, incrementPhotoView, getAnnouncements, getUpcomingStops, isProfileComplete, getTruckActivityStatus, menuItems, allTrucksLoading, isOwnerLoading } = useApp();
+  const { foodTrucks, currentUser, toggleFavorite, addReview, isTruckOpenNow, incrementView, incrementNavigation, incrementMenuView, incrementPhotoView, getAnnouncements, getVisibleUpcomingStops, isProfileComplete, getTruckActivityStatus, menuItems, allTrucksLoading, isOwnerLoading } = useApp();
   const { colors } = useTheme();
   const { isAuthenticated, user: authUser, isLoading: authLoading } = useAuth();
   
@@ -857,7 +857,7 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
           )}
 
           <UpcomingStopsRow
-            stops={getUpcomingStops(truck.id)}
+            stops={getVisibleUpcomingStops(truck.id)}
             onStopPress={setSelectedUpcomingStop}
           />
 
