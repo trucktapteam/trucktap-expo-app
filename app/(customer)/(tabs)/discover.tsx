@@ -11,7 +11,7 @@ import { formatSightingLastSeen, formatSightingSpotter, getSafeSpotterDisplayNam
 import { addDisplayLocationsToSightings, getSightingLocationText } from '@/lib/sightingLocation';
 import { FoodTruck, Sighting } from '@/types';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
-import { getTruckDisplayLocation } from '@/lib/truckLocation';
+import { getTruckDisplayLocation, getTruckGeneralLocationLabel } from '@/lib/truckLocation';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { getPublicReadyStatus, isTruckPublicReady } from '@/lib/truckPublicReady';
 import { useLocationPermissionPrompt } from '@/hooks/useLocationPermissionPrompt';
@@ -54,24 +54,6 @@ const formatCardStopDateTime = (iso: string) => {
   });
 
   return `${dateText} @ ${timeText}`;
-};
-
-const formatCardLocationFallback = (address?: string | null) => {
-  const trimmed = address?.trim();
-  if (!trimmed) return '';
-
-  const parts = trimmed
-    .split(',')
-    .map(part => part.trim())
-    .filter(Boolean);
-
-  if (parts.length >= 3) {
-    const city = parts[parts.length - 2];
-    const state = parts[parts.length - 1].replace(/\s+\d{5}(?:-\d{4})?$/, '');
-    return [city, state].filter(Boolean).join(', ');
-  }
-
-  return trimmed;
 };
 
 const openSightingNavigation = (latitude?: number, longitude?: number) => {
@@ -1043,7 +1025,7 @@ export default function CustomerHomeScreen() {
               const nextStopLocation = nextStop?.location_text?.trim();
               const currentLocation = openNow ? getTruckDisplayLocation(truck) : null;
               const profileSnippet = (truck.bio || (truck as any).description || '').trim();
-              const fallbackLocation = formatCardLocationFallback(truck.location?.address);
+              const generalLocation = getTruckGeneralLocationLabel(truck);
               const cardBadges = (truck.trust_badges ?? []).filter(badge =>
                 badge === 'veteran_owned' || badge === 'family_owned'
               );
@@ -1134,9 +1116,9 @@ export default function CustomerHomeScreen() {
                           >
                             {profileSnippet}
                           </Text>
-                        ) : fallbackLocation ? (
+                        ) : generalLocation ? (
                           <Text style={styles.locationLineText} numberOfLines={1} ellipsizeMode="tail">
-                            📍 {fallbackLocation}
+                            📍 {generalLocation}
                           </Text>
                         ) : null}
                       </View>

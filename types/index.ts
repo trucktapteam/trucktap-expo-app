@@ -27,6 +27,11 @@ export type FoodTruck = {
     longitude: number;
     address: string;
   };
+  // General truck identity/location (e.g. "Louisville, KY") - distinct from
+  // `location`, which is the truck's specific LIVE or scheduled-event
+  // location used for navigation. See lib/truckLocation.ts.
+  home_city?: string | null;
+  home_state?: string | null;
   hours: string;
   bio: string;
   phone: string;

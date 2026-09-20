@@ -573,6 +573,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
         longitude: typeof row.longitude === 'number' ? row.longitude : Number.NaN,
         address: row.address ?? row.label ?? '',
       },
+      home_city: typeof row.home_city === 'string' && row.home_city.trim().length > 0 ? row.home_city.trim() : null,
+      home_state: typeof row.home_state === 'string' && row.home_state.trim().length > 0 ? row.home_state.trim() : null,
       hours: 'Not set',
       bio: row.bio ?? row.description ?? '',
       phone: row.phone ?? '',
