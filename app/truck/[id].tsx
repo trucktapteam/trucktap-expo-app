@@ -1,12 +1,13 @@
 import React from 'react';
-import { ImageBackground, Linking, Platform, ScrollView, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { BackHandler, ImageBackground, Linking, Platform, ScrollView, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import TruckProfile from '@/components/TruckProfile';
 import Colors from '@/constants/colors';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { isTruckPublicReady } from '@/lib/truckPublicReady';
+import { resolveTruckProfileBackAction } from '@/lib/truckProfileBackNavigation';
 
 const IOS_APP_STORE_URL =
   process.env.EXPO_PUBLIC_IOS_APP_STORE_URL?.trim() || 'https://apps.apple.com/us/search?term=TruckTap';
@@ -25,6 +26,37 @@ export default function TruckDetailScreen() {
   const truckId = typeof id === 'string' ? id : '';
   const truck = foodTrucks.find((item) => item.id === truckId);
   const truckOpenNow = !!truck && isTruckOpenNow(truck.id);
+
+  const handleBack = React.useCallback(() => {
+    const action = resolveTruckProfileBackAction(router.canGoBack());
+    if (action.type === 'back') {
+      router.back();
+    } else {
+      router.replace(action.route as any);
+    }
+  }, [router]);
+
+  // /truck/[id] is a root-level route reached by every external entry point
+  // (notifications, QR/shared links, universal/app links, trucktap://, cold
+  // start) and can end up as the only screen in the stack. Android system
+  // Back must not exit/strand the user there - fall back to Discover the
+  // same way the on-screen back arrow does.
+  useFocusEffect(
+    React.useCallback(() => {
+      if (Platform.OS !== 'android') return;
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        const action = resolveTruckProfileBackAction(router.canGoBack());
+        if (action.type === 'back') {
+          return false; // let the default stack pop happen
+        }
+        router.replace(action.route as any);
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [router])
+  );
 
   React.useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -155,7 +187,7 @@ export default function TruckDetailScreen() {
           <Text style={[styles.previewBannerText, { color: colors.background }]}>Customer View</Text>
         </View>
       )}
-      <TruckProfile truckId={id as string} mode="customer" />
+      <TruckProfile truckId={id as string} mode="customer" onBack={handleBack} />
     </View>
   );
 }
