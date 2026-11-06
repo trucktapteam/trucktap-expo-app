@@ -8,6 +8,7 @@ import Colors from '@/constants/colors';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { isTruckPublicReady } from '@/lib/truckPublicReady';
 import { resolveTruckProfileBackAction } from '@/lib/truckProfileBackNavigation';
+import { getTruckGeneralLocationLabel } from '@/lib/truckLocation';
 
 const IOS_APP_STORE_URL =
   process.env.EXPO_PUBLIC_IOS_APP_STORE_URL?.trim() || 'https://apps.apple.com/us/search?term=TruckTap';
@@ -115,7 +116,7 @@ export default function TruckDetailScreen() {
       ? truck.name
       : 'Find this food truck on TruckTap';
     const subtitle = showTruckDetails
-      ? [truck.cuisine_type, truck.location.address].filter(Boolean).join(' • ')
+      ? [truck.cuisine_type, getTruckGeneralLocationLabel(truck)].filter(Boolean).join(' • ')
       : incompleteHiddenFromCustomer
       ? 'Please check back soon.'
       : 'Install TruckTap to see live food truck details, menus, photos, and updates.';

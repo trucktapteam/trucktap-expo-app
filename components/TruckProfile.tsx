@@ -17,6 +17,7 @@ import AuthPromptModal from '@/components/AuthPromptModal';
 import UpcomingStopsRow from '@/components/UpcomingStopsRow';
 import { trackEvent } from '@/lib/analytics';
 import { getTruckShareUrl } from '@/lib/truckShare';
+import { getTruckBasedNearText, getTruckNavigationState } from '@/lib/truckLocation';
 import { recordReviewEngagement } from '@/lib/appReviewPrompt';
 import { isTruckPublicReady } from '@/lib/truckPublicReady';
 import { getTruckTrustStatus } from '@/lib/truckTrustStatus';
@@ -331,6 +332,12 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
 
   const hasValidPhone = !!truck.phone && truck.phone.length === 10;
   const isClosedCustomerView = mode === 'customer' && !truckOpenNow;
+  const basedNearText = getTruckBasedNearText(truck);
+  const navigationState = getTruckNavigationState({
+    isCustomerView: mode === 'customer',
+    openNow: truckOpenNow,
+    hasCoordinates: hasNavigableLocation,
+  });
   const truckBio = truck.bio?.trim() ?? '';
   const trustBadges = (truck.trust_badges ?? []).filter(badge => !!trustBadgeLabels[badge]);
 
@@ -646,10 +653,10 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
                 )}
               </View>
               <Text style={styles.cuisine}>{truck.cuisine_type}</Text>
-              {truck.service_area ? (
+              {basedNearText ? (
                 <View style={styles.serviceAreaRow}>
                   <MapPin size={14} color={colors.secondaryText} />
-                  <Text style={styles.serviceAreaText} numberOfLines={1}>{truck.service_area}</Text>
+                  <Text style={styles.serviceAreaText} numberOfLines={1}>{basedNearText}</Text>
                 </View>
               ) : null}
               {trustBadges.length > 0 ? (
@@ -723,14 +730,18 @@ export default function TruckProfile({ truckId, mode, onBack }: TruckProfileProp
 
           <View style={styles.actionButtons}>
             <TouchableOpacity 
-              style={[styles.navigateButton, !hasNavigableLocation && styles.navigateButtonDisabled]} 
+              style={[styles.navigateButton, navigationState !== 'navigate' && styles.navigateButtonDisabled]} 
               onPress={handleNavigate}
-              disabled={!hasNavigableLocation}
+              disabled={navigationState !== 'navigate'}
               activeOpacity={0.7}
             >
               <Navigation size={20} color={colors.background} />
               <Text style={styles.navigateButtonText}>
-                {hasNavigableLocation ? 'Navigate' : 'Location Unavailable'}
+                {navigationState === 'navigate'
+                  ? 'Navigate'
+                  : navigationState === 'not_serving'
+                  ? 'Not Serving Now'
+                  : 'Location Unavailable'}
               </Text>
             </TouchableOpacity>
             
