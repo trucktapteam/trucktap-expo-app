@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { CalendarDays, Clock, ImageIcon, MapPin } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { UpcomingStop, UpcomingStopStatus } from '@/types';
+import { isUpcomingStopCurrentlyVisible } from '@/lib/upcomingStopSelection';
 
 type UpcomingStopsRowProps = {
   stops: UpcomingStop[];
@@ -49,17 +50,11 @@ export default function UpcomingStopsRow({ stops, onStopPress }: UpcomingStopsRo
   const { width } = useWindowDimensions();
   const cardWidth = Math.min(260, Math.max(180, Math.floor((width - 44) / 1.95)));
 
-  const visibleStops = useMemo(() => {
-    const now = Date.now();
-
-    return stops
-      .filter(stop => stop.status !== 'completed')
-      .filter(stop => {
-        const endsAt = Date.parse(stop.ends_at);
-        return Number.isFinite(endsAt) && endsAt > now;
-      })
-      .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
-  }, [stops]);
+  const visibleStops = useMemo(() => (
+    stops
+      .filter(stop => isUpcomingStopCurrentlyVisible(stop))
+      .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
+  ), [stops]);
 
   if (visibleStops.length === 0) {
     return null;

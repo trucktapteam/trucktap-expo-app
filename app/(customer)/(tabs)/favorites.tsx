@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Image } from 'expo-image';
 
 import AuthPromptModal from '@/components/AuthPromptModal';
+import { getTruckBasedNearText } from '@/lib/truckLocation';
 
 export default function FavoritesScreen() {
   const router = useRouter();
@@ -75,6 +76,7 @@ export default function FavoritesScreen() {
             {favoriteTrucks.map(truck => {
               const rating = getAverageRating(truck.id);
               const openNow = isTruckOpenNow(truck.id);
+              const basedNearText = getTruckBasedNearText(truck);
 
               return (
                 <TouchableOpacity
@@ -89,8 +91,8 @@ export default function FavoritesScreen() {
                   <View style={styles.truckInfo}>
                     <Text style={styles.truckName} numberOfLines={1}>{truck.name}</Text>
                     <Text style={styles.truckCuisine}>{truck.cuisine_type}</Text>
-                    {truck.service_area ? (
-                      <Text style={styles.truckServiceArea} numberOfLines={1}>{truck.service_area}</Text>
+                    {basedNearText ? (
+                      <Text style={styles.truckServiceArea} numberOfLines={1}>{basedNearText}</Text>
                     ) : null}
                     {(truck.trust_badges ?? []).length > 0 ? (
                       <View style={styles.cardBadgeRow}>

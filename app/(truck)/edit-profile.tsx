@@ -93,7 +93,6 @@ export default function EditProfile() {
   const [tiktokUrl, setTiktokUrl] = useState<string>('');
   const [serviceArea, setServiceArea] = useState<string>('');
   const [trustBadges, setTrustBadges] = useState<string[]>([]);
-  const [address, setAddress] = useState<string>('');
   const [heroImage, setHeroImage] = useState<string>('');
   const [logo, setLogo] = useState<string>('');
   const [hasChanges, setHasChanges] = useState<boolean>(false);
@@ -137,7 +136,6 @@ export default function EditProfile() {
     setTiktokUrl(truck.tiktok_url || '');
     setServiceArea(truck.service_area || '');
     setTrustBadges(Array.isArray(truck.trust_badges) ? truck.trust_badges : []);
-    setAddress(truck.location?.address || '');
     setHeroImage(truck.hero_image || '');
     setLogo(truck.logo || '');
   }, [truck]);
@@ -164,13 +162,12 @@ export default function EditProfile() {
       tiktokUrl !== (truck.tiktok_url || '') ||
       serviceArea !== (truck.service_area || '') ||
       trustBadges.join('|') !== (truck.trust_badges || []).join('|') ||
-      address !== (truck.location?.address || '') ||
       heroImage !== (truck.hero_image || '') ||
       logo !== (truck.logo || '');
 
     console.log('[EditProfile] hasChanges:', changed);
     setHasChanges(changed);
-  }, [name, cuisineType, phone, bio, website, facebookUrl, instagramUrl, tiktokUrl, serviceArea, trustBadges, address, heroImage, logo, truck]);
+  }, [name, cuisineType, phone, bio, website, facebookUrl, instagramUrl, tiktokUrl, serviceArea, trustBadges, heroImage, logo, truck]);
 
   const formatPhoneNumber = useCallback((text: string) => {
     const cleaned = text.replace(/\D/g, '');
@@ -283,18 +280,6 @@ export default function EditProfile() {
         trust_badges: trustBadges.filter(id => TRUST_BADGES.some(badge => badge.id === id)),
       };
 
-      if (
-        address.trim() !== (truck.location?.address || '') &&
-        Number.isFinite(truck.location?.latitude) &&
-        Number.isFinite(truck.location?.longitude)
-      ) {
-        updates.location = {
-          latitude: truck.location.latitude,
-          longitude: truck.location.longitude,
-          address: address.trim(),
-        };
-      }
-
       if (__DEV__) {
         console.log('[EditProfile] Save payload:', {
           truckId: truck.id,
@@ -328,7 +313,6 @@ export default function EditProfile() {
     tiktokUrl,
     serviceArea,
     trustBadges,
-    address,
     heroImage,
     logo,
     updateTruckDetails,
@@ -678,6 +662,7 @@ export default function EditProfile() {
                       placeholderTextColor={Colors.gray}
                     />
                   </View>
+                  <Text style={styles.fieldHint}>City and state or region only. Customers see this, so do not enter a street address.</Text>
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -743,26 +728,6 @@ export default function EditProfile() {
                     />
                   </View>
                   {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Address (Optional)</Text>
-                  <View style={styles.inputWithIcon}>
-                    <MapPin size={18} color={Colors.gray} style={styles.inputIcon} />
-                    <TextInput
-                      style={[styles.input, styles.inputWithIconText, errors.address && styles.inputError]}
-                      value={address}
-                      onChangeText={(text) => {
-                        setAddress(text);
-                        if (errors.address) {
-                          setErrors((prev) => ({ ...prev, address: '' }));
-                        }
-                      }}
-                      placeholder="Enter your truck's address"
-                      placeholderTextColor={Colors.gray}
-                    />
-                  </View>
-                  {errors.address ? <Text style={styles.errorText}>{errors.address}</Text> : null}
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -1090,6 +1055,11 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.dark,
     marginBottom: 8,
+  },
+  fieldHint: {
+    fontSize: 12,
+    color: Colors.gray,
+    marginTop: 6,
   },
   input: {
     backgroundColor: Colors.lightGray,

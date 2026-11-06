@@ -11,7 +11,7 @@ import { formatSightingLastSeen, formatSightingSpotter, getSafeSpotterDisplayNam
 import { addDisplayLocationsToSightings, getSightingLocationText } from '@/lib/sightingLocation';
 import { FoodTruck, Sighting } from '@/types';
 import { getValidatedCoordinate, isValidCoordinate } from '@/lib/mapValidation';
-import { getTruckDisplayLocation } from '@/lib/truckLocation';
+import { getTruckBasedNearText, getTruckCardLocation, getTruckSearchFields } from '@/lib/truckLocation';
 import { canViewIncompleteTruckProfile } from '@/lib/truckProfileCompleteness';
 import { getPublicReadyStatus, isTruckPublicReady } from '@/lib/truckPublicReady';
 import { useLocationPermissionPrompt } from '@/hooks/useLocationPermissionPrompt';
@@ -54,24 +54,6 @@ const formatCardStopDateTime = (iso: string) => {
   });
 
   return `${dateText} @ ${timeText}`;
-};
-
-const formatCardLocationFallback = (address?: string | null) => {
-  const trimmed = address?.trim();
-  if (!trimmed) return '';
-
-  const parts = trimmed
-    .split(',')
-    .map(part => part.trim())
-    .filter(Boolean);
-
-  if (parts.length >= 3) {
-    const city = parts[parts.length - 2];
-    const state = parts[parts.length - 1].replace(/\s+\d{5}(?:-\d{4})?$/, '');
-    return [city, state].filter(Boolean).join(', ');
-  }
-
-  return trimmed;
 };
 
 const openSightingNavigation = (latitude?: number, longitude?: number) => {
@@ -214,14 +196,7 @@ export default function CustomerHomeScreen() {
       if (!hasMapLocation(truck)) return false;
 
       if (trimmedQuery) {
-        const searchableFields = [
-          truck.name || '',
-          truck.cuisine_type || '',
-          truck.bio || '',
-          truck.service_area || '',
-          truck.location?.address || '',
-          ...(truck.search_keywords || []),
-        ];
+        const searchableFields = getTruckSearchFields(truck, { openNow: openTruckIds.has(truck.id) });
         if (!searchableFields.some(field => field.toLowerCase().includes(trimmedQuery))) return false;
       }
 
@@ -250,14 +225,7 @@ export default function CustomerHomeScreen() {
       }
 
       if (trimmedQuery) {
-        const searchableFields = [
-          truck.name || '',
-          truck.cuisine_type || '',
-          truck.bio || '',
-          truck.service_area || '',
-          truck.location?.address || '',
-          ...(truck.search_keywords || []),
-        ];
+        const searchableFields = getTruckSearchFields(truck, { openNow: openTruckIds.has(truck.id) });
         if (!searchableFields.some(field => field.toLowerCase().includes(trimmedQuery))) return false;
       }
 
@@ -276,14 +244,7 @@ export default function CustomerHomeScreen() {
     const matchesSearch = (truck: FoodTruck) => {
       if (!trimmedQuery) return true;
 
-      const searchableFields = [
-        truck.name || '',
-        truck.cuisine_type || '',
-        truck.bio || '',
-        truck.service_area || '',
-        truck.location?.address || '',
-        ...(truck.search_keywords || []),
-      ];
+      const searchableFields = getTruckSearchFields(truck, { openNow: isTruckOpenNow(truck.id) });
 
       return searchableFields.some(field => field.toLowerCase().includes(trimmedQuery));
     };
@@ -1040,10 +1001,11 @@ export default function CustomerHomeScreen() {
               const reviewAverage = rating?.count ? Math.round((rating.sum / rating.count) * 10) / 10 : 0;
               const openNow = openTruckIds.has(truck.id);
               const nextStop = getNextUpcomingStopForTruck(truck.id);
-              const nextStopLocation = nextStop?.location_text?.trim();
-              const currentLocation = openNow ? getTruckDisplayLocation(truck) : null;
+              const cardLocation = getTruckCardLocation(truck, { openNow, nextStop });
+              const currentLocation = cardLocation.kind === 'live' ? cardLocation.text : null;
+              const nextStopLocation = cardLocation.kind === 'upcoming' ? cardLocation.locationText : null;
               const profileSnippet = (truck.bio || (truck as any).description || '').trim();
-              const fallbackLocation = formatCardLocationFallback(truck.location?.address);
+              const basedNearText = getTruckBasedNearText(truck);
               const cardBadges = (truck.trust_badges ?? []).filter(badge =>
                 badge === 'veteran_owned' || badge === 'family_owned'
               );
@@ -1081,8 +1043,8 @@ export default function CustomerHomeScreen() {
                               </Text>
                             </View>
                           </View>
-                          {truck.service_area ? (
-                            <Text style={styles.truckServiceArea} numberOfLines={1}>{truck.service_area}</Text>
+                          {basedNearText ? (
+                            <Text style={styles.truckServiceArea} numberOfLines={1}>{basedNearText}</Text>
                           ) : null}
                           {cardBadges.length > 0 ? (
                             <View style={styles.cardBadgeRow}>
@@ -1101,10 +1063,10 @@ export default function CustomerHomeScreen() {
                           <Text style={styles.locationLineText} numberOfLines={2} ellipsizeMode="tail">
                             📍 {currentLocation}
                           </Text>
-                        ) : nextStop ? (
+                        ) : cardLocation.kind === 'upcoming' && nextStop ? (
                           <>
                             <Text style={styles.locationLineText} numberOfLines={1}>
-                              📅 {formatCardStopDateTime(nextStop.starts_at)}
+                              📅 Next stop: {formatCardStopDateTime(nextStop.starts_at)}
                             </Text>
                             {!!nextStopLocation && (
                               <Text style={styles.locationLineText} numberOfLines={2} ellipsizeMode="tail">
@@ -1133,10 +1095,6 @@ export default function CustomerHomeScreen() {
                             ellipsizeMode="tail"
                           >
                             {profileSnippet}
-                          </Text>
-                        ) : fallbackLocation ? (
-                          <Text style={styles.locationLineText} numberOfLines={1} ellipsizeMode="tail">
-                            📍 {fallbackLocation}
                           </Text>
                         ) : null}
                       </View>
