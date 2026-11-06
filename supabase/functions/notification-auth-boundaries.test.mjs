@@ -84,12 +84,27 @@ test('all service-role notification handlers authorize before creating a client'
   }
 
   const announcement = fs.readFileSync(
-    new URL('./notify-truck-announcement/index.ts', import.meta.url),
+    new URL('./notify-truck-announcement/handler.ts', import.meta.url),
     'utf8',
   );
   assert.ok(announcement.indexOf('getBearerToken') >= 0);
   assert.ok(announcement.indexOf('admin.auth.getUser(token)') >= 0);
   assert.ok(announcement.indexOf('canSendTruckAnnouncement(') >= 0);
+  assert.ok(
+    announcement.indexOf('admin.auth.getUser(token)') <
+      announcement.indexOf('req.json()'),
+    'announcement handler must authenticate before reading the body',
+  );
+
+  const announcementEntry = fs.readFileSync(
+    new URL('./notify-truck-announcement/index.ts', import.meta.url),
+    'utf8',
+  );
+  assert.ok(announcementEntry.indexOf('createAnnouncementHandler(') >= 0);
+  assert.ok(
+    announcementEntry.indexOf('.eq("notify_announcements"') < 0,
+    'announcement entrypoint must not query recipients directly',
+  );
 });
 
 test('function gateway modes match each authorization design', () => {
