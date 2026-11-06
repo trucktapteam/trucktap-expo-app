@@ -238,13 +238,17 @@ export type TruckNavigationState = 'navigate' | 'not_serving' | 'unavailable';
  * Whether the truck profile's main Navigate button may open directions.
  * Customers can only navigate to a truck that is LIVE now; a closed truck's
  * coordinates are its last serving spot, not where it is.
+ *
+ * Closed is checked before coordinates: a closed truck always reads
+ * "Not Serving Now", whether or not its stored location is readable (it will
+ * not be once public reads of offline trucks' locations are restricted).
  */
 export const getTruckNavigationState = (options: {
   isCustomerView: boolean;
   openNow: boolean;
   hasCoordinates: boolean;
 }): TruckNavigationState => {
-  if (!options.hasCoordinates) return 'unavailable';
   if (options.isCustomerView && !options.openNow) return 'not_serving';
+  if (!options.hasCoordinates) return 'unavailable';
   return 'navigate';
 };
